@@ -1,13 +1,15 @@
 import { TILE, COLS, ROWS, W, H, TIME_SCALE, START_COINS, HABITATS, SPECIES, RARITY_WEIGHT, RESCUE_MSG, CLR,
-    SEASONS, SEASON_ORDER, SEASON_LENGTH, SEASON_CYCLE, UPGRADES, STAFF_TYPES } from '../GameData.js';
+    SEASONS, SEASON_ORDER, SEASON_LENGTH, SEASON_CYCLE, UPGRADES, STAFF_TYPES,
+    TRAITS, TRAIT_IDS, ILLNESSES, ENRICHMENTS, MISSIONS, VISITOR_TYPES, ACHIEVEMENTS } from '../GameData.js';
 import { SoundManager } from '../SoundManager.js';
+
+let uid = 0;
+function genId(prefix) { return `${prefix}_${Date.now().toString(36)}_${(uid++).toString(36)}`; }
 
 export default class GameScene extends Phaser.Scene {
     constructor() { super('GameScene'); }
 
-    init(data) {
-        this.isNewGame = data?.newGame !== false;
-    }
+    init(data) { this.isNewGame = data?.newGame !== false; }
 
     create() {
         this.sfx = new SoundManager();
@@ -20,13 +22,19 @@ export default class GameScene extends Phaser.Scene {
             habitats: [], animals: [], staff: [],
             discoveries: new Set(),
             upgrades: new Set(),
-            stats: { rescued: 0, visitors: 0, earned: 0 },
-            season: 'spring', prevSeason: 'spring'
+            achievementsEarned: new Set(),
+            seasonsVisited: new Set(['spring']),
+            stats: { rescued: 0, visitors: 0, earned: 0, bred: 0, missionsComplete: 0, healed: 0 },
+            season: 'spring', prevSeason: 'spring',
+            activeMissions: [],
+            breedingPairs: [],
         };
         this.visitors = [];
         this.staffSprites = [];
         this.grid = [];
         this.habitatDecoObjects = [];
+        this.enrichmentSprites = [];
+        this._skipPointerDown = false;
 
         this.createMap();
         this.overlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000033, 0).setDepth(100);
@@ -38,20 +46,20 @@ export default class GameScene extends Phaser.Scene {
         this.scene.launch('HUDScene');
 
         if (!this.isNewGame) this.loadGame();
-
         this.updateSeason();
 
         this.time.delayedCall(4000, () => this.triggerRescue('cat'));
 
         this.rescueInterval = 50000;
         this.rescueTimer = this.time.addEvent({
-            delay: this.rescueInterval,
-            callback: () => this.triggerRescue(),
-            loop: true
+            delay: this.rescueInterval, callback: () => this.triggerRescue(), loop: true
         });
         this.time.addEvent({ delay: 7000, callback: () => this.trySpawnVisitor(), loop: true });
         this.time.addEvent({ delay: 60000, callback: () => this.saveGame(), loop: true });
         this.time.addEvent({ delay: 5000, callback: () => this.staffWork(), loop: true });
+        this.time.addEvent({ delay: 10000, callback: () => this.checkIllness(), loop: true });
+        this.time.addEvent({ delay: 8000, callback: () => this.updateBonds(), loop: true });
+        this.time.addEvent({ delay: 5000, callback: () => this.checkAchievements(), loop: true });
 
         this.game.events.on('rescueAccepted', this.acceptRescue, this);
     }
@@ -66,62 +74,45 @@ export default class GameScene extends Phaser.Scene {
                 const isEntrance = y === ROWS - 1 && x >= 13 && x <= 16;
                 const isPath = !isBorder && y === ROWS - 2 && x >= 13 && x <= 16;
                 this.grid[y][x] = isEntrance ? 'entrance' : isBorder ? 'fence' : isPath ? 'path' : null;
-
-                const px = x * TILE + TILE / 2;
-                const py = y * TILE + TILE / 2;
+                const px = x * TILE + TILE / 2, py = y * TILE + TILE / 2;
                 if (isEntrance || isPath) {
                     this.add.image(px, py, 'path').setDepth(0);
                 } else if (isBorder) {
                     this.add.image(px, py, 'fence').setDepth(0);
                 } else {
-                    const v = ((x * 7 + y * 13) % 4) + 1;
-                    this.add.image(px, py, `grass_${v}`).setDepth(0);
+                    this.add.image(px, py, `grass_${((x * 7 + y * 13) % 4) + 1}`).setDepth(0);
                 }
             }
         }
         this.add.text(W / 2, (ROWS - 1) * TILE + TILE / 2, 'ENTRANCE', {
-            fontFamily: '"Press Start 2P", monospace',
-            fontSize: '6px', color: '#8B7355'
+            fontFamily: '"Press Start 2P", monospace', fontSize: '8px', color: '#8B7355'
         }).setOrigin(0.5).setDepth(1);
     }
 
     /* ========== PARTICLES ========== */
 
-    setupParticles() {
-        this.seasonEmitter = null;
-        this.fireflyEmitter = null;
-    }
+    setupParticles() { this.seasonEmitter = null; this.fireflyEmitter = null; }
 
     updateSeasonParticles() {
         if (this.seasonEmitter) { this.seasonEmitter.destroy(); this.seasonEmitter = null; }
         if (this.fireflyEmitter) { this.fireflyEmitter.destroy(); this.fireflyEmitter = null; }
-
         const s = SEASONS[this.state.season];
         if (s.particle) {
             this.seasonEmitter = this.add.particles(0, -10, s.particle, {
-                x: { min: 0, max: W },
-                lifespan: this.state.season === 'winter' ? 7000 : 5000,
+                x: { min: 0, max: W }, lifespan: this.state.season === 'winter' ? 7000 : 5000,
                 speedY: { min: 12, max: this.state.season === 'winter' ? 35 : 25 },
-                speedX: { min: -15, max: 15 },
-                scale: { min: 0.4, max: 1 },
+                speedX: { min: -15, max: 15 }, scale: { min: 0.4, max: 1 },
                 alpha: { start: 0.7, end: 0 },
                 rotate: this.state.season === 'autumn' ? { min: 0, max: 360 } : 0,
-                quantity: 1,
-                frequency: this.state.season === 'winter' ? 150 : 400,
+                quantity: 1, frequency: this.state.season === 'winter' ? 150 : 400,
             }).setDepth(95);
         }
-
         if (this.state.season === 'summer') {
             this.fireflyEmitter = this.add.particles(0, 0, 'particle_firefly', {
-                x: { min: 60, max: W - 60 },
-                y: { min: 80, max: H - 120 },
-                lifespan: 2500,
-                speedY: { min: -6, max: 6 },
-                speedX: { min: -6, max: 6 },
-                scale: { min: 0.3, max: 0.8 },
-                alpha: { start: 0.8, end: 0 },
-                quantity: 1,
-                frequency: 700,
+                x: { min: 60, max: W - 60 }, y: { min: 80, max: H - 120 },
+                lifespan: 2500, speedY: { min: -6, max: 6 }, speedX: { min: -6, max: 6 },
+                scale: { min: 0.3, max: 0.8 }, alpha: { start: 0.8, end: 0 },
+                quantity: 1, frequency: 700,
             }).setDepth(95);
         }
     }
@@ -131,8 +122,7 @@ export default class GameScene extends Phaser.Scene {
     setupInput() {
         this.input.on('pointermove', ptr => {
             if (!this.state.buildMode) { this.preview.setVisible(false); return; }
-            const gx = Math.floor(ptr.worldX / TILE);
-            const gy = Math.floor(ptr.worldY / TILE);
+            const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor(ptr.worldY / TILE);
             const ht = HABITATS[this.state.buildMode];
             const ok = this.canPlace(this.state.buildMode, gx, gy);
             const c = ok ? 0x00ff00 : 0xff0000;
@@ -145,11 +135,19 @@ export default class GameScene extends Phaser.Scene {
 
         this.input.on('pointerdown', ptr => {
             if (ptr.rightButtonDown()) { this.exitBuild(); return; }
-            if (!this.state.buildMode) return;
-            const gx = Math.floor(ptr.worldX / TILE);
-            const gy = Math.floor(ptr.worldY / TILE);
-            if (this.canPlace(this.state.buildMode, gx, gy)) {
-                this.placeHabitat(this.state.buildMode, gx, gy);
+            if (this._skipPointerDown) { this._skipPointerDown = false; return; }
+            if (this.state.buildMode) {
+                const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor(ptr.worldY / TILE);
+                if (this.canPlace(this.state.buildMode, gx, gy)) this.placeHabitat(this.state.buildMode, gx, gy);
+            } else {
+                const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor(ptr.worldY / TILE);
+                if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
+                    const cell = this.grid[gy]?.[gx];
+                    if (cell && typeof cell === 'string' && cell.startsWith('hab_')) {
+                        const hab = this.state.habitats.find(h => h.id === cell);
+                        if (hab) { this.sfx.click(); this.game.events.emit('showHabitatInfo', hab); }
+                    }
+                }
             }
         });
 
@@ -158,16 +156,8 @@ export default class GameScene extends Phaser.Scene {
 
     /* ========== BUILD ========== */
 
-    enterBuild(type) {
-        this.state.buildMode = type;
-        this.game.events.emit('buildModeChanged', type);
-    }
-
-    exitBuild() {
-        this.state.buildMode = null;
-        this.preview.setVisible(false);
-        this.game.events.emit('buildModeChanged', null);
-    }
+    enterBuild(type) { this.state.buildMode = type; this.game.events.emit('buildModeChanged', type); }
+    exitBuild() { this.state.buildMode = null; this.preview.setVisible(false); this.game.events.emit('buildModeChanged', null); }
 
     getHabitatCost(type) {
         let cost = HABITATS[type].cost;
@@ -187,36 +177,28 @@ export default class GameScene extends Phaser.Scene {
     }
 
     getHabitatCapacity(hab) {
-        const base = HABITATS[hab.type].capacity;
-        const bonus = this.state.upgrades.has('habitat_plus') ? 1 : 0;
-        return base + bonus;
+        return HABITATS[hab.type].capacity + (this.state.upgrades.has('habitat_plus') ? 1 : 0);
     }
 
     placeHabitat(type, gx, gy, opts = {}) {
         const ht = HABITATS[type];
-        const id = opts.id || `hab_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-
+        const id = opts.id || genId('hab');
         for (let dy = 0; dy < ht.h; dy++)
             for (let dx = 0; dx < ht.w; dx++)
                 this.grid[gy + dy][gx + dx] = id;
 
         const gfx = this.add.graphics().setDepth(10);
-        const px = gx * TILE, py = gy * TILE;
-        const pw = ht.w * TILE, ph = ht.h * TILE;
-        gfx.fillStyle(ht.fill, 0.4);
-        gfx.fillRect(px, py, pw, ph);
-        gfx.lineStyle(2, ht.stroke, 0.9);
-        gfx.strokeRect(px + 1, py + 1, pw - 2, ph - 2);
+        const px = gx * TILE, py = gy * TILE, pw = ht.w * TILE, ph = ht.h * TILE;
+        gfx.fillStyle(ht.fill, 0.4); gfx.fillRect(px, py, pw, ph);
+        gfx.lineStyle(2, ht.stroke, 0.9); gfx.strokeRect(px + 1, py + 1, pw - 2, ph - 2);
 
         const decor = this.addHabitatDecor(type, gx, gy, ht);
-
         const label = this.add.text(px + pw / 2, py + 4, ht.name, {
-            fontFamily: '"Press Start 2P", monospace',
-            fontSize: '7px', color: '#FFFFFF',
+            fontFamily: '"Press Start 2P", monospace', fontSize: '8px', color: '#FFFFFF',
             stroke: '#000000', strokeThickness: 2
         }).setOrigin(0.5, 0).setDepth(15);
 
-        const hab = { id, type, gx, gy, w: ht.w, h: ht.h, animals: [], gfx, label, decor };
+        const hab = { id, type, gx, gy, w: ht.w, h: ht.h, animals: [], gfx, label, decor, enrichments: [] };
         this.state.habitats.push(hab);
 
         if (opts.cost !== false) {
@@ -224,7 +206,6 @@ export default class GameScene extends Phaser.Scene {
             this.cameras.main.flash(150, 200, 255, 200, true);
             this.sfx.build();
         }
-
         return hab;
     }
 
@@ -233,83 +214,123 @@ export default class GameScene extends Phaser.Scene {
         const base = gx * TILE, top = gy * TILE;
         const g = this.add.graphics().setDepth(12);
         const objects = [g];
-
         if (type === 'forest') {
             for (let i = 0; i < 4; i++) {
                 const tx = base + rng.between(8, ht.w * TILE - 8);
                 const ty = top + rng.between(16, ht.h * TILE - 8);
-                g.fillStyle(0x2a5a2a);
-                g.fillCircle(tx, ty - 10, 8);
-                g.fillStyle(0x4a3020);
-                g.fillRect(tx - 2, ty - 4, 4, 8);
+                g.fillStyle(0x2a5a2a); g.fillCircle(tx, ty - 10, 8);
+                g.fillStyle(0x4a3020); g.fillRect(tx - 2, ty - 4, 4, 8);
                 const treeImg = this.add.circle(tx, ty - 10, 8, 0x2a5a2a, 0).setDepth(12);
-                this.tweens.add({
-                    targets: treeImg, angle: 2, yoyo: true, repeat: -1,
-                    duration: 2000 + rng.between(0, 1000), ease: 'Sine.easeInOut'
-                });
+                this.tweens.add({ targets: treeImg, angle: 2, yoyo: true, repeat: -1, duration: 2000 + rng.between(0, 1000), ease: 'Sine.easeInOut' });
                 objects.push(treeImg);
             }
         } else if (type === 'pond') {
-            const cx = base + ht.w * TILE / 2;
-            const cy = top + ht.h * TILE / 2 + 4;
+            const cx = base + ht.w * TILE / 2, cy = top + ht.h * TILE / 2 + 4;
             const rad = ht.w * TILE / 3;
-            g.fillStyle(0x3a6a9a, 0.5);
-            g.fillCircle(cx, cy, rad);
-            g.fillStyle(0x5a9aca, 0.3);
-            g.fillCircle(cx - 5, cy - 3, rad / 2);
+            g.fillStyle(0x3a6a9a, 0.5); g.fillCircle(cx, cy, rad);
+            g.fillStyle(0x5a9aca, 0.3); g.fillCircle(cx - 5, cy - 3, rad / 2);
             const shimmer = this.add.circle(cx, cy, rad * 0.7, 0x88bbee, 0.1).setDepth(12);
-            this.tweens.add({
-                targets: shimmer, alpha: 0.25, scaleX: 1.05, scaleY: 0.95,
-                yoyo: true, repeat: -1, duration: 2500, ease: 'Sine.easeInOut'
-            });
+            this.tweens.add({ targets: shimmer, alpha: 0.25, scaleX: 1.05, scaleY: 0.95, yoyo: true, repeat: -1, duration: 2500, ease: 'Sine.easeInOut' });
             objects.push(shimmer);
         } else if (type === 'meadow') {
             for (let i = 0; i < 6; i++) {
                 const fx = base + rng.between(6, ht.w * TILE - 6);
                 const fy = top + rng.between(14, ht.h * TILE - 6);
-                const fc = rng.pick([0xFFDD44, 0xFF8899, 0xAABBFF, 0xFFFFFF]);
-                g.fillStyle(fc);
+                g.fillStyle(rng.pick([0xFFDD44, 0xFF8899, 0xAABBFF, 0xFFFFFF]));
                 g.fillCircle(fx, fy, 2);
             }
         } else if (type === 'barn') {
-            const bx = base + ht.w * TILE / 2 - 14;
-            const by = top + 14;
-            g.fillStyle(0x8B4513);
-            g.fillRect(bx, by, 28, 20);
-            g.fillStyle(0xA0522D);
-            g.fillTriangle(bx - 4, by, bx + 14, by - 10, bx + 32, by);
-            g.fillStyle(0x444444);
-            g.fillRect(bx + 10, by + 8, 8, 12);
+            const bx = base + ht.w * TILE / 2 - 14, by = top + 14;
+            g.fillStyle(0x8B4513); g.fillRect(bx, by, 28, 20);
+            g.fillStyle(0xA0522D); g.fillTriangle(bx - 4, by, bx + 14, by - 10, bx + 32, by);
+            g.fillStyle(0x444444); g.fillRect(bx + 10, by + 8, 8, 12);
         }
-
         return objects;
+    }
+
+    /* ========== ENRICHMENT ========== */
+
+    addEnrichment(habitatId, enrichId) {
+        const hab = this.state.habitats.find(h => h.id === habitatId);
+        const en = ENRICHMENTS[enrichId];
+        if (!hab || !en) return false;
+        if (hab.enrichments.length >= 3) {
+            this.game.events.emit('notification', 'Habitat full! Max 3 enrichments.');
+            this.sfx.error(); return false;
+        }
+        if (en.habitats && !en.habitats.includes(hab.type)) {
+            this.game.events.emit('notification', 'Not compatible with this habitat.');
+            this.sfx.error(); return false;
+        }
+        if (this.state.coins < en.cost) {
+            this.game.events.emit('notification', 'Not enough coins!');
+            this.sfx.error(); return false;
+        }
+        this.spendCoins(en.cost);
+        hab.enrichments.push(enrichId);
+
+        const px = (hab.gx + 0.3 + Math.random() * (hab.w - 0.6)) * TILE;
+        const py = (hab.gy + 0.4 + Math.random() * (hab.h - 0.8)) * TILE;
+        const spr = this.add.image(px, py, `enrich_${enrichId}`).setDepth(14).setScale(0.9);
+        this.enrichmentSprites.push({ habitatId, enrichId, sprite: spr });
+
+        this.sfx.build();
+        this.game.events.emit('notification', `${en.name} added!`);
+        if (!this.state.achievementsEarned.has('first_enrichment')) this.checkAchievements();
+        return true;
+    }
+
+    getEnrichmentHappyBonus(hab) {
+        let bonus = 0;
+        for (const eId of (hab.enrichments || [])) {
+            const en = ENRICHMENTS[eId];
+            if (en) bonus += en.happyBonus;
+        }
+        return bonus;
+    }
+
+    getEnrichmentAppealBonus(hab) {
+        let bonus = 0;
+        for (const eId of (hab.enrichments || [])) {
+            const en = ENRICHMENTS[eId];
+            if (en) bonus += en.appealBonus;
+        }
+        return bonus;
     }
 
     /* ========== ANIMALS ========== */
 
-    addAnimal(speciesId, name, habitatId) {
+    addAnimal(speciesId, name, habitatId, opts = {}) {
         const hab = this.state.habitats.find(h => h.id === habitatId);
         if (!hab) return null;
 
         const ax = (hab.gx + 0.5 + Math.random() * (hab.w - 1)) * TILE;
         const ay = (hab.gy + 0.5 + Math.random() * (hab.h - 1)) * TILE;
-
         const sprite = this.add.image(ax, ay, `animal_${speciesId}`).setDepth(40);
         sprite.setInteractive({ useHandCursor: true });
 
+        const trait = opts.trait || Phaser.Utils.Array.GetRandom(TRAIT_IDS);
+
         const animal = {
-            id: `a_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
-            speciesId, name, habitatId,
-            hunger: 75, happiness: 60, health: 100,
+            id: opts.id || genId('a'), speciesId, name, habitatId,
+            hunger: opts.hunger ?? 75, happiness: opts.happiness ?? 60, health: opts.health ?? 100,
             sprite, tx: ax, ty: ay,
             wTimer: 0, wInterval: Phaser.Math.Between(2000, 6000),
-            bobOffset: Math.random() * Math.PI * 2,
-            baseY: ay,
-            sleeping: false
+            bobOffset: Math.random() * Math.PI * 2, baseY: ay, sleeping: false,
+            trait,
+            illness: opts.illness || null,
+            bonds: opts.bonds || [],
+            isBaby: opts.isBaby || false,
+            growthTimer: opts.growthTimer || 0,
+            breedCooldown: opts.breedCooldown || 0,
+            isPregnant: opts.isPregnant || false,
+            pregnancyTimer: opts.pregnancyTimer || 0,
         };
 
-        sprite.on('pointerdown', (ptr) => {
-            ptr.event.stopPropagation();
+        if (animal.isBaby) sprite.setScale(0.6);
+
+        sprite.on('pointerdown', () => {
+            this._skipPointerDown = true;
             this.sfx.click();
             this.game.events.emit('showAnimalInfo', animal);
         });
@@ -322,17 +343,63 @@ export default class GameScene extends Phaser.Scene {
     updateAnimals(delta, time) {
         const isNight = this.state.time >= 1260 || this.state.time < 300;
         const seasonBonus = SEASONS[this.state.season].bonuses;
-        const enrichmentMult = this.state.upgrades.has('enrichment') ? 0.5 : 1;
+        const enrichUpgrade = this.state.upgrades.has('enrichment_up') ? 0.5 : 1;
         const hungerMult = seasonBonus.hungerRate || 1;
 
         for (const a of this.state.animals) {
             const sp = SPECIES[a.speciesId];
+            const tr = TRAITS[a.trait] || {};
             a.sleeping = isNight;
 
-            a.hunger = Math.max(0, a.hunger - sp.hungerRate * hungerMult * delta / 1000);
+            const hab = this.state.habitats.find(h => h.id === a.habitatId);
+            const enrichHappy = hab ? this.getEnrichmentHappyBonus(hab) * 0.002 : 0;
+            const enrichMod = (tr.enrichBonus || 1);
+
+            a.hunger = Math.max(0, a.hunger - sp.hungerRate * (tr.hungerMult || 1) * hungerMult * delta / 1000);
             if (a.hunger < 20) a.happiness = Math.max(0, a.happiness - 0.4 * delta / 1000);
-            a.happiness = Math.max(0, Math.min(100, a.happiness - 0.03 * enrichmentMult * delta / 1000));
+            const happyDecay = 0.03 * (tr.happyMult || 1) * enrichUpgrade;
+            a.happiness = Math.max(0, Math.min(100, a.happiness - happyDecay * delta / 1000 + enrichHappy * enrichMod * delta / 1000));
             if (a.health < 50) a.happiness = Math.max(0, a.happiness - 0.2 * delta / 1000);
+
+            // Bond happiness boost
+            if (a.bonds.length > 0) {
+                a.happiness = Math.min(100, a.happiness + 0.005 * a.bonds.length * delta / 1000);
+            }
+
+            // Illness drain
+            if (a.illness) {
+                const ill = ILLNESSES[a.illness.type];
+                if (ill) {
+                    a.health = Math.max(0, a.health - ill.healthDrain * delta / 1000);
+                    a.happiness = Math.max(0, a.happiness - ill.happyDrain * delta / 1000);
+                }
+            }
+
+            // Baby growth
+            if (a.isBaby) {
+                a.growthTimer += delta / 1000;
+                const growDays = 5;
+                const growProgress = Math.min(1, a.growthTimer / (growDays * 720));
+                a.sprite.setScale(0.6 + 0.4 * growProgress);
+                if (growProgress >= 1) {
+                    a.isBaby = false;
+                    a.growthTimer = 0;
+                    a.sprite.setScale(1);
+                    this.game.events.emit('notification', `${a.name} has grown up!`);
+                }
+            }
+
+            // Breeding cooldown
+            if (a.breedCooldown > 0) a.breedCooldown -= delta / 1000;
+
+            // Pregnancy
+            if (a.isPregnant) {
+                a.pregnancyTimer -= delta / 1000;
+                if (a.pregnancyTimer <= 0) {
+                    a.isPregnant = false;
+                    this.birthBaby(a);
+                }
+            }
 
             if (a.sleeping) {
                 a.sprite.setAlpha(0.75);
@@ -340,31 +407,22 @@ export default class GameScene extends Phaser.Scene {
                 a.zzzTimer += delta;
                 if (a.zzzTimer > 3000) {
                     a.zzzTimer = 0;
-                    const z = this.add.image(a.sprite.x + 10, a.sprite.y - 12, 'particle_zzz')
-                        .setDepth(55).setScale(0.5).setAlpha(0.7);
-                    this.tweens.add({
-                        targets: z, y: z.y - 20, alpha: 0, scale: 0.8,
-                        duration: 1500, onComplete: () => z.destroy()
-                    });
+                    const z = this.add.image(a.sprite.x + 10, a.sprite.y - 12, 'particle_zzz').setDepth(55).setScale(0.5).setAlpha(0.7);
+                    this.tweens.add({ targets: z, y: z.y - 20, alpha: 0, scale: 0.8, duration: 1500, onComplete: () => z.destroy() });
                 }
             } else {
                 a.sprite.setAlpha(1);
-                const bob = Math.sin((time * 0.002) + a.bobOffset) * 1.5;
-                a.sprite.y = a.baseY + bob;
-
+                a.sprite.y = a.baseY + Math.sin((time * 0.002) + a.bobOffset) * 1.5;
                 a.wTimer += delta;
                 if (a.wTimer >= a.wInterval) {
                     a.wTimer = 0;
                     a.wInterval = Phaser.Math.Between(2000, 6000);
-                    const hab = this.state.habitats.find(h => h.id === a.habitatId);
                     if (hab) {
                         a.tx = (hab.gx + 0.5 + Math.random() * (hab.w - 1)) * TILE;
                         a.ty = (hab.gy + 0.5 + Math.random() * (hab.h - 1)) * TILE;
                     }
                 }
-
-                const dx = a.tx - a.sprite.x;
-                const dy = a.ty - a.baseY;
+                const dx = a.tx - a.sprite.x, dy = a.ty - a.baseY;
                 const dist = Math.sqrt(dx * dx + dy * dy);
                 if (dist > 2) {
                     const spd = 18 * delta / 1000;
@@ -374,16 +432,25 @@ export default class GameScene extends Phaser.Scene {
                 }
             }
 
+            // Hungry icon
             if (a.hunger < 15 && !a.hungryIcon) {
                 a.hungryIcon = this.add.text(0, 0, '!', {
-                    fontFamily: '"Press Start 2P", monospace',
-                    fontSize: '10px', color: '#FF4444',
+                    fontFamily: '"Press Start 2P", monospace', fontSize: '10px', color: '#FF4444',
                     stroke: '#000', strokeThickness: 2
                 }).setDepth(55);
             }
             if (a.hungryIcon) {
                 if (a.hunger >= 15) { a.hungryIcon.destroy(); a.hungryIcon = null; }
-                else { a.hungryIcon.setPosition(a.sprite.x + 12, a.sprite.y - 16); }
+                else a.hungryIcon.setPosition(a.sprite.x + 12, a.sprite.y - 16);
+            }
+
+            // Sick icon
+            if (a.illness && !a.sickIcon) {
+                a.sickIcon = this.add.image(0, 0, 'icon_sick').setDepth(56).setScale(0.7);
+            }
+            if (a.sickIcon) {
+                if (!a.illness) { a.sickIcon.destroy(); a.sickIcon = null; }
+                else a.sickIcon.setPosition(a.sprite.x - 12, a.sprite.y - 16);
             }
         }
     }
@@ -391,32 +458,29 @@ export default class GameScene extends Phaser.Scene {
     feedAnimal(id) {
         const a = this.state.animals.find(x => x.id === id);
         if (!a) return;
-        let feedAmount = 30;
-        let happyBonus = 5;
-        if (this.state.upgrades.has('premium_food')) { feedAmount = 60; happyBonus = 15; }
-        else if (this.state.upgrades.has('better_feed')) { feedAmount = 45; }
-
-        a.hunger = Math.min(100, a.hunger + feedAmount);
+        let feedAmt = 30, happyBonus = 5;
+        if (this.state.upgrades.has('premium_food')) { feedAmt = 60; happyBonus = 15; }
+        else if (this.state.upgrades.has('better_feed')) { feedAmt = 45; }
+        a.hunger = Math.min(100, a.hunger + feedAmt);
         a.happiness = Math.min(100, a.happiness + happyBonus);
         this.heartEffect(a.sprite.x, a.sprite.y);
         this.sfx.feed();
         this.tweens.add({
-            targets: a.sprite, scaleX: 1.2, scaleY: 0.85,
+            targets: a.sprite, scaleX: a.isBaby ? 0.72 : 1.2, scaleY: a.isBaby ? 0.51 : 0.85,
             yoyo: true, duration: 150, ease: 'Quad.easeOut',
-            onComplete: () => { a.sprite.scaleX = 1; a.sprite.scaleY = 1; }
+            onComplete: () => { a.sprite.scaleX = a.isBaby ? 0.6 : 1; a.sprite.scaleY = a.isBaby ? 0.6 : 1; }
         });
     }
 
     petAnimal(id) {
         const a = this.state.animals.find(x => x.id === id);
         if (!a) return;
-        a.happiness = Math.min(100, a.happiness + 15);
+        const tr = TRAITS[a.trait] || {};
+        const bonus = 15 * (tr.petBonus || 1);
+        a.happiness = Math.min(100, a.happiness + bonus);
         this.heartEffect(a.sprite.x, a.sprite.y);
         this.sfx.pet();
-        this.tweens.add({
-            targets: a.sprite, y: a.sprite.y - 6,
-            yoyo: true, duration: 180, ease: 'Quad.easeOut'
-        });
+        this.tweens.add({ targets: a.sprite, y: a.sprite.y - 6, yoyo: true, duration: 180, ease: 'Quad.easeOut' });
     }
 
     treatAnimal(id) {
@@ -433,10 +497,23 @@ export default class GameScene extends Phaser.Scene {
 
     healAnimal(id) {
         const a = this.state.animals.find(x => x.id === id);
-        if (!a || this.state.coins < 30) return;
-        if (!this.state.upgrades.has('medical_kit')) return;
-        this.spendCoins(30);
-        a.health = Math.min(100, a.health + 35);
+        if (!a) return;
+        if (a.illness) {
+            const ill = ILLNESSES[a.illness.type];
+            const cost = ill ? ill.treatCost : 30;
+            if (this.state.coins < cost) { this.sfx.error(); return; }
+            this.spendCoins(cost);
+            a.illness = null;
+            if (a.sickIcon) { a.sickIcon.destroy(); a.sickIcon = null; }
+            a.health = Math.min(100, a.health + 25);
+            this.state.stats.healed++;
+            this.game.events.emit('notification', `${a.name} has been cured!`);
+        } else {
+            if (this.state.coins < 30) { this.sfx.error(); return; }
+            if (!this.state.upgrades.has('medical_kit')) return;
+            this.spendCoins(30);
+            a.health = Math.min(100, a.health + 35);
+        }
         a.happiness = Math.min(100, a.happiness + 5);
         this.starEffect(a.sprite.x, a.sprite.y);
         this.sfx.treat();
@@ -444,31 +521,192 @@ export default class GameScene extends Phaser.Scene {
 
     heartEffect(x, y) {
         for (let i = 0; i < 3; i++) {
-            const h = this.add.image(x + Phaser.Math.Between(-8, 8), y, 'particle_heart')
-                .setDepth(55).setScale(0.5).setAlpha(1);
-            this.tweens.add({
-                targets: h, y: y - 25 - i * 8, alpha: 0, scale: 1.2,
-                duration: 700, delay: i * 120, onComplete: () => h.destroy()
-            });
+            const h = this.add.image(x + Phaser.Math.Between(-8, 8), y, 'particle_heart').setDepth(55).setScale(0.5);
+            this.tweens.add({ targets: h, y: y - 25 - i * 8, alpha: 0, scale: 1.2, duration: 700, delay: i * 120, onComplete: () => h.destroy() });
         }
     }
 
     starEffect(x, y) {
         for (let i = 0; i < 2; i++) {
-            const s = this.add.image(x + Phaser.Math.Between(-12, 12), y - 5, 'particle_star')
-                .setDepth(55).setScale(0.4).setAlpha(1);
-            this.tweens.add({
-                targets: s, y: y - 30, alpha: 0, scale: 1, angle: 180,
-                duration: 600, delay: i * 100, onComplete: () => s.destroy()
-            });
+            const s = this.add.image(x + Phaser.Math.Between(-12, 12), y - 5, 'particle_star').setDepth(55).setScale(0.4);
+            this.tweens.add({ targets: s, y: y - 30, alpha: 0, scale: 1, angle: 180, duration: 600, delay: i * 100, onComplete: () => s.destroy() });
         }
+    }
+
+    /* ========== BREEDING ========== */
+
+    canBreed(animal) {
+        if (animal.isBaby || animal.isPregnant || animal.breedCooldown > 0) return false;
+        if (animal.illness) return false;
+        const hab = this.state.habitats.find(h => h.id === animal.habitatId);
+        if (!hab || hab.animals.length >= this.getHabitatCapacity(hab)) return false;
+        const partner = this.state.animals.find(b =>
+            b.id !== animal.id && b.speciesId === animal.speciesId &&
+            b.habitatId === animal.habitatId && !b.isBaby && !b.isPregnant &&
+            b.breedCooldown <= 0 && !b.illness
+        );
+        return !!partner;
+    }
+
+    startBreeding(animalId) {
+        const a = this.state.animals.find(x => x.id === animalId);
+        if (!a || !this.canBreed(a)) { this.sfx.error(); return; }
+        const partner = this.state.animals.find(b =>
+            b.id !== a.id && b.speciesId === a.speciesId &&
+            b.habitatId === a.habitatId && !b.isBaby && !b.isPregnant &&
+            b.breedCooldown <= 0 && !b.illness
+        );
+        if (!partner) return;
+
+        a.isPregnant = true;
+        a.pregnancyTimer = 3 * 720; // 3 game-days in seconds at TIME_SCALE
+        a.breedCooldown = 7 * 720;
+        partner.breedCooldown = 7 * 720;
+
+        this.heartEffect(a.sprite.x, a.sprite.y);
+        this.heartEffect(partner.sprite.x, partner.sprite.y);
+        this.sfx.rescue();
+        this.game.events.emit('notification', `${a.name} and ${partner.name} are expecting!`);
+    }
+
+    birthBaby(parent) {
+        const sp = SPECIES[parent.speciesId];
+        const name = Phaser.Utils.Array.GetRandom(sp.names);
+        const baby = this.addAnimal(parent.speciesId, name, parent.habitatId, { isBaby: true });
+        if (baby) {
+            this.state.stats.bred++;
+            if (!this.state.discoveries.has(parent.speciesId)) this.state.discoveries.add(parent.speciesId);
+            this.game.events.emit('notification', `${name} the baby ${sp.name} was born!`);
+            this.sfx.rescue();
+            this.starEffect(parent.sprite.x, parent.sprite.y);
+        }
+    }
+
+    /* ========== ILLNESS ========== */
+
+    checkIllness() {
+        const hasVet = this.state.staff.some(s => s.type === 'vet');
+        for (const a of this.state.animals) {
+            if (a.illness) {
+                if (hasVet && Math.random() < 0.3) {
+                    a.illness = null;
+                    if (a.sickIcon) { a.sickIcon.destroy(); a.sickIcon = null; }
+                    a.health = Math.min(100, a.health + 15);
+                    this.game.events.emit('notification', `Vet cured ${a.name}!`);
+                }
+                continue;
+            }
+            let chance = 0.03;
+            if (a.hunger < 20) chance += 0.04;
+            if (a.happiness < 20) chance += 0.02;
+            if (hasVet) chance *= 0.4;
+            if (Math.random() < chance) {
+                const types = Object.keys(ILLNESSES);
+                a.illness = { type: Phaser.Utils.Array.GetRandom(types), dayStarted: this.state.day };
+                const ill = ILLNESSES[a.illness.type];
+                this.game.events.emit('notification', `${a.name} has ${ill.name}!`);
+            }
+        }
+    }
+
+    /* ========== BONDS ========== */
+
+    updateBonds() {
+        for (const hab of this.state.habitats) {
+            const habAnimals = this.state.animals.filter(a => a.habitatId === hab.id && !a.isBaby);
+            if (habAnimals.length < 2) continue;
+            for (let i = 0; i < habAnimals.length; i++) {
+                for (let j = i + 1; j < habAnimals.length; j++) {
+                    const a = habAnimals[i], b = habAnimals[j];
+                    if (a.bonds.includes(b.id)) continue;
+                    let chance = 0.05;
+                    if (TRAITS[a.trait]?.id === 'social') chance += 0.1;
+                    if (TRAITS[b.trait]?.id === 'social') chance += 0.1;
+                    if (Math.random() < chance) {
+                        a.bonds.push(b.id);
+                        b.bonds.push(a.id);
+                        this.game.events.emit('notification', `${a.name} and ${b.name} became friends!`);
+                    }
+                }
+            }
+        }
+    }
+
+    /* ========== MISSIONS ========== */
+
+    launchMission(biomeId) {
+        const m = MISSIONS[biomeId];
+        if (!m) return;
+        if (this.state.activeMissions.length >= 2) {
+            this.game.events.emit('notification', 'Max 2 active missions!');
+            this.sfx.error(); return;
+        }
+        if (this.state.coins < m.cost) {
+            this.game.events.emit('notification', 'Not enough coins!');
+            this.sfx.error(); return;
+        }
+        this.spendCoins(m.cost);
+        this.state.activeMissions.push({
+            id: genId('mis'), biome: biomeId,
+            startTime: this.state.time, startDay: this.state.day,
+            duration: m.duration, elapsed: 0, complete: false
+        });
+        this.sfx.build();
+        this.game.events.emit('notification', `Mission to ${m.name} launched!`);
+        this.game.events.emit('missionsUpdate');
+    }
+
+    updateMissions(delta) {
+        for (const mis of this.state.activeMissions) {
+            if (mis.complete) continue;
+            mis.elapsed += TIME_SCALE * delta / 1000;
+            if (mis.elapsed >= mis.duration) {
+                mis.complete = true;
+                this.completeMission(mis);
+            }
+        }
+        this.state.activeMissions = this.state.activeMissions.filter(m => !m.complete);
+    }
+
+    completeMission(mis) {
+        const m = MISSIONS[mis.biome];
+        this.state.stats.missionsComplete++;
+
+        const roll = Math.random();
+        if (roll < 0.65) {
+            const speciesId = Phaser.Utils.Array.GetRandom(m.species);
+            const sp = SPECIES[speciesId];
+            const name = Phaser.Utils.Array.GetRandom(sp.names);
+            const hab = this.findCompatibleHabitat(sp);
+            if (hab) {
+                this.addAnimal(speciesId, name, hab.id);
+                this.state.stats.rescued++;
+                if (!this.state.discoveries.has(speciesId)) {
+                    this.state.discoveries.add(speciesId);
+                    this.game.events.emit('notification', `New species discovered: ${sp.name}!`);
+                }
+                this.game.events.emit('notification', `Mission found ${name} the ${sp.name}!`);
+                this.sfx.rescue();
+            } else {
+                const coins = Math.round(m.cost * 0.5);
+                this.addCoins(coins);
+                this.game.events.emit('notification', `Found a ${sp.name} but no habitat! Refunded ${coins}g.`);
+            }
+        } else if (roll < 0.9) {
+            const coins = Phaser.Math.Between(30, 80);
+            this.addCoins(coins);
+            this.game.events.emit('notification', `Mission found ${coins}g worth of supplies!`);
+        } else {
+            this.game.events.emit('notification', 'Mission found nothing this time.');
+        }
+        this.sfx.notify();
+        this.game.events.emit('missionsUpdate');
     }
 
     /* ========== SEASONS ========== */
 
     getSeason() {
-        const idx = Math.floor(((this.state.day - 1) % SEASON_CYCLE) / SEASON_LENGTH);
-        return SEASON_ORDER[idx];
+        return SEASON_ORDER[Math.floor(((this.state.day - 1) % SEASON_CYCLE) / SEASON_LENGTH)];
     }
 
     updateSeason() {
@@ -476,11 +714,11 @@ export default class GameScene extends Phaser.Scene {
         if (newSeason !== this.state.season) {
             this.state.prevSeason = this.state.season;
             this.state.season = newSeason;
-            const s = SEASONS[newSeason];
-            this.game.events.emit('notification', `${s.name} has arrived!`);
+            this.game.events.emit('notification', `${SEASONS[newSeason].name} has arrived!`);
             this.game.events.emit('seasonChanged', newSeason);
             this.sfx.seasonal();
         }
+        this.state.seasonsVisited.add(this.state.season);
         const s = SEASONS[this.state.season];
         this.seasonOverlay.setFillStyle(s.tint, s.tintAlpha);
         this.updateSeasonParticles();
@@ -502,7 +740,6 @@ export default class GameScene extends Phaser.Scene {
 
         const t = this.state.time;
         let color = 0x000033, alpha = 0;
-
         if (t >= 300 && t < 420) {
             const p = (t - 300) / 120;
             alpha = 0.18 * (1 - p);
@@ -510,17 +747,14 @@ export default class GameScene extends Phaser.Scene {
         } else if (t >= 420 && t < 720) {
             alpha = 0;
         } else if (t >= 720 && t < 1020) {
-            alpha = 0.03;
-            color = 0x332200;
+            alpha = 0.03; color = 0x332200;
         } else if (t >= 1020 && t < 1200) {
             const p = (t - 1020) / 180;
             alpha = 0.08 + p * 0.2;
             color = Phaser.Display.Color.GetColor(50 * p | 0, 15 * p | 0, 35 * p | 0);
         } else {
-            color = 0x000033;
-            alpha = 0.32;
+            color = 0x000033; alpha = 0.32;
         }
-
         this.overlay.setFillStyle(color, alpha);
         this.game.events.emit('timeUpdate', {
             time: this.state.time, day: this.state.day,
@@ -530,6 +764,17 @@ export default class GameScene extends Phaser.Scene {
 
     /* ========== VISITORS ========== */
 
+    pickVisitorType() {
+        const types = Object.values(VISITOR_TYPES).filter(vt => {
+            if (vt.minRep && this.state.rep < vt.minRep) return false;
+            return true;
+        });
+        const total = types.reduce((s, t) => s + t.weight, 0);
+        let r = Math.random() * total;
+        for (const t of types) { r -= t.weight; if (r <= 0) return t; }
+        return types[0];
+    }
+
     trySpawnVisitor() {
         const t = this.state.time;
         if (t < 480 || t > 1080) return;
@@ -538,16 +783,16 @@ export default class GameScene extends Phaser.Scene {
         const maxVisitors = Math.round(8 * (seasonBonus.visitors || 1));
         if (this.visitors.length >= maxVisitors) return;
 
-        const vi = Phaser.Math.Between(0, 3);
-        const sprite = this.add.image(15 * TILE, (ROWS - 1) * TILE, `visitor_${vi}`).setDepth(30).setAlpha(0.85);
+        const vType = this.pickVisitorType();
+        const sprite = this.add.image(15 * TILE, (ROWS - 1) * TILE, `visitor_${vType.spriteIdx}`).setDepth(30).setAlpha(0.85);
 
         this.visitors.push({
-            sprite,
+            sprite, visitorType: vType.id,
             tx: Phaser.Math.Between(3, COLS - 4) * TILE,
             ty: Phaser.Math.Between(3, ROWS - 4) * TILE,
             speed: Phaser.Math.Between(25, 40),
             timer: 0,
-            maxTime: Phaser.Math.Between(12000, 25000),
+            maxTime: Phaser.Math.Between(12000, 25000) * (vType.stayMult || 1),
             phase: 'entering'
         });
     }
@@ -556,11 +801,8 @@ export default class GameScene extends Phaser.Scene {
         for (let i = this.visitors.length - 1; i >= 0; i--) {
             const v = this.visitors[i];
             v.timer += delta;
-
-            const dx = v.tx - v.sprite.x;
-            const dy = v.ty - v.sprite.y;
+            const dx = v.tx - v.sprite.x, dy = v.ty - v.sprite.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
-
             if (dist > 3) {
                 const spd = v.speed * delta / 1000;
                 v.sprite.x += (dx / dist) * spd;
@@ -572,36 +814,41 @@ export default class GameScene extends Phaser.Scene {
                 v.ty = Phaser.Math.Between(3, ROWS - 4) * TILE;
             } else if (v.phase === 'wandering') {
                 if (v.timer >= v.maxTime) {
-                    v.phase = 'leaving';
-                    v.tx = 15 * TILE;
-                    v.ty = (ROWS - 1) * TILE;
+                    v.phase = 'leaving'; v.tx = 15 * TILE; v.ty = (ROWS - 1) * TILE;
                 } else {
                     v.tx = Phaser.Math.Between(3, COLS - 4) * TILE;
                     v.ty = Phaser.Math.Between(3, ROWS - 4) * TILE;
                 }
             } else if (v.phase === 'leaving') {
-                this.visitorIncome(v);
-                v.sprite.destroy();
-                this.visitors.splice(i, 1);
+                this.visitorIncome(v); v.sprite.destroy(); this.visitors.splice(i, 1);
             }
         }
     }
 
     visitorIncome(v) {
+        const vType = VISITOR_TYPES[v.visitorType] || VISITOR_TYPES.family;
         let income = 5;
         const avgHappy = this.state.animals.length > 0
             ? this.state.animals.reduce((s, a) => s + a.happiness, 0) / this.state.animals.length : 50;
         income *= (0.5 + avgHappy / 100);
 
         for (const a of this.state.animals) {
-            income += SPECIES[a.speciesId].appeal * 0.5;
+            let appeal = SPECIES[a.speciesId].appeal * 0.5;
+            if (vType.prefTypes?.length && vType.prefTypes.includes(SPECIES[a.speciesId].type)) appeal *= 1.5;
+            if (vType.prefRarity?.length && vType.prefRarity.includes(SPECIES[a.speciesId].rarity)) appeal *= 1.5;
+            income += appeal;
         }
 
+        // Enrichment appeal bonus
+        for (const hab of this.state.habitats) {
+            income += this.getEnrichmentAppealBonus(hab) * 0.5;
+        }
+
+        income *= vType.incomeMult;
         const seasonBonus = SEASONS[this.state.season].bonuses;
         if (seasonBonus.income) income *= seasonBonus.income;
         if (this.state.upgrades.has('sanctuary_sign')) income *= 1.2;
         if (this.state.upgrades.has('gift_shop')) income += 3;
-
         const guideCount = this.state.staff.filter(s => s.type === 'guide').length;
         income *= (1 + guideCount * 0.25);
 
@@ -611,14 +858,10 @@ export default class GameScene extends Phaser.Scene {
         this.state.rep++;
 
         const txt = this.add.text(v.sprite.x, v.sprite.y - 10, `+${income}`, {
-            fontFamily: '"Press Start 2P", monospace',
-            fontSize: '8px', color: CLR.gold,
+            fontFamily: '"Press Start 2P", monospace', fontSize: '8px', color: CLR.gold,
             stroke: '#000', strokeThickness: 2
         }).setOrigin(0.5).setDepth(55);
-        this.tweens.add({
-            targets: txt, y: txt.y - 20, alpha: 0,
-            duration: 800, onComplete: () => txt.destroy()
-        });
+        this.tweens.add({ targets: txt, y: txt.y - 20, alpha: 0, duration: 800, onComplete: () => txt.destroy() });
     }
 
     /* ========== STAFF ========== */
@@ -627,24 +870,15 @@ export default class GameScene extends Phaser.Scene {
         const st = STAFF_TYPES[typeId];
         if (this.state.coins < st.hireCost) {
             this.game.events.emit('notification', 'Not enough coins!');
-            this.sfx.error();
-            return false;
+            this.sfx.error(); return false;
         }
         this.spendCoins(st.hireCost);
-
-        const sprite = this.add.image(15 * TILE, (ROWS - 2) * TILE, `staff_${typeId}`)
-            .setDepth(32).setAlpha(0.9);
-
-        const staff = {
-            id: `staff_${Date.now()}`,
-            type: typeId,
-            sprite,
+        const sprite = this.add.image(15 * TILE, (ROWS - 2) * TILE, `staff_${typeId}`).setDepth(32).setAlpha(0.9);
+        this.state.staff.push({
+            id: genId('staff'), type: typeId, sprite,
             tx: Phaser.Math.Between(4, COLS - 5) * TILE,
-            ty: Phaser.Math.Between(4, ROWS - 5) * TILE,
-            wTimer: 0
-        };
-
-        this.state.staff.push(staff);
+            ty: Phaser.Math.Between(4, ROWS - 5) * TILE, wTimer: 0
+        });
         this.sfx.build();
         this.game.events.emit('notification', `${st.name} hired!`);
         this.game.events.emit('staffUpdate', this.state.staff);
@@ -663,13 +897,11 @@ export default class GameScene extends Phaser.Scene {
     updateStaff(delta) {
         for (const s of this.state.staff) {
             s.wTimer += delta;
-            const dx = s.tx - s.sprite.x;
-            const dy = s.ty - s.sprite.y;
+            const dx = s.tx - s.sprite.x, dy = s.ty - s.sprite.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
             if (dist > 3) {
                 const spd = 22 * delta / 1000;
-                s.sprite.x += (dx / dist) * spd;
-                s.sprite.y += (dy / dist) * spd;
+                s.sprite.x += (dx / dist) * spd; s.sprite.y += (dy / dist) * spd;
                 s.sprite.setFlipX(dx < 0);
             } else {
                 s.tx = Phaser.Math.Between(4, COLS - 5) * TILE;
@@ -680,16 +912,12 @@ export default class GameScene extends Phaser.Scene {
 
     staffWork() {
         for (const s of this.state.staff) {
-            const st = STAFF_TYPES[s.type];
             if (s.type === 'caretaker') {
-                this.state.animals.forEach(a => {
-                    a.hunger = Math.min(100, a.hunger + 8);
-                });
+                this.state.animals.forEach(a => { a.hunger = Math.min(100, a.hunger + 8); });
             } else if (s.type === 'volunteer') {
                 if (this.state.habitats.length > 0) {
                     const hab = Phaser.Utils.Array.GetRandom(this.state.habitats);
-                    this.state.animals
-                        .filter(a => a.habitatId === hab.id)
+                    this.state.animals.filter(a => a.habitatId === hab.id)
                         .forEach(a => { a.hunger = Math.min(100, a.hunger + 12); });
                 }
             } else if (s.type === 'vet') {
@@ -702,27 +930,20 @@ export default class GameScene extends Phaser.Scene {
     }
 
     paySalaries() {
-        let totalSalary = 0;
-        for (const s of this.state.staff) {
-            totalSalary += STAFF_TYPES[s.type].salary;
-        }
-        if (totalSalary > 0) {
-            if (this.state.coins >= totalSalary) {
-                this.spendCoins(totalSalary);
-                this.game.events.emit('notification', `Paid ${totalSalary}g in salaries.`);
-            } else {
-                this.game.events.emit('notification', `Can't afford salaries! Staff leaving.`);
-                while (this.state.staff.length > 0 && this.state.coins < totalSalary) {
-                    const last = this.state.staff[this.state.staff.length - 1];
-                    last.sprite.destroy();
-                    this.state.staff.pop();
-                    totalSalary -= STAFF_TYPES[last.type].salary;
-                }
-                if (totalSalary > 0 && this.state.coins >= totalSalary) {
-                    this.spendCoins(totalSalary);
-                }
-                this.game.events.emit('staffUpdate', this.state.staff);
+        let total = this.state.staff.reduce((s, st) => s + STAFF_TYPES[st.type].salary, 0);
+        if (total <= 0) return;
+        if (this.state.coins >= total) {
+            this.spendCoins(total);
+            this.game.events.emit('notification', `Paid ${total}g in salaries.`);
+        } else {
+            this.game.events.emit('notification', "Can't afford salaries! Staff leaving.");
+            while (this.state.staff.length > 0 && this.state.coins < total) {
+                const last = this.state.staff.pop();
+                last.sprite.destroy();
+                total -= STAFF_TYPES[last.type].salary;
             }
+            if (total > 0 && this.state.coins >= total) this.spendCoins(total);
+            this.game.events.emit('staffUpdate', this.state.staff);
         }
     }
 
@@ -731,22 +952,16 @@ export default class GameScene extends Phaser.Scene {
     buyUpgrade(id) {
         const up = UPGRADES[id];
         if (!up || this.state.upgrades.has(id)) return false;
-        if (this.state.coins < up.cost) {
-            this.sfx.error();
-            this.game.events.emit('notification', 'Not enough coins!');
-            return false;
-        }
+        if (this.state.coins < up.cost) { this.sfx.error(); this.game.events.emit('notification', 'Not enough coins!'); return false; }
         this.spendCoins(up.cost);
         this.state.upgrades.add(id);
         this.sfx.upgrade();
         this.game.events.emit('notification', `Upgrade unlocked: ${up.name}!`);
         this.game.events.emit('upgradesUpdate', [...this.state.upgrades]);
-
         if (id === 'conservation') {
             this.rescueInterval = Math.round(this.rescueInterval * 0.7);
             this.rescueTimer.delay = this.rescueInterval;
         }
-
         return true;
     }
 
@@ -756,31 +971,19 @@ export default class GameScene extends Phaser.Scene {
         const sp = forceSpecies ? SPECIES[forceSpecies] : this.pickSpecies();
         const name = Phaser.Utils.Array.GetRandom(sp.names);
         const hab = this.findCompatibleHabitat(sp);
-
         const tmpl = Phaser.Utils.Array.GetRandom(RESCUE_MSG);
         const msg = tmpl.replace('{name}', name).replace('{species}', sp.name);
-
         this.sfx.rescue();
         this.game.events.emit('rescueEvent', { speciesId: sp.id, name, habitat: hab, msg });
     }
 
     pickSpecies() {
         const season = this.state.season;
-        const list = Object.values(SPECIES).filter(s => {
-            if (s.season && s.season !== season) return false;
-            return true;
-        });
-        const weights = list.map(s => {
-            let w = RARITY_WEIGHT[s.rarity];
-            if (s.season === season) w *= 2;
-            return w;
-        });
+        const list = Object.values(SPECIES).filter(s => !s.season || s.season === season);
+        const weights = list.map(s => { let w = RARITY_WEIGHT[s.rarity]; if (s.season === season) w *= 2; return w; });
         const total = weights.reduce((a, b) => a + b, 0);
         let r = Math.random() * total;
-        for (let i = 0; i < list.length; i++) {
-            r -= weights[i];
-            if (r <= 0) return list[i];
-        }
+        for (let i = 0; i < list.length; i++) { r -= weights[i]; if (r <= 0) return list[i]; }
         return list[0];
     }
 
@@ -793,22 +996,57 @@ export default class GameScene extends Phaser.Scene {
 
     acceptRescue(ev) {
         const hab = this.findCompatibleHabitat(SPECIES[ev.speciesId]);
-        if (!hab) {
-            this.game.events.emit('notification', 'No compatible habitat! Build one first.');
-            this.sfx.error();
-            return;
-        }
-
+        if (!hab) { this.game.events.emit('notification', 'No compatible habitat! Build one first.'); this.sfx.error(); return; }
         this.addAnimal(ev.speciesId, ev.name, hab.id);
         this.state.stats.rescued++;
         this.state.rep += 10;
-
         if (!this.state.discoveries.has(ev.speciesId)) {
             this.state.discoveries.add(ev.speciesId);
             this.game.events.emit('notification', `New species discovered: ${SPECIES[ev.speciesId].name}!`);
         }
-
         this.game.events.emit('notification', `${ev.name} the ${SPECIES[ev.speciesId].name} has been rescued!`);
+    }
+
+    /* ========== ACHIEVEMENTS ========== */
+
+    checkAchievements() {
+        const s = this.state;
+        const checks = {
+            first_rescue: () => s.stats.rescued >= 1,
+            five_animals: () => s.animals.length >= 5,
+            ten_animals: () => s.animals.length >= 10,
+            twenty_animals: () => s.animals.length >= 20,
+            all_habitats: () => {
+                const built = new Set(s.habitats.map(h => h.type));
+                return Object.keys(HABITATS).every(k => built.has(k));
+            },
+            first_breed: () => s.stats.bred >= 1,
+            five_breeds: () => s.stats.bred >= 5,
+            rare_find: () => [...s.discoveries].some(d => SPECIES[d]?.rarity === 'rare'),
+            legendary_find: () => [...s.discoveries].some(d => SPECIES[d]?.rarity === 'legendary'),
+            rich: () => s.stats.earned >= 5000,
+            millionaire: () => s.stats.earned >= 50000,
+            full_year: () => s.seasonsVisited.size >= 4,
+            half_bestiary: () => s.discoveries.size >= Math.ceil(Object.keys(SPECIES).length / 2),
+            full_bestiary: () => s.discoveries.size >= Object.keys(SPECIES).length,
+            first_mission: () => s.stats.missionsComplete >= 1,
+            first_staff: () => s.staff.length >= 1,
+            first_upgrade: () => s.upgrades.size >= 1,
+            all_upgrades: () => s.upgrades.size >= Object.keys(UPGRADES).length,
+            first_enrichment: () => s.habitats.some(h => (h.enrichments || []).length > 0),
+            healer: () => s.stats.healed >= 1,
+        };
+
+        for (const ach of ACHIEVEMENTS) {
+            if (s.achievementsEarned.has(ach.id)) continue;
+            const fn = checks[ach.id];
+            if (fn && fn()) {
+                s.achievementsEarned.add(ach.id);
+                this.game.events.emit('notification', `Achievement: ${ach.name}!`);
+                this.sfx.upgrade();
+                this.game.events.emit('achievementEarned', ach.id);
+            }
+        }
     }
 
     /* ========== ECONOMY ========== */
@@ -829,19 +1067,30 @@ export default class GameScene extends Phaser.Scene {
 
     saveGame() {
         const data = {
-            v: 2,
+            v: 3,
             day: this.state.day, time: this.state.time,
             coins: this.state.coins, rep: this.state.rep,
-            habitats: this.state.habitats.map(h => ({ id: h.id, type: h.type, gx: h.gx, gy: h.gy })),
+            habitats: this.state.habitats.map(h => ({
+                id: h.id, type: h.type, gx: h.gx, gy: h.gy,
+                enrichments: h.enrichments || []
+            })),
             animals: this.state.animals.map(a => ({
-                id: a.id, speciesId: a.speciesId, name: a.name,
-                habitatId: a.habitatId, hunger: a.hunger,
-                happiness: a.happiness, health: a.health
+                id: a.id, speciesId: a.speciesId, name: a.name, habitatId: a.habitatId,
+                hunger: a.hunger, happiness: a.happiness, health: a.health,
+                trait: a.trait, illness: a.illness, bonds: a.bonds,
+                isBaby: a.isBaby, growthTimer: a.growthTimer,
+                breedCooldown: a.breedCooldown, isPregnant: a.isPregnant,
+                pregnancyTimer: a.pregnancyTimer,
             })),
             staff: this.state.staff.map(s => ({ id: s.id, type: s.type })),
             discoveries: [...this.state.discoveries],
             upgrades: [...this.state.upgrades],
-            stats: { ...this.state.stats }
+            achievementsEarned: [...this.state.achievementsEarned],
+            seasonsVisited: [...this.state.seasonsVisited],
+            stats: { ...this.state.stats },
+            activeMissions: this.state.activeMissions.map(m => ({
+                id: m.id, biome: m.biome, duration: m.duration, elapsed: m.elapsed
+            })),
         };
         localStorage.setItem('havenwood_save', JSON.stringify(data));
     }
@@ -851,46 +1100,57 @@ export default class GameScene extends Phaser.Scene {
         if (!raw) return;
         try {
             const d = JSON.parse(raw);
-            this.state.day = d.day;
-            this.state.time = d.time;
-            this.state.coins = d.coins;
-            this.state.rep = d.rep || 0;
+            this.state.day = d.day; this.state.time = d.time;
+            this.state.coins = d.coins; this.state.rep = d.rep || 0;
             this.state.discoveries = new Set(d.discoveries || []);
             this.state.upgrades = new Set(d.upgrades || []);
-            this.state.stats = d.stats || { rescued: 0, visitors: 0, earned: 0 };
+            this.state.achievementsEarned = new Set(d.achievementsEarned || []);
+            this.state.seasonsVisited = new Set(d.seasonsVisited || ['spring']);
+            this.state.stats = { rescued: 0, visitors: 0, earned: 0, bred: 0, missionsComplete: 0, healed: 0, ...d.stats };
             this.state.season = this.getSeason();
 
             for (const h of d.habitats) {
-                this.placeHabitat(h.type, h.gx, h.gy, { id: h.id, cost: false });
+                const hab = this.placeHabitat(h.type, h.gx, h.gy, { id: h.id, cost: false });
+                if (hab && h.enrichments) {
+                    hab.enrichments = h.enrichments;
+                    for (const eId of h.enrichments) {
+                        const px = (hab.gx + 0.3 + Math.random() * (hab.w - 0.6)) * TILE;
+                        const py = (hab.gy + 0.4 + Math.random() * (hab.h - 0.8)) * TILE;
+                        const spr = this.add.image(px, py, `enrich_${eId}`).setDepth(14).setScale(0.9);
+                        this.enrichmentSprites.push({ habitatId: hab.id, enrichId: eId, sprite: spr });
+                    }
+                }
             }
             for (const a of d.animals) {
                 const hab = this.state.habitats.find(h => h.id === a.habitatId);
                 if (!hab) continue;
-                const animal = this.addAnimal(a.speciesId, a.name, hab.id);
-                if (animal) {
-                    animal.id = a.id;
-                    animal.hunger = a.hunger;
-                    animal.happiness = a.happiness;
-                    animal.health = a.health;
-                }
+                const animal = this.addAnimal(a.speciesId, a.name, hab.id, {
+                    id: a.id, hunger: a.hunger, happiness: a.happiness, health: a.health,
+                    trait: a.trait, illness: a.illness, bonds: a.bonds || [],
+                    isBaby: a.isBaby, growthTimer: a.growthTimer,
+                    breedCooldown: a.breedCooldown || 0, isPregnant: a.isPregnant,
+                    pregnancyTimer: a.pregnancyTimer || 0,
+                });
             }
             if (d.staff) {
                 for (const s of d.staff) {
-                    const sprite = this.add.image(15 * TILE, (ROWS - 2) * TILE, `staff_${s.type}`)
-                        .setDepth(32).setAlpha(0.9);
+                    const sprite = this.add.image(15 * TILE, (ROWS - 2) * TILE, `staff_${s.type}`).setDepth(32).setAlpha(0.9);
                     this.state.staff.push({
                         id: s.id, type: s.type, sprite,
                         tx: Phaser.Math.Between(4, COLS - 5) * TILE,
-                        ty: Phaser.Math.Between(4, ROWS - 5) * TILE,
-                        wTimer: 0
+                        ty: Phaser.Math.Between(4, ROWS - 5) * TILE, wTimer: 0
                     });
                 }
+            }
+            if (d.activeMissions) {
+                this.state.activeMissions = d.activeMissions;
             }
 
             this.updateSeason();
             this.game.events.emit('coinsUpdate', this.state.coins);
             this.game.events.emit('upgradesUpdate', [...this.state.upgrades]);
             this.game.events.emit('staffUpdate', this.state.staff);
+            this.game.events.emit('missionsUpdate');
         } catch (e) {
             console.error('Failed to load save:', e);
         }
@@ -902,11 +1162,8 @@ export default class GameScene extends Phaser.Scene {
         const blob = new Blob([raw], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url;
-        a.download = `havenwood_day${this.state.day}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        a.href = url; a.download = `havenwood_day${this.state.day}.json`;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
         URL.revokeObjectURL(url);
     }
 
@@ -917,6 +1174,7 @@ export default class GameScene extends Phaser.Scene {
         this.updateAnimals(delta, time);
         this.updateVisitors(delta);
         this.updateStaff(delta);
+        this.updateMissions(delta);
         this.sfx.updateAmbient(delta, this.state.time);
     }
 }

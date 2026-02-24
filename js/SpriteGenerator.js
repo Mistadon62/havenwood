@@ -1,4 +1,4 @@
-import { TILE, SPECIES, CLR } from './GameData.js';
+import { TILE, SPECIES, CLR, ENRICHMENTS } from './GameData.js';
 
 function bright(c, n) {
     const r = Math.min(255, ((c >> 16) & 0xFF) + n);
@@ -33,6 +33,7 @@ export class SpriteGenerator {
         this.visitor(scene);
         this.particles(scene);
         this.staff(scene);
+        this.enrichments(scene);
     }
 
     static terrain(scene) {
@@ -441,6 +442,69 @@ export class SpriteGenerator {
             g.fillCircle(3, 3, 2);
             g.fillStyle(0xFFFFAA);
             g.fillCircle(3, 3, 1);
+        });
+    }
+
+    static enrichments(scene) {
+        tex(scene, 'enrich_scratching_post', 16, 16, g => {
+            rect(g, 6, 2, 4, 14, 0x8B6A3E);
+            rect(g, 3, 0, 10, 3, 0xCBA05A);
+            rect(g, 3, 14, 10, 2, 0x8B6A3E);
+        });
+        tex(scene, 'enrich_bird_bath', 16, 16, g => {
+            rect(g, 7, 6, 2, 10, 0x999999);
+            rect(g, 3, 14, 10, 2, 0x777777);
+            rect(g, 2, 3, 12, 4, 0xAAAAAA);
+            rect(g, 4, 4, 8, 2, 0x6699CC);
+        });
+        tex(scene, 'enrich_log_pile', 16, 16, g => {
+            g.fillStyle(0x8B6A3E); g.fillCircle(4, 12, 3);
+            g.fillStyle(0x7A5C30); g.fillCircle(10, 12, 3);
+            g.fillStyle(0x9B7A4E); g.fillCircle(7, 8, 3);
+            g.fillStyle(0x6B4E28); g.fillCircle(4, 12, 1);
+            g.fillStyle(0x5A4020); g.fillCircle(10, 12, 1);
+            g.fillStyle(0x7B6A3E); g.fillCircle(7, 8, 1);
+        });
+        tex(scene, 'enrich_rock_garden', 16, 16, g => {
+            g.fillStyle(0x888888); g.fillCircle(4, 11, 3);
+            g.fillStyle(0x999999); g.fillCircle(10, 10, 4);
+            g.fillStyle(0x777777); g.fillCircle(7, 13, 2);
+            g.fillStyle(0xAAAAAA); g.fillCircle(10, 9, 2);
+        });
+        tex(scene, 'enrich_toy_ball', 16, 16, g => {
+            g.fillStyle(0xEE4444); g.fillCircle(8, 8, 5);
+            g.fillStyle(0xFF8888); g.fillCircle(6, 6, 2);
+            g.fillStyle(0xFFFF44);
+            g.fillRect(6, 3, 4, 2);
+        });
+        tex(scene, 'enrich_cozy_bed', 16, 16, g => {
+            rect(g, 1, 8, 14, 8, 0x885533);
+            rect(g, 2, 9, 12, 6, 0xCC9966);
+            rect(g, 0, 6, 4, 4, 0x885533);
+            rect(g, 12, 6, 4, 4, 0x885533);
+        });
+        tex(scene, 'icon_sick', 12, 12, g => {
+            g.fillStyle(0xFF3333);
+            g.fillRect(4, 0, 4, 12);
+            g.fillRect(0, 4, 12, 4);
+        });
+        tex(scene, 'icon_bond', 10, 10, g => {
+            g.fillStyle(0x66BBFF);
+            g.fillCircle(3, 3, 2);
+            g.fillCircle(7, 3, 2);
+            g.fillTriangle(1, 4, 9, 4, 5, 9);
+        });
+        tex(scene, 'icon_baby', 10, 10, g => {
+            g.fillStyle(0xFFCC66);
+            g.fillCircle(5, 5, 4);
+            g.fillStyle(0xFFEE99);
+            g.fillCircle(5, 5, 2);
+        });
+        tex(scene, 'icon_pregnant', 10, 10, g => {
+            g.fillStyle(0xFF88CC);
+            g.fillCircle(5, 5, 4);
+            g.fillStyle(0xFFAADD);
+            g.fillCircle(5, 4, 2);
         });
     }
 
