@@ -7,6 +7,16 @@ export const H = ROWS * TILE;
 export const TIME_SCALE = 2;
 export const START_COINS = 500;
 
+export const SEASON_LENGTH = 7;
+export const SEASON_CYCLE = 28;
+export const SEASONS = {
+    spring: { id: 'spring', name: 'Spring', tint: 0x113300, tintAlpha: 0.03, particle: 'particle_petal', bonuses: { happiness: 1.1 } },
+    summer: { id: 'summer', name: 'Summer', tint: 0x332200, tintAlpha: 0.04, particle: null, bonuses: { visitors: 1.25, income: 1.15 } },
+    autumn: { id: 'autumn', name: 'Autumn', tint: 0x442200, tintAlpha: 0.06, particle: 'particle_leaf', bonuses: { buildCost: 0.9 } },
+    winter: { id: 'winter', name: 'Winter', tint: 0x001133, tintAlpha: 0.1, particle: 'particle_snow', bonuses: { hungerRate: 0.85, visitors: 0.75 } },
+};
+export const SEASON_ORDER = ['spring', 'summer', 'autumn', 'winter'];
+
 export const HABITATS = {
     meadow: {
         id: 'meadow', name: 'Meadow', cost: 100,
@@ -88,11 +98,53 @@ export const SPECIES = {
         id: 'phoenix_chick', name: 'Phoenix Chick', type: 'bird', rarity: 'legendary',
         appeal: 20, hungerRate: 0.1, color: 0xFF4500,
         names: ['Ember', 'Sol', 'Ignis', 'Pyralis', 'Solstice', 'Blaze']
+    },
+    butterfly: {
+        id: 'butterfly', name: 'Butterfly', type: 'bird', rarity: 'uncommon',
+        appeal: 3, hungerRate: 0.15, color: 0x9966FF,
+        season: 'summer',
+        names: ['Flutter', 'Iris', 'Petal', 'Monarch', 'Azure', 'Papillon']
+    },
+    hedgehog: {
+        id: 'hedgehog', name: 'Hedgehog', type: 'mammal_small', rarity: 'uncommon',
+        appeal: 6, hungerRate: 0.2, color: 0x8B7355,
+        season: 'autumn',
+        names: ['Bramble', 'Thistle', 'Hawthorn', 'Conker', 'Nutkin', 'Spike']
+    },
+    snowy_owl: {
+        id: 'snowy_owl', name: 'Snowy Owl', type: 'bird', rarity: 'rare',
+        appeal: 9, hungerRate: 0.15, color: 0xE8E8F0,
+        season: 'winter',
+        names: ['Frost', 'Blizzard', 'Ivory', 'Glacier', 'Pearl', 'Tundra']
+    },
+    arctic_fox: {
+        id: 'arctic_fox', name: 'Arctic Fox', type: 'mammal_small', rarity: 'rare',
+        appeal: 9, hungerRate: 0.25, color: 0xD8DEE8,
+        season: 'winter',
+        names: ['Snowdrift', 'Crystal', 'Winter', 'Flurry', 'Nimbus', 'Ash']
     }
 };
 
 export const RARITY_WEIGHT = { common: 50, uncommon: 30, rare: 15, legendary: 5 };
 export const RARITY_COLOR = { common: 0x999999, uncommon: 0x55cc55, rare: 0x6688ff, legendary: 0xffaa00 };
+
+export const UPGRADES = {
+    better_feed:    { id: 'better_feed',    name: 'Better Feed',    cost: 200,  desc: 'Feeding restores 45 hunger (+50%)' },
+    enrichment:     { id: 'enrichment',     name: 'Enrichment',     cost: 300,  desc: 'Happiness decays 50% slower' },
+    sanctuary_sign: { id: 'sanctuary_sign', name: 'Sanctuary Sign', cost: 150,  desc: '+20% visitor income' },
+    medical_kit:    { id: 'medical_kit',    name: 'Medical Kit',    cost: 250,  desc: 'Unlocks Heal action for animals' },
+    gift_shop:      { id: 'gift_shop',      name: 'Gift Shop',      cost: 400,  desc: '+3 bonus coins per visitor' },
+    habitat_plus:   { id: 'habitat_plus',   name: 'Habitat Plus',   cost: 500,  desc: 'All habitats gain +1 capacity' },
+    premium_food:   { id: 'premium_food',   name: 'Premium Food',   cost: 600,  desc: 'Feed gives 60 hunger + 15 happy' },
+    conservation:   { id: 'conservation',   name: 'Conservation',   cost: 800,  desc: 'Rescues arrive 30% faster' },
+};
+
+export const STAFF_TYPES = {
+    volunteer:  { id: 'volunteer',  name: 'Volunteer',    hireCost: 50,  salary: 10, desc: 'Auto-feeds one habitat',      color: 0x55AA55 },
+    caretaker:  { id: 'caretaker',  name: 'Caretaker',    hireCost: 150, salary: 30, desc: 'Auto-feeds all animals',      color: 0x5566AA },
+    vet:        { id: 'vet',        name: 'Veterinarian', hireCost: 200, salary: 40, desc: 'Keeps all animals healthy',   color: 0xAA5555 },
+    guide:      { id: 'guide',      name: 'Tour Guide',   hireCost: 100, salary: 25, desc: '+25% visitor income',         color: 0xAA8855 },
+};
 
 export const RESCUE_MSG = [
     '{name} the {species} was found wandering near the highway!',
