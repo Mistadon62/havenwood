@@ -147,13 +147,46 @@ export default class HUDScene extends Phaser.Scene {
     /* ========== NOTIFICATIONS ========== */
 
     notify(text) {
-        const n = this.add.text(W / 2, 56, text, {
+        if (!this._notifs) this._notifs = [];
+
+        const maxVisible = 4;
+        if (this._notifs.length >= maxVisible) {
+            const oldest = this._notifs.shift();
+            this.tweens.killTweensOf(oldest);
+            oldest.destroy();
+        }
+
+        const baseY = 56;
+        const spacing = 28;
+        const slot = this._notifs.length;
+
+        const n = this.add.text(W / 2, baseY + slot * spacing, text, {
             fontFamily: '"Press Start 2P", monospace', fontSize: '9px', color: CLR.uiText,
             stroke: '#000000', strokeThickness: 2,
             backgroundColor: '#2D1B0EDD', padding: { x: 14, y: 8 }, wordWrap: { width: 580 }
         }).setOrigin(0.5).setAlpha(0).setDepth(200);
+
+        this._notifs.push(n);
         this.tweens.add({ targets: n, alpha: 1, y: n.y - 8, duration: 300 });
-        this.tweens.add({ targets: n, alpha: 0, y: n.y - 30, delay: 3500, duration: 500, onComplete: () => n.destroy() });
+        this.tweens.add({
+            targets: n, alpha: 0, y: n.y - 20,
+            delay: 3200, duration: 500,
+            onComplete: () => {
+                const idx = this._notifs.indexOf(n);
+                if (idx !== -1) this._notifs.splice(idx, 1);
+                n.destroy();
+                this._repositionNotifs();
+            }
+        });
+    }
+
+    _repositionNotifs() {
+        if (!this._notifs) return;
+        const baseY = 48;
+        const spacing = 28;
+        this._notifs.forEach((n, i) => {
+            this.tweens.add({ targets: n, y: baseY + i * spacing, duration: 200, ease: 'Quad.easeOut' });
+        });
     }
 
     /* ========== RESCUE POPUP ========== */
