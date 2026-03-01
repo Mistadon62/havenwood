@@ -594,8 +594,10 @@ export default class HUDScene extends Phaser.Scene {
 
     showResearchPanel() {
         if (this.researchPanel) this.researchPanel.destroy();
+        if (!this._researchTab) this._researchTab = 'wildlife';
+
         const branches = Object.keys(RESEARCH_BRANCHES);
-        const pw = 620, ph = 440;
+        const pw = 420, ph = 430;
         const px = W / 2 - pw / 2, py = 42;
         const ct = this.add.container(px, py).setDepth(290);
         const bg = this.add.graphics();
@@ -610,71 +612,86 @@ export default class HUDScene extends Phaser.Scene {
         closeBtn.on('pointerdown', () => { ct.destroy(); this.researchPanel = null; });
         ct.add(closeBtn);
 
+        const tabW = 90;
+        const tabStartX = pw / 2 - (branches.length * (tabW + 6)) / 2;
+        branches.forEach((bId, i) => {
+            const branch = RESEARCH_BRANCHES[bId];
+            const bClr = '#' + branch.color.toString(16).padStart(6, '0');
+            const tx = tabStartX + i * (tabW + 6), ty = 46;
+            const isActive = this._researchTab === bId;
+            const tbg = this.add.graphics();
+            tbg.fillStyle(branch.color, isActive ? 0.4 : 0.12);
+            tbg.fillRoundedRect(tx, ty, tabW, 22, 3);
+            if (isActive) { tbg.lineStyle(1, branch.color, 0.8); tbg.strokeRoundedRect(tx, ty, tabW, 22, 3); }
+            ct.add(tbg);
+            const unlockCount = Object.values(RESEARCH).filter(r => r.branch === bId && this.gs.state.researchUnlocked.has(r.id)).length;
+            const totalCount = Object.values(RESEARCH).filter(r => r.branch === bId).length;
+            const label = this.txt(tx + tabW / 2, ty + 11, `${branch.name.split(' ')[0]} ${unlockCount}/${totalCount}`, 5, isActive ? bClr : '#888888')
+                .setOrigin(0.5).setInteractive({ useHandCursor: true });
+            label.on('pointerdown', () => { this._researchTab = bId; this.showResearchPanel(); });
+            ct.add(label);
+        });
+
+        const activeBranch = RESEARCH_BRANCHES[this._researchTab];
+        const aClr = '#' + activeBranch.color.toString(16).padStart(6, '0');
         const unlocked = this.gs.state.researchUnlocked;
-        const colW = (pw - 40) / branches.length;
-        const startY = 52;
-        const nodeH = 82;
+        const nodes = Object.values(RESEARCH).filter(r => r.branch === this._researchTab).sort((a, b) => a.tier - b.tier);
+        const startY = 78;
+        const nodeH = 84;
         const gfx = this.add.graphics();
         ct.add(gfx);
 
-        branches.forEach((branchId, bi) => {
-            const branch = RESEARCH_BRANCHES[branchId];
-            const cx = 20 + bi * colW + colW / 2;
+        nodes.forEach((node, ni) => {
+            const ny = startY + ni * nodeH;
+            const nw = pw - 32, nh = 76;
+            const nx = 16;
 
-            ct.add(this.txt(cx, startY, branch.name, 6, '#' + branch.color.toString(16).padStart(6, '0')).setOrigin(0.5));
+            const isUnlocked = unlocked.has(node.id);
+            const canUnlock = this.gs.canUnlockResearch(node.id);
+            const parentUnlocked = !node.requires || unlocked.has(node.requires);
 
-            const nodes = Object.values(RESEARCH).filter(r => r.branch === branchId).sort((a, b) => a.tier - b.tier);
-            nodes.forEach((node, ni) => {
-                const ny = startY + 18 + ni * nodeH;
-                const nw = colW - 12, nh = 70;
-                const nx = cx - nw / 2;
+            if (ni > 0) {
+                gfx.lineStyle(2, isUnlocked || canUnlock ? activeBranch.color : 0x333333, isUnlocked ? 0.8 : 0.3);
+                gfx.lineBetween(pw / 2, ny - (nodeH - nh) + 1, pw / 2, ny - 1);
+            }
 
-                const isUnlocked = unlocked.has(node.id);
-                const canUnlock = this.gs.canUnlockResearch(node.id);
-                const parentUnlocked = !node.requires || unlocked.has(node.requires);
+            const nodeBg = this.add.graphics();
+            if (isUnlocked) {
+                nodeBg.fillStyle(activeBranch.color, 0.25);
+                nodeBg.lineStyle(2, activeBranch.color, 0.8);
+            } else if (canUnlock) {
+                nodeBg.fillStyle(activeBranch.color, 0.1);
+                nodeBg.lineStyle(2, activeBranch.color, 0.5);
+            } else {
+                nodeBg.fillStyle(0x111111, 0.5);
+                nodeBg.lineStyle(1, 0x333333, 0.4);
+            }
+            nodeBg.fillRoundedRect(nx, ny, nw, nh, 5);
+            nodeBg.strokeRoundedRect(nx, ny, nw, nh, 5);
+            ct.add(nodeBg);
 
-                if (ni > 0) {
-                    const prevY = startY + 18 + (ni - 1) * nodeH + nh;
-                    gfx.lineStyle(2, isUnlocked || canUnlock ? branch.color : 0x333333, isUnlocked ? 0.8 : 0.3);
-                    gfx.lineBetween(cx, prevY, cx, ny);
-                }
+            const tierLabel = this.txt(nx + 10, ny + 6, `Tier ${node.tier}`, 5, '#666666');
+            ct.add(tierLabel);
 
-                const nodeBg = this.add.graphics();
-                if (isUnlocked) {
-                    nodeBg.fillStyle(branch.color, 0.3);
-                    nodeBg.lineStyle(2, branch.color, 0.9);
-                } else if (canUnlock) {
-                    nodeBg.fillStyle(branch.color, 0.12);
-                    nodeBg.lineStyle(2, branch.color, 0.6);
-                } else {
-                    nodeBg.fillStyle(0x111111, 0.5);
-                    nodeBg.lineStyle(1, 0x333333, 0.4);
-                }
-                nodeBg.fillRoundedRect(nx, ny, nw, nh, 4);
-                nodeBg.strokeRoundedRect(nx, ny, nw, nh, 4);
-                ct.add(nodeBg);
+            const nameClr = isUnlocked ? '#FFFFFF' : (parentUnlocked ? '#CCCCCC' : '#777777');
+            ct.add(this.txt(nx + 10, ny + 22, node.name, 8, nameClr));
+            ct.add(this.txt(nx + 10, ny + 42, node.desc, 5, isUnlocked ? '#AABB99' : '#999999')
+                .setWordWrapWidth(nw - 120));
 
-                const nameClr = isUnlocked ? '#FFFFFF' : (parentUnlocked ? '#CCCCCC' : '#666666');
-                ct.add(this.txt(cx, ny + 8, node.name, 5, nameClr).setOrigin(0.5));
-                ct.add(this.txt(cx, ny + 22, node.desc, 4, isUnlocked ? '#AABB99' : '#888888')
-                    .setOrigin(0.5).setWordWrapWidth(nw - 8));
-
-                if (isUnlocked) {
-                    ct.add(this.txt(cx, ny + nh - 12, 'DONE', 5, '#66CC66').setOrigin(0.5));
-                } else if (canUnlock) {
-                    const costTxt = this.txt(cx - 24, ny + nh - 14, `${node.cost} RP`, 5, '#44DDAA').setOrigin(0.5);
-                    ct.add(costTxt);
-                    const btn = this.txt(cx + 24, ny + nh - 14, 'UNLOCK', 5, '#44CC44')
-                        .setOrigin(0.5).setInteractive({ useHandCursor: true });
-                    btn.on('pointerdown', () => { this.gs.unlockResearch(node.id); });
-                    btn.on('pointerover', () => btn.setColor('#88FF88'));
-                    btn.on('pointerout', () => btn.setColor('#44CC44'));
-                    ct.add(btn);
-                } else {
-                    const reason = !parentUnlocked ? 'Locked' : `${node.cost} RP`;
-                    ct.add(this.txt(cx, ny + nh - 12, reason, 5, '#555555').setOrigin(0.5));
-                }
-            });
+            if (isUnlocked) {
+                ct.add(this.txt(nx + nw - 10, ny + 30, 'COMPLETE', 7, '#66CC66').setOrigin(1, 0.5));
+            } else if (canUnlock) {
+                ct.add(this.txt(nx + nw - 80, ny + 20, `${node.cost} RP`, 6, '#44DDAA').setOrigin(1, 0));
+                const btn = this.txt(nx + nw - 12, ny + 20, 'UNLOCK', 7, '#44CC44')
+                    .setOrigin(1, 0).setInteractive({ useHandCursor: true });
+                btn.on('pointerdown', () => { this.gs.unlockResearch(node.id); });
+                btn.on('pointerover', () => btn.setColor('#88FF88'));
+                btn.on('pointerout', () => btn.setColor('#44CC44'));
+                ct.add(btn);
+            } else {
+                const reason = !parentUnlocked ? 'Requires: ' + (RESEARCH[node.requires]?.name || '?') : `${node.cost} RP`;
+                ct.add(this.txt(nx + nw - 10, ny + 30, reason, 5, '#555555').setOrigin(1, 0.5));
+            }
         });
 
         this.researchPanel = ct;
