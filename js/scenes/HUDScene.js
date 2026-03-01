@@ -17,6 +17,7 @@ export default class HUDScene extends Phaser.Scene {
         this.journalPanel = null;
         this.habitatPanel = null;
         this.researchPanel = null;
+        this.buildPopup = null;
         this.activeBuild = null;
 
         this.createTopBar();
@@ -60,26 +61,23 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== TOOLBAR ========== */
 
-    // Bottom bar: habitat build buttons + management toggles (Missions, Upgrades, Staff, Research, Journal).
+    // Bottom bar: Select, Build (opens habitat popup), and management toggles (Missions, Upgrades, Staff, Research, Journal).
     createToolbar() {
         const barY = H - 62;
         const bar = this.add.graphics();
         bar.fillStyle(CLR.uiBg, 0.9); bar.fillRect(0, barY, W, 62);
         bar.lineStyle(1, CLR.uiBorder); bar.lineBetween(0, barY, W, barY);
 
-        const buildItems = [
+        const allItems = [
             { key: null, label: 'Select', cost: null, color: 0xAAAAAA },
-            ...Object.values(HABITATS).map(h => ({ key: h.id, label: h.name, cost: h.cost, color: h.fill }))
-        ];
-        const mgmtItems = [
+            { key: 'build', label: 'Build', cost: null, color: 0x66BB55 },
             { key: 'missions', label: 'Missions', cost: null, color: 0x66AA66 },
             { key: 'upgrades', label: 'Upgrades', cost: null, color: 0xCCAA33 },
             { key: 'staff', label: 'Staff', cost: null, color: 0x5588BB },
             { key: 'research', label: 'Research', cost: null, color: 0x44DDAA },
             { key: 'journal', label: 'Journal', cost: null, color: 0xAA77CC },
         ];
-        const allItems = [...buildItems, ...mgmtItems];
-        const gap = Math.min(104, (W - 10) / allItems.length);
+        const gap = Math.min(130, (W - 10) / allItems.length);
         const startX = W / 2 - (allItems.length * gap) / 2 + gap / 2;
 
         this.toolBtns = [];
@@ -89,8 +87,13 @@ export default class HUDScene extends Phaser.Scene {
             this.drawToolBtn(bg, x, y, item.color, false, gap);
             const hit = this.add.rectangle(x, y, gap - 4, 50, 0, 0).setInteractive({ useHandCursor: true });
             hit.on('pointerover', () => this.drawToolBtn(bg, x, y, item.color, true, gap));
-            hit.on('pointerout', () => this.drawToolBtn(bg, x, y, item.color, this.activeBuild === item.key, gap));
+            hit.on('pointerout', () => {
+                const isActive = item.key === this.activeBuild ||
+                    (item.key === 'build' && this.activeBuild && HABITATS[this.activeBuild]);
+                this.drawToolBtn(bg, x, y, item.color, isActive, gap);
+            });
             hit.on('pointerdown', () => {
+                if (item.key === 'build') { this.toggleBuildPopup(x, barY); return; }
                 if (item.key === 'upgrades') { this.togglePanel('upgradePanel', () => this.showUpgradePanel()); return; }
                 if (item.key === 'staff') { this.togglePanel('staffPanel', () => this.showStaffPanel()); return; }
                 if (item.key === 'missions') { this.togglePanel('missionPanel', () => this.showMissionPanel()); return; }
@@ -118,6 +121,73 @@ export default class HUDScene extends Phaser.Scene {
         bg.strokeRoundedRect(x - w / 2, y - 23, w, 46, 4);
     }
 
+    /* ========== BUILD POPUP ========== */
+
+    toggleBuildPopup(anchorX, barY) {
+        if (this.buildPopup) { this.closeBuildPopup(); return; }
+        this.closeAllPanels();
+
+        this._buildDismiss = this.add.rectangle(W / 2, H / 2, W, H, 0, 0)
+            .setInteractive().setDepth(259);
+        this._buildDismiss.on('pointerdown', () => this.closeBuildPopup());
+
+        const habitats = Object.values(HABITATS);
+        const cellW = 105, pad = 16;
+        const pw = habitats.length * cellW + pad * 2;
+        const ph = 76;
+        const px = Math.round((W - pw) / 2);
+        const py = barY - ph - 10;
+
+        const ct = this.add.container(px, py).setDepth(260);
+        const bg = this.add.graphics();
+        bg.fillStyle(CLR.uiBg, 0.96);
+        bg.fillRoundedRect(0, 0, pw, ph, 6);
+        bg.lineStyle(2, 0x66BB55);
+        bg.strokeRoundedRect(0, 0, pw, ph, 6);
+        ct.add(bg);
+
+        habitats.forEach((h, i) => {
+            const bx = pad + i * cellW + cellW / 2;
+            const by = ph / 2;
+            const btnBg = this.add.graphics();
+            btnBg.fillStyle(h.fill, 0.3);
+            btnBg.fillRoundedRect(bx - cellW / 2 + 4, by - 30, cellW - 8, 60, 4);
+            ct.add(btnBg);
+
+            const cost = this.gs.getHabitatCost(h.id);
+            ct.add(this.txt(bx, by - 12, h.name, 7).setOrigin(0.5));
+            ct.add(this.txt(bx, by + 6, `${cost}g`, 6, CLR.gold).setOrigin(0.5));
+
+            const hit = this.add.rectangle(bx, by, cellW - 8, 60, 0, 0).setInteractive({ useHandCursor: true });
+            hit.on('pointerover', () => {
+                btnBg.clear();
+                btnBg.fillStyle(h.fill, 0.55);
+                btnBg.fillRoundedRect(bx - cellW / 2 + 4, by - 30, cellW - 8, 60, 4);
+                btnBg.lineStyle(1, h.fill, 0.8);
+                btnBg.strokeRoundedRect(bx - cellW / 2 + 4, by - 30, cellW - 8, 60, 4);
+            });
+            hit.on('pointerout', () => {
+                btnBg.clear();
+                btnBg.fillStyle(h.fill, 0.3);
+                btnBg.fillRoundedRect(bx - cellW / 2 + 4, by - 30, cellW - 8, 60, 4);
+            });
+            hit.on('pointerdown', () => {
+                this.closeBuildPopup();
+                this.gs.enterBuild(h.id);
+            });
+            ct.add(hit);
+        });
+
+        ct.setScale(0.85).setAlpha(0);
+        this.tweens.add({ targets: ct, scaleX: 1, scaleY: 1, alpha: 1, duration: 150, ease: 'Back.easeOut' });
+        this.buildPopup = ct;
+    }
+
+    closeBuildPopup() {
+        if (this._buildDismiss) { this._buildDismiss.destroy(); this._buildDismiss = null; }
+        if (this.buildPopup) { this.buildPopup.destroy(); this.buildPopup = null; }
+    }
+
     /* ========== EVENTS ========== */
 
     // Subscribes to game events: timeUpdate, coinsUpdate, rescueEvent, showAnimalInfo, etc.
@@ -131,7 +201,12 @@ export default class HUDScene extends Phaser.Scene {
         ev.on('notification', this.notify, this);
         ev.on('buildModeChanged', mode => {
             this.activeBuild = mode;
-            this.toolBtns.forEach(b => this.drawToolBtn(b.bg, b.x, b.y, b.color, b.key === mode, b.gap));
+            if (!mode) this.closeBuildPopup();
+            this.toolBtns.forEach(b => {
+                const isActive = b.key === mode ||
+                    (b.key === 'build' && mode && HABITATS[mode]);
+                this.drawToolBtn(b.bg, b.x, b.y, b.color, isActive, b.gap);
+            });
         });
         ev.on('seasonChanged', () => {});
         ev.on('upgradesUpdate', () => { if (this.upgradePanel) this.showUpgradePanel(); });
@@ -856,6 +931,7 @@ export default class HUDScene extends Phaser.Scene {
         ['animalPanel', 'upgradePanel', 'staffPanel', 'missionPanel', 'journalPanel', 'habitatPanel', 'researchPanel'].forEach(k => {
             if (this[k]) { this[k].destroy(); this[k] = null; }
         });
+        this.closeBuildPopup();
         if (this._missionRefresh) { this._missionRefresh.destroy(); this._missionRefresh = null; }
     }
 

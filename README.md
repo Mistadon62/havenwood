@@ -45,7 +45,7 @@ havenwood/
 |---|---|
 | `GameData.js` | Central data registry. Every species, habitat, upgrade, research node, achievement, etc. is defined here. Change game balance by editing this file. |
 | `GameScene.js` | The game simulation. Manages the grid map, animal behavior, visitors, staff, time/seasons, breeding, illness, missions, research, economy, achievements, and save/load. |
-| `HUDScene.js` | All UI. Runs as a parallel Phaser scene on top of GameScene. Communicates via `this.game.events` (Phaser's global event emitter). |
+| `HUDScene.js` | All UI. Runs as a parallel Phaser scene on top of GameScene. Toolbar with Build popup menu for habitat placement, management panels, and notifications. Communicates via `this.game.events` (Phaser's global event emitter). |
 | `SpriteGenerator.js` | Draws every texture at boot using Phaser's Graphics API — animals, terrain, UI icons, particles, enrichment items, staff, visitors. Zero external image files. |
 | `SoundManager.js` | Generates all sound effects procedurally using the Web Audio API — oscillators and filtered noise. Zero audio files. |
 
