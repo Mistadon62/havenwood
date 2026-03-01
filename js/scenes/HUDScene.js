@@ -1,3 +1,5 @@
+// UI overlay scene running parallel to GameScene. Communicates via this.game.events.
+// this.gs = GameScene reference for state and method calls.
 import { W, H, HABITATS, SPECIES, RARITY_COLOR, CLR, SEASONS, UPGRADES, STAFF_TYPES,
     TRAITS, ILLNESSES, ENRICHMENTS, MISSIONS, VISITOR_TYPES, ACHIEVEMENTS,
     RESEARCH, RESEARCH_BRANCHES } from '../GameData.js';
@@ -24,6 +26,7 @@ export default class HUDScene extends Phaser.Scene {
         this.time.delayedCall(0, () => this.syncState());
     }
 
+    // Syncs HUD display from GameScene state (coins, time, research points).
     syncState() {
         const s = this.gs.state;
         this.updateCoins(s.coins);
@@ -33,6 +36,7 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== TOP BAR ========== */
 
+    // Day, season, clock, reputation star, research icon, coins, save button.
     createTopBar() {
         const bar = this.add.graphics();
         bar.fillStyle(CLR.uiBg, 0.9); bar.fillRect(0, 0, W, 42);
@@ -56,6 +60,7 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== TOOLBAR ========== */
 
+    // Bottom bar: habitat build buttons + management toggles (Missions, Upgrades, Staff, Research, Journal).
     createToolbar() {
         const barY = H - 62;
         const bar = this.add.graphics();
@@ -103,6 +108,7 @@ export default class HUDScene extends Phaser.Scene {
         });
     }
 
+    // Draws a single toolbar button with active/hover state.
     drawToolBtn(bg, x, y, color, active, gap = 88) {
         const w = gap - 6;
         bg.clear();
@@ -114,6 +120,7 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== EVENTS ========== */
 
+    // Subscribes to game events: timeUpdate, coinsUpdate, rescueEvent, showAnimalInfo, etc.
     listenEvents() {
         const ev = this.game.events;
         ev.on('timeUpdate', this.updateTime, this);
@@ -137,6 +144,7 @@ export default class HUDScene extends Phaser.Scene {
         });
     }
 
+    // Updates day, season, clock, reputation display.
     updateTime(d) {
         this.dayTxt.setText(`Day ${d.day}`);
         const sn = SEASONS[d.season];
@@ -150,6 +158,7 @@ export default class HUDScene extends Phaser.Scene {
         this.repTxt.setText(d.rep.toString());
     }
 
+    // Updates coin display with brief scale pulse.
     updateCoins(c) {
         this.coinTxt.setText(c.toString());
         this.tweens.add({ targets: this.coinTxt, scaleX: 1.3, scaleY: 1.3, yoyo: true, duration: 150 });
@@ -157,6 +166,7 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== NOTIFICATIONS ========== */
 
+    // Queued toast notifications; max 4 visible, auto-dismiss with fade.
     notify(text) {
         if (!this._notifs) this._notifs = [];
 
@@ -191,6 +201,7 @@ export default class HUDScene extends Phaser.Scene {
         });
     }
 
+    // Repacks visible notifications vertically after one is dismissed.
     _repositionNotifs() {
         if (!this._notifs) return;
         const baseY = 48;
@@ -202,6 +213,7 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== RESCUE POPUP ========== */
 
+    // Modal with rescued animal details; Accept/Pass buttons.
     showRescue(ev) {
         if (this.rescuePopup) this.rescuePopup.destroy();
         this.closeAllPanels();
@@ -247,6 +259,7 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== ANIMAL INFO PANEL ========== */
 
+    // Selected animal: stats, trait, illness, breed status, bonds, actions (Feed, Pet, Treat, Heal, Breed).
     showAnimal(animal) {
         if (this.animalPanel) this.animalPanel.destroy();
         if (this.rescuePopup) return;
@@ -334,6 +347,7 @@ export default class HUDScene extends Phaser.Scene {
         this.animalPanel = ct;
     }
 
+    // Draws a labeled stat bar (label + fill + value) into container.
     statBar(ct, x, y, w, label, val, color) {
         ct.add(this.txt(x, y + 1, label, 6));
         const bg = this.add.graphics();
@@ -344,6 +358,7 @@ export default class HUDScene extends Phaser.Scene {
         ct.add(this.txt(x + w - 2, y + 1, Math.round(val).toString(), 6).setOrigin(1, 0));
     }
 
+    // Creates a colored action button inside a panel container.
     panelBtn(ct, x, y, w, label, color, cb) {
         const bg = this.add.graphics();
         bg.fillStyle(color, 0.55); bg.fillRoundedRect(x, y, w, 26, 3);
@@ -357,6 +372,7 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== HABITAT INFO PANEL ========== */
 
+    // Habitat details, current enrichments, add-enrichment options.
     showHabitatPanel(hab) {
         if (this.habitatPanel) this.habitatPanel.destroy();
         if (this.rescuePopup) return;
@@ -428,6 +444,7 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== UPGRADES PANEL ========== */
 
+    // Lists upgrades with buy buttons.
     showUpgradePanel() {
         if (this.upgradePanel) this.upgradePanel.destroy();
         const pw = 380, entries = Object.values(UPGRADES);
@@ -470,6 +487,7 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== STAFF PANEL ========== */
 
+    // Hire/fire staff members.
     showStaffPanel() {
         if (this.staffPanel) this.staffPanel.destroy();
         const pw = 380, currentStaff = this.gs.state.staff;
@@ -525,6 +543,7 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== MISSION PANEL ========== */
 
+    // Launch rescue missions, view progress bars.
     showMissionPanel() {
         if (this.missionPanel) this.missionPanel.destroy();
         const pw = 420, missions = Object.values(MISSIONS);
@@ -592,6 +611,7 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== RESEARCH PANEL ========== */
 
+    // Tabbed UI: one branch at a time, 4 tiers per branch, unlock buttons.
     showResearchPanel() {
         if (this.researchPanel) this.researchPanel.destroy();
         if (!this._researchTab) this._researchTab = 'wildlife';
@@ -699,6 +719,7 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== JOURNAL PANEL ========== */
 
+    // Tabbed: Bestiary, Achievements, Stats.
     showJournalPanel() {
         if (this.journalPanel) this.journalPanel.destroy();
 
@@ -744,6 +765,7 @@ export default class HUDScene extends Phaser.Scene {
         this.journalPanel = ct;
     }
 
+    // Grid of discovered/undiscovered species.
     renderBestiary(ct, x, y, w, h) {
         const speciesList = Object.values(SPECIES);
         const cols = 5, cellW = w / cols, cellH = 72;
@@ -772,6 +794,7 @@ export default class HUDScene extends Phaser.Scene {
             `Discovered: ${discovered.size}/${speciesList.length}`, 6, '#AAAAAA'));
     }
 
+    // List of achievements with earned state.
     renderAchievements(ct, x, y, w, h) {
         const earned = this.gs.state.achievementsEarned;
         let yy = y;
@@ -788,6 +811,7 @@ export default class HUDScene extends Phaser.Scene {
         ct.add(this.txt(x, yy + 6, `${earned.size}/${ACHIEVEMENTS.length} earned`, 6, CLR.gold));
     }
 
+    // Key/value stats (day, season, coins, animals, etc.).
     renderStats(ct, x, y, w, h) {
         const s = this.gs.state;
         const stats = [
@@ -820,12 +844,14 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== HELPERS ========== */
 
+    // Toggle panel: close if open, else close others and show.
     togglePanel(panelKey, showFn) {
         if (this[panelKey]) { this[panelKey].destroy(); this[panelKey] = null; return; }
         this.closeAllPanels();
         showFn();
     }
 
+    // Destroys all open panels and mission refresh timer.
     closeAllPanels() {
         ['animalPanel', 'upgradePanel', 'staffPanel', 'missionPanel', 'journalPanel', 'habitatPanel', 'researchPanel'].forEach(k => {
             if (this[k]) { this[k].destroy(); this[k] = null; }
@@ -833,6 +859,7 @@ export default class HUDScene extends Phaser.Scene {
         if (this._missionRefresh) { this._missionRefresh.destroy(); this._missionRefresh = null; }
     }
 
+    // Styled text with minimum font size enforcement.
     txt(x, y, text, size, color) {
         const s = Math.max(8, Math.round(size * 1.2));
         return this.add.text(x, y, text, {

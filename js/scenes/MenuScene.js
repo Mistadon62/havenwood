@@ -1,3 +1,4 @@
+// Title screen with gradient sky, tree silhouettes, wildflowers. New Game / Continue buttons. Fade-in on text.
 import { W, H, CLR } from '../GameData.js';
 
 export default class MenuScene extends Phaser.Scene {
@@ -83,6 +84,7 @@ export default class MenuScene extends Phaser.Scene {
             });
     }
 
+    // Creates interactive text button with hover (gold) and click callback.
     btn(x, y, label, cb) {
         const t = this.add.text(x, y, label, {
             fontFamily: '"Press Start 2P", monospace',

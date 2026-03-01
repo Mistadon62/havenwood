@@ -1,3 +1,7 @@
+/**
+ * GameScene - Core gameplay scene for Havenwood, a Phaser 3 animal sanctuary management game.
+ * Handles map, building, animals, visitors, staff, missions, research, time, seasons, and save/load.
+ */
 import { TILE, COLS, ROWS, W, H, TIME_SCALE, START_COINS, HABITATS, SPECIES, RARITY_WEIGHT, RESCUE_MSG, CLR,
     SEASONS, SEASON_ORDER, SEASON_LENGTH, SEASON_CYCLE, UPGRADES, STAFF_TYPES,
     TRAITS, TRAIT_IDS, ILLNESSES, ENRICHMENTS, MISSIONS, VISITOR_TYPES, ACHIEVEMENTS,
@@ -5,6 +9,7 @@ import { TILE, COLS, ROWS, W, H, TIME_SCALE, START_COINS, HABITATS, SPECIES, RAR
 import { SoundManager } from '../SoundManager.js';
 
 let uid = 0;
+// Generates unique IDs for game entities (habitats, animals, staff, missions) to avoid collisions.
 function genId(prefix) { return `${prefix}_${Date.now().toString(36)}_${(uid++).toString(36)}`; }
 
 export default class GameScene extends Phaser.Scene {
@@ -68,6 +73,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== MAP ========== */
+    // Builds the 2D grid: fence borders, entrance row, path tiles, and grass variants.
 
     createMap() {
         for (let y = 0; y < ROWS; y++) {
@@ -93,6 +99,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== PARTICLES ========== */
+    // Seasonal ambient effects: snow, leaves, petals, fireflies (summer only).
 
     setupParticles() { this.seasonEmitter = null; this.fireflyEmitter = null; }
 
@@ -121,6 +128,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== INPUT ========== */
+    // Pointer move shows build preview; pointerdown places habitat or opens habitat info.
 
     setupInput() {
         this.input.on('pointermove', ptr => {
@@ -158,6 +166,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== BUILD ========== */
+    // Habitat placement with preview overlay, validation, and seasonal cost discounts.
 
     enterBuild(type) { this.state.buildMode = type; this.game.events.emit('buildModeChanged', type); }
     exitBuild() { this.state.buildMode = null; this.preview.setVisible(false); this.game.events.emit('buildModeChanged', null); }
@@ -255,6 +264,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== ENRICHMENT ========== */
+    // Habitat items (toys, shelters) that boost animal happiness and visitor appeal.
 
     addEnrichment(habitatId, enrichId) {
         const hab = this.state.habitats.find(h => h.id === habitatId);
@@ -309,6 +319,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== ANIMALS ========== */
+    // Spawn, wander, bob, hunger/happiness/health decay, traits, illness, bonds, breeding.
 
     addAnimal(speciesId, name, habitatId, opts = {}) {
         const hab = this.state.habitats.find(h => h.id === habitatId);
@@ -351,6 +362,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     updateAnimals(delta, time) {
+        // Night: 21:00–05:00 (1260–300 min in 1440-min day)
         const isNight = this.state.time >= 1260 || this.state.time < 300;
         const seasonBonus = SEASONS[this.state.season].bonuses;
         const enrichUpgrade = this.state.upgrades.has('enrichment_up') ? 0.5 : 1;
@@ -385,7 +397,7 @@ export default class GameScene extends Phaser.Scene {
                 }
             }
 
-            // Baby growth
+            // Baby growth: 720 = minutes per in-game day
             if (a.isBaby) {
                 a.growthTimer += delta / 1000;
                 const growDays = 5;
@@ -546,6 +558,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== BREEDING ========== */
+    // Same species, same habitat, both adult/healthy. Pregnancy and cooldown in minutes (720 = 1 day).
 
     canBreed(animal) {
         if (animal.isBaby || animal.isPregnant || animal.breedCooldown > 0) return false;
@@ -572,6 +585,7 @@ export default class GameScene extends Phaser.Scene {
 
         a.isPregnant = true;
         const breedBoost = this.hasResearch('breed_boost');
+        // pregnancyTimer in minutes: 720 = 1 in-game day
         a.pregnancyTimer = (breedBoost ? 1.5 : 3) * 720;
         a.breedCooldown = (breedBoost ? 4 : 7) * 720;
         partner.breedCooldown = (breedBoost ? 4 : 7) * 720;
@@ -596,6 +610,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== ILLNESS ========== */
+    // Random chance per tick; hunger/happiness increase risk. Vets can auto-cure.
 
     checkIllness() {
         const hasVet = this.state.staff.some(s => s.type === 'vet');
@@ -625,6 +640,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== BONDS ========== */
+    // Pairs in same habitat form friendships over time; social trait speeds this up.
 
     updateBonds() {
         for (const hab of this.state.habitats) {
@@ -649,6 +665,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== MISSIONS ========== */
+    // Expeditions to biomes; timer-based, then random outcome (animal, supplies, or nothing).
 
     launchMission(biomeId) {
         const m = MISSIONS[biomeId];
@@ -728,6 +745,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== SEASONS ========== */
+    // Cycle through spring/summer/autumn/winter; affects particles, bonuses, species availability.
 
     getSeason() {
         return SEASON_ORDER[Math.floor(((this.state.day - 1) % SEASON_CYCLE) / SEASON_LENGTH)];
@@ -749,6 +767,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== TIME ========== */
+    // 1440 min/day, TIME_SCALE for speed. Day/night overlay: dawn 05:00–07:00, dusk 17:00–20:00, night 21:00–05:00.
 
     updateTime(delta) {
         this.state.time += TIME_SCALE * delta / 1000;
@@ -764,6 +783,7 @@ export default class GameScene extends Phaser.Scene {
         }
 
         const t = this.state.time;
+        // Lighting phases: 300–420 dawn, 420–720 day, 720–1020 dusk, 1020–1200 sunset, 1200–300 night
         let color = 0x000033, alpha = 0;
         if (t >= 300 && t < 420) {
             const p = (t - 300) / 120;
@@ -788,6 +808,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== VISITORS ========== */
+    // Enter, wander, leave. Income from animal appeal, happiness, visitor type, upgrades, research, season.
 
     pickVisitorType() {
         const vipThreshold = this.hasResearch('vip_easier') ? 50 : null;
@@ -796,6 +817,7 @@ export default class GameScene extends Phaser.Scene {
             if (minRep && this.state.rep < minRep) return false;
             return true;
         });
+        // Weighted random: sum weights, roll, subtract until <= 0
         const total = types.reduce((s, t) => s + t.weight, 0);
         let r = Math.random() * total;
         for (const t of types) { r -= t.weight; if (r <= 0) return t; }
@@ -898,6 +920,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== STAFF ========== */
+    // Hired NPCs: caretakers feed, volunteers feed one habitat, vets heal. Wander and auto-work.
 
     hireStaff(typeId) {
         const st = STAFF_TYPES[typeId];
@@ -981,6 +1004,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== UPGRADES ========== */
+    // One-time purchases (better food, medical kit, gift shop, etc.) that persist in state.
 
     buyUpgrade(id) {
         const up = UPGRADES[id];
@@ -999,6 +1023,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== RESEARCH ========== */
+    // Tech tree: 4 branches, nodes grant effects checked via hasResearch() throughout the game.
 
     hasResearch(effectId) {
         for (const rId of this.state.researchUnlocked) {
@@ -1038,6 +1063,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== RESCUE ========== */
+    // Timed events: pick species by rarity weights, show rescue dialog, accept adds animal.
 
     triggerRescue(forceSpecies) {
         const sp = forceSpecies ? SPECIES[forceSpecies] : this.pickSpecies();
@@ -1049,6 +1075,7 @@ export default class GameScene extends Phaser.Scene {
         this.game.events.emit('rescueEvent', { speciesId: sp.id, name, habitat: hab, msg });
     }
 
+    // Weighted by RARITY_WEIGHT; season match and rare_boost research double odds.
     pickSpecies() {
         const season = this.state.season;
         const list = Object.values(SPECIES).filter(s => !s.season || s.season === season);
@@ -1087,6 +1114,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== ACHIEVEMENTS ========== */
+    // One-time unlocks; each has a check function; emits notification and achievementEarned.
 
     checkAchievements() {
         const s = this.state;
@@ -1131,6 +1159,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== ECONOMY ========== */
+    // Coins: add/spend, emit coinsUpdate. stats.earned tracks total income.
 
     addCoins(n) {
         this.state.coins += n;
@@ -1145,6 +1174,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== SAVE / LOAD ========== */
+    // Serialize state to localStorage. Sets become arrays; load rebuilds habitats, animals, staff, missions.
 
     saveGame() {
         const data = {
@@ -1253,6 +1283,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== UPDATE ========== */
+    // Main loop: time, animals, visitors, staff, missions, ambient sound.
 
     update(time, delta) {
         this.updateTime(delta);

@@ -1,3 +1,5 @@
+// Havenwood entry point. Configures and creates the Phaser game instance.
+// Loads scenes in order: Boot -> Menu -> Game -> HUD.
 import { W, H } from './GameData.js';
 import BootScene from './scenes/BootScene.js';
 import MenuScene from './scenes/MenuScene.js';

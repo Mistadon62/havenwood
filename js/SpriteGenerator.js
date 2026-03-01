@@ -1,11 +1,17 @@
+// SpriteGenerator.js — Havenwood (animal sanctuary management)
+// Generates ALL game textures procedurally using Phaser's Graphics API (no external image files).
+// Entry point: SpriteGenerator.generate() called from BootScene.
+
 import { TILE, SPECIES, CLR, ENRICHMENTS } from './GameData.js';
 
+// Lighten a hex color by n (0–255 per channel).
 function bright(c, n) {
     const r = Math.min(255, ((c >> 16) & 0xFF) + n);
     const g = Math.min(255, ((c >> 8) & 0xFF) + n);
     const b = Math.min(255, (c & 0xFF) + n);
     return (r << 16) | (g << 8) | b;
 }
+// Darken a hex color by n (0–255 per channel).
 function dark(c, n) {
     const r = Math.max(0, ((c >> 16) & 0xFF) - n);
     const g = Math.max(0, ((c >> 8) & 0xFF) - n);
@@ -13,6 +19,7 @@ function dark(c, n) {
     return (r << 16) | (g << 8) | b;
 }
 
+// Create a texture from a draw function; key is the texture name, fn receives a Graphics object.
 function tex(scene, key, w, h, fn) {
     const g = scene.make.graphics({ add: false });
     fn(g);
@@ -20,12 +27,14 @@ function tex(scene, key, w, h, fn) {
     g.destroy();
 }
 
+// Shorthand: fill a rectangle with the given color.
 function rect(g, x, y, w, h, color) {
     g.fillStyle(color);
     g.fillRect(x, y, w, h);
 }
 
 export class SpriteGenerator {
+    // Entry point: generates all game textures. Called from BootScene.
     static generate(scene) {
         this.terrain(scene);
         this.animals(scene);
@@ -36,6 +45,7 @@ export class SpriteGenerator {
         this.enrichments(scene);
     }
 
+    // Terrain tiles: grass variants, path, fence.
     static terrain(scene) {
         const grasses = [CLR.grass1, CLR.grass2, CLR.grass3, CLR.grass4];
         for (let i = 0; i < 4; i++) {
@@ -74,6 +84,7 @@ export class SpriteGenerator {
         });
     }
 
+    // Individual animal sprites: one draw method per species, or drawGeneric fallback.
     static animals(scene) {
         Object.entries(SPECIES).forEach(([id, sp]) => {
             tex(scene, `animal_${id}`, TILE, TILE, g => {
@@ -82,6 +93,7 @@ export class SpriteGenerator {
         });
     }
 
+    // Cat: ears, body, eyes, nose, paws, tail.
     static draw_cat(g, c) {
         const d = dark(c, 30);
         rect(g, 9, 5, 3, 4, c);
@@ -117,6 +129,7 @@ export class SpriteGenerator {
         rect(g, 10, 25, 3, 4, d);
         rect(g, 19, 25, 3, 4, d);
     }
+    // Dog: head, ears, eyes, snout, body, legs.
 
     static draw_rabbit(g, c) {
         const d = dark(c, 25);
@@ -134,6 +147,7 @@ export class SpriteGenerator {
         rect(g, 11, 26, 3, 3, d);
         rect(g, 18, 26, 3, 3, d);
     }
+    // Rabbit: long ears, body, fluffy tail, legs.
 
     static draw_fox(g, c) {
         const d = dark(c, 40);
@@ -154,6 +168,7 @@ export class SpriteGenerator {
         rect(g, 10, 26, 3, 4, d);
         rect(g, 19, 26, 3, 4, d);
     }
+    // Fox: triangular ears, body, white-tipped tail, legs.
 
     static draw_deer(g, c) {
         const d = dark(c, 30);
@@ -176,6 +191,7 @@ export class SpriteGenerator {
         rect(g, 18, 23, 2, 6, d);
         rect(g, 22, 23, 2, 5, d);
     }
+    // Deer: antlers, body, spots, four legs.
 
     static draw_owl(g, c) {
         const d = dark(c, 25);
@@ -195,6 +211,7 @@ export class SpriteGenerator {
         rect(g, 12, 26, 3, 3, 0x666644);
         rect(g, 17, 26, 3, 3, 0x666644);
     }
+    // Owl: round face, large eyes, feathered body, talons.
 
     static draw_duck(g, c) {
         rect(g, 10, 8, 12, 10, c);
@@ -208,6 +225,7 @@ export class SpriteGenerator {
         g.fillStyle(0x4A80B4);
         g.fillRect(4, 21, 24, 3);
     }
+    // Duck: body, head, orange bill, webbed feet, water line.
 
     static draw_turtle(g, c) {
         const d = dark(c, 30);
@@ -223,6 +241,7 @@ export class SpriteGenerator {
         rect(g, 19, 22, 3, 3, d);
         rect(g, 24, 16, 3, 2, d);
     }
+    // Turtle: shell with pattern, head, legs.
 
     static draw_bear_cub(g, c) {
         const d = dark(c, 25);
@@ -244,6 +263,7 @@ export class SpriteGenerator {
         rect(g, 11, 27, 4, 3, d);
         rect(g, 17, 27, 4, 3, d);
     }
+    // Bear cub: round ears, body, paws.
 
     static draw_phoenix_chick(g, c) {
         const flame = 0xFFDD00;
@@ -267,6 +287,7 @@ export class SpriteGenerator {
         rect(g, 17, 17, 3, 3, 0xDD5500);
         rect(g, 14, 15, 4, 2, bright(c, 50));
     }
+    // Phoenix chick: flame crest, body, wing flames.
 
     static draw_butterfly(g, c) {
         const lt = bright(c, 50);
@@ -287,6 +308,7 @@ export class SpriteGenerator {
         g.fillCircle(10, 10, 1);
         g.fillCircle(22, 10, 1);
     }
+    // Butterfly: four wings, body, antennae.
 
     static draw_hedgehog(g, c) {
         const d = dark(c, 30);
@@ -304,6 +326,7 @@ export class SpriteGenerator {
         rect(g, 16, 22, 3, 3, d);
         rect(g, 21, 22, 3, 3, d);
     }
+    // Hedgehog: spines, body, face, legs.
 
     static draw_snowy_owl(g, c) {
         const d = dark(c, 15);
@@ -326,6 +349,7 @@ export class SpriteGenerator {
         rect(g, 12, 26, 3, 3, 0x444444);
         rect(g, 17, 26, 3, 3, 0x444444);
     }
+    // Snowy owl: white variant with yellow eyes.
 
     static draw_arctic_fox(g, c) {
         const d = dark(c, 20);
@@ -346,6 +370,7 @@ export class SpriteGenerator {
         rect(g, 10, 26, 3, 4, d);
         rect(g, 19, 26, 3, 4, d);
     }
+    // Arctic fox: white variant with blue eyes.
 
     static drawGeneric(g, c) {
         rect(g, 10, 8, 12, 12, c);
@@ -354,7 +379,9 @@ export class SpriteGenerator {
         rect(g, 11, 20, 3, 4, dark(c, 30));
         rect(g, 18, 20, 3, 4, dark(c, 30));
     }
+    // Generic fallback: simple body, eyes, legs.
 
+    // UI icons and particles: coin, hearts, stars, zzz.
     static ui(scene) {
         tex(scene, 'icon_coin', 16, 16, g => {
             g.fillStyle(0xFFD700);
@@ -399,6 +426,7 @@ export class SpriteGenerator {
         });
     }
 
+    // Visitor sprites: four color variants (head, torso, arms, legs).
     static visitor(scene) {
         const colors = [0x5566AA, 0xAA5566, 0x55AA66, 0x8866AA];
         colors.forEach((c, i) => {
@@ -414,6 +442,7 @@ export class SpriteGenerator {
         });
     }
 
+    // Seasonal particles: snow, leaf, petal, firefly.
     static particles(scene) {
         tex(scene, 'particle_snow', 6, 6, g => {
             g.fillStyle(0xFFFFFF);
@@ -445,6 +474,7 @@ export class SpriteGenerator {
         });
     }
 
+    // Enrichment items and status icons: scratching post, bird bath, log pile, rock garden, toy ball, cozy bed, sick/bond/baby/pregnant/research icons.
     static enrichments(scene) {
         tex(scene, 'enrich_scratching_post', 16, 16, g => {
             rect(g, 6, 2, 4, 14, 0x8B6A3E);
@@ -516,6 +546,7 @@ export class SpriteGenerator {
         });
     }
 
+    // Staff sprites: volunteer, caretaker, vet, guide (color-coded with role-specific details).
     static staff(scene) {
         const types = {
             volunteer: 0x55AA55,

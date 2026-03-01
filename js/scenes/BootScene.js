@@ -1,3 +1,4 @@
+// First scene. Waits for "Press Start 2P" font, generates sprite textures via SpriteGenerator, then transitions to MenuScene.
 import { W, H } from '../GameData.js';
 import { SpriteGenerator } from '../SpriteGenerator.js';
 
