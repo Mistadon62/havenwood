@@ -1,6 +1,7 @@
 import { TILE, COLS, ROWS, W, H, TIME_SCALE, START_COINS, HABITATS, SPECIES, RARITY_WEIGHT, RESCUE_MSG, CLR,
     SEASONS, SEASON_ORDER, SEASON_LENGTH, SEASON_CYCLE, UPGRADES, STAFF_TYPES,
-    TRAITS, TRAIT_IDS, ILLNESSES, ENRICHMENTS, MISSIONS, VISITOR_TYPES, ACHIEVEMENTS } from '../GameData.js';
+    TRAITS, TRAIT_IDS, ILLNESSES, ENRICHMENTS, MISSIONS, VISITOR_TYPES, ACHIEVEMENTS,
+    RESEARCH, RESEARCH_BRANCHES } from '../GameData.js';
 import { SoundManager } from '../SoundManager.js';
 
 let uid = 0;
@@ -28,6 +29,8 @@ export default class GameScene extends Phaser.Scene {
             season: 'spring', prevSeason: 'spring',
             activeMissions: [],
             breedingPairs: [],
+            researchPoints: 0,
+            researchUnlocked: new Set(),
         };
         this.visitors = [];
         this.staffSprites = [];
@@ -177,7 +180,10 @@ export default class GameScene extends Phaser.Scene {
     }
 
     getHabitatCapacity(hab) {
-        return HABITATS[hab.type].capacity + (this.state.upgrades.has('habitat_plus') ? 1 : 0);
+        let cap = HABITATS[hab.type].capacity;
+        if (this.state.upgrades.has('habitat_plus')) cap += 1;
+        if (this.hasResearch('habitat_cap_1')) cap += 1;
+        return cap;
     }
 
     placeHabitat(type, gx, gy, opts = {}) {
@@ -254,19 +260,22 @@ export default class GameScene extends Phaser.Scene {
         const hab = this.state.habitats.find(h => h.id === habitatId);
         const en = ENRICHMENTS[enrichId];
         if (!hab || !en) return false;
-        if (hab.enrichments.length >= 3) {
-            this.game.events.emit('notification', 'Habitat full! Max 3 enrichments.');
+        const maxEnrich = this.hasResearch('enrich_cap_4') ? 4 : 3;
+        if (hab.enrichments.length >= maxEnrich) {
+            this.game.events.emit('notification', `Habitat full! Max ${maxEnrich} enrichments.`);
             this.sfx.error(); return false;
         }
         if (en.habitats && !en.habitats.includes(hab.type)) {
             this.game.events.emit('notification', 'Not compatible with this habitat.');
             this.sfx.error(); return false;
         }
-        if (this.state.coins < en.cost) {
+        let cost = en.cost;
+        if (this.hasResearch('cheap_enrich')) cost = Math.round(cost * 0.7);
+        if (this.state.coins < cost) {
             this.game.events.emit('notification', 'Not enough coins!');
             this.sfx.error(); return false;
         }
-        this.spendCoins(en.cost);
+        this.spendCoins(cost);
         hab.enrichments.push(enrichId);
 
         const px = (hab.gx + 0.3 + Math.random() * (hab.w - 0.6)) * TILE;
@@ -286,6 +295,7 @@ export default class GameScene extends Phaser.Scene {
             const en = ENRICHMENTS[eId];
             if (en) bonus += en.happyBonus;
         }
+        if (this.hasResearch('double_enrich')) bonus *= 2;
         return bonus;
     }
 
@@ -461,6 +471,7 @@ export default class GameScene extends Phaser.Scene {
         let feedAmt = 30, happyBonus = 5;
         if (this.state.upgrades.has('premium_food')) { feedAmt = 60; happyBonus = 15; }
         else if (this.state.upgrades.has('better_feed')) { feedAmt = 45; }
+        if (this.hasResearch('feed_boost')) { feedAmt = Math.round(feedAmt * 1.2); happyBonus = Math.round(happyBonus * 1.2); }
         a.hunger = Math.min(100, a.hunger + feedAmt);
         a.happiness = Math.min(100, a.happiness + happyBonus);
         this.heartEffect(a.sprite.x, a.sprite.y);
@@ -500,7 +511,8 @@ export default class GameScene extends Phaser.Scene {
         if (!a) return;
         if (a.illness) {
             const ill = ILLNESSES[a.illness.type];
-            const cost = ill ? ill.treatCost : 30;
+            let cost = ill ? ill.treatCost : 30;
+            if (this.hasResearch('super_vet')) cost = Math.round(cost * 0.5);
             if (this.state.coins < cost) { this.sfx.error(); return; }
             this.spendCoins(cost);
             a.illness = null;
@@ -559,9 +571,10 @@ export default class GameScene extends Phaser.Scene {
         if (!partner) return;
 
         a.isPregnant = true;
-        a.pregnancyTimer = 3 * 720; // 3 game-days in seconds at TIME_SCALE
-        a.breedCooldown = 7 * 720;
-        partner.breedCooldown = 7 * 720;
+        const breedBoost = this.hasResearch('breed_boost');
+        a.pregnancyTimer = (breedBoost ? 1.5 : 3) * 720;
+        a.breedCooldown = (breedBoost ? 4 : 7) * 720;
+        partner.breedCooldown = (breedBoost ? 4 : 7) * 720;
 
         this.heartEffect(a.sprite.x, a.sprite.y);
         this.heartEffect(partner.sprite.x, partner.sprite.y);
@@ -588,7 +601,8 @@ export default class GameScene extends Phaser.Scene {
         const hasVet = this.state.staff.some(s => s.type === 'vet');
         for (const a of this.state.animals) {
             if (a.illness) {
-                if (hasVet && Math.random() < 0.3) {
+                const vetChance = this.hasResearch('super_vet') ? 1.0 : 0.3;
+                if (hasVet && Math.random() < vetChance) {
                     a.illness = null;
                     if (a.sickIcon) { a.sickIcon.destroy(); a.sickIcon = null; }
                     a.health = Math.min(100, a.health + 15);
@@ -600,6 +614,7 @@ export default class GameScene extends Phaser.Scene {
             if (a.hunger < 20) chance += 0.04;
             if (a.happiness < 20) chance += 0.02;
             if (hasVet) chance *= 0.4;
+            if (this.hasResearch('illness_resist')) chance *= 0.6;
             if (Math.random() < chance) {
                 const types = Object.keys(ILLNESSES);
                 a.illness = { type: Phaser.Utils.Array.GetRandom(types), dayStarted: this.state.day };
@@ -622,6 +637,7 @@ export default class GameScene extends Phaser.Scene {
                     let chance = 0.05;
                     if (TRAITS[a.trait]?.id === 'social') chance += 0.1;
                     if (TRAITS[b.trait]?.id === 'social') chance += 0.1;
+                    if (this.hasResearch('fast_bonds')) chance *= 3;
                     if (Math.random() < chance) {
                         a.bonds.push(b.id);
                         b.bonds.push(a.id);
@@ -671,10 +687,18 @@ export default class GameScene extends Phaser.Scene {
     completeMission(mis) {
         const m = MISSIONS[mis.biome];
         this.state.stats.missionsComplete++;
+        this.earnResearchPoints(2);
 
         const roll = Math.random();
         if (roll < 0.65) {
-            const speciesId = Phaser.Utils.Array.GetRandom(m.species);
+            let pool = [...m.species];
+            if (this.hasResearch('mission_species_bonus')) {
+                const extra = Object.values(SPECIES)
+                    .filter(s => !pool.includes(s.id) && (!s.season || s.season === this.state.season))
+                    .sort(() => Math.random() - 0.5).slice(0, 2).map(s => s.id);
+                pool.push(...extra);
+            }
+            const speciesId = Phaser.Utils.Array.GetRandom(pool);
             const sp = SPECIES[speciesId];
             const name = Phaser.Utils.Array.GetRandom(sp.names);
             const hab = this.findCompatibleHabitat(sp);
@@ -732,6 +756,7 @@ export default class GameScene extends Phaser.Scene {
             this.state.time -= 1440;
             this.state.day++;
             this.state.rep += 2;
+            this.earnResearchPoints(1);
             this.paySalaries();
             this.updateSeason();
             this.sfx.newDay();
@@ -765,8 +790,10 @@ export default class GameScene extends Phaser.Scene {
     /* ========== VISITORS ========== */
 
     pickVisitorType() {
+        const vipThreshold = this.hasResearch('vip_easier') ? 50 : null;
         const types = Object.values(VISITOR_TYPES).filter(vt => {
-            if (vt.minRep && this.state.rep < vt.minRep) return false;
+            const minRep = (vt.id === 'vip' && vipThreshold !== null) ? vipThreshold : vt.minRep;
+            if (minRep && this.state.rep < minRep) return false;
             return true;
         });
         const total = types.reduce((s, t) => s + t.weight, 0);
@@ -780,7 +807,10 @@ export default class GameScene extends Phaser.Scene {
         if (t < 480 || t > 1080) return;
         if (this.state.habitats.length === 0) return;
         const seasonBonus = SEASONS[this.state.season].bonuses;
-        const maxVisitors = Math.round(8 * (seasonBonus.visitors || 1));
+        let visMult = seasonBonus.visitors || 1;
+        if (this.hasResearch('no_season_penalty') && visMult < 1) visMult = 1;
+        if (this.hasResearch('more_visitors')) visMult *= 1.3;
+        const maxVisitors = Math.round(8 * visMult);
         if (this.visitors.length >= maxVisitors) return;
 
         const vType = this.pickVisitorType();
@@ -844,10 +874,13 @@ export default class GameScene extends Phaser.Scene {
             income += this.getEnrichmentAppealBonus(hab) * 0.5;
         }
 
-        income *= vType.incomeMult;
+        let typeMult = vType.incomeMult;
+        if (vType.id === 'school' && this.hasResearch('school_boost')) typeMult *= 2;
+        income *= typeMult;
         const seasonBonus = SEASONS[this.state.season].bonuses;
         if (seasonBonus.income) income *= seasonBonus.income;
         if (this.state.upgrades.has('sanctuary_sign')) income *= 1.2;
+        if (this.hasResearch('income_50')) income *= 1.5;
         if (this.state.upgrades.has('gift_shop')) income += 3;
         const guideCount = this.state.staff.filter(s => s.type === 'guide').length;
         income *= (1 + guideCount * 0.25);
@@ -965,6 +998,45 @@ export default class GameScene extends Phaser.Scene {
         return true;
     }
 
+    /* ========== RESEARCH ========== */
+
+    hasResearch(effectId) {
+        for (const rId of this.state.researchUnlocked) {
+            const r = RESEARCH[rId];
+            if (r && r.effect === effectId) return true;
+        }
+        return false;
+    }
+
+    canUnlockResearch(id) {
+        const r = RESEARCH[id];
+        if (!r || this.state.researchUnlocked.has(id)) return false;
+        if (r.requires && !this.state.researchUnlocked.has(r.requires)) return false;
+        if (this.state.researchPoints < r.cost) return false;
+        return true;
+    }
+
+    unlockResearch(id) {
+        const r = RESEARCH[id];
+        if (!r || !this.canUnlockResearch(id)) {
+            this.sfx.error();
+            if (r && this.state.researchPoints < r.cost)
+                this.game.events.emit('notification', 'Not enough research points!');
+            return false;
+        }
+        this.state.researchPoints -= r.cost;
+        this.state.researchUnlocked.add(id);
+        this.sfx.upgrade();
+        this.game.events.emit('notification', `Research complete: ${r.name}!`);
+        this.game.events.emit('researchUpdate');
+        return true;
+    }
+
+    earnResearchPoints(n) {
+        this.state.researchPoints += n;
+        this.game.events.emit('researchUpdate');
+    }
+
     /* ========== RESCUE ========== */
 
     triggerRescue(forceSpecies) {
@@ -980,7 +1052,13 @@ export default class GameScene extends Phaser.Scene {
     pickSpecies() {
         const season = this.state.season;
         const list = Object.values(SPECIES).filter(s => !s.season || s.season === season);
-        const weights = list.map(s => { let w = RARITY_WEIGHT[s.rarity]; if (s.season === season) w *= 2; return w; });
+        const rareBoost = this.hasResearch('rare_boost');
+        const weights = list.map(s => {
+            let w = RARITY_WEIGHT[s.rarity];
+            if (s.season === season) w *= 2;
+            if (rareBoost && (s.rarity === 'rare' || s.rarity === 'legendary')) w *= 2;
+            return w;
+        });
         const total = weights.reduce((a, b) => a + b, 0);
         let r = Math.random() * total;
         for (let i = 0; i < list.length; i++) { r -= weights[i]; if (r <= 0) return list[i]; }
@@ -1000,6 +1078,7 @@ export default class GameScene extends Phaser.Scene {
         this.addAnimal(ev.speciesId, ev.name, hab.id);
         this.state.stats.rescued++;
         this.state.rep += 10;
+        this.earnResearchPoints(1);
         if (!this.state.discoveries.has(ev.speciesId)) {
             this.state.discoveries.add(ev.speciesId);
             this.game.events.emit('notification', `New species discovered: ${SPECIES[ev.speciesId].name}!`);
@@ -1035,6 +1114,8 @@ export default class GameScene extends Phaser.Scene {
             all_upgrades: () => s.upgrades.size >= Object.keys(UPGRADES).length,
             first_enrichment: () => s.habitats.some(h => (h.enrichments || []).length > 0),
             healer: () => s.stats.healed >= 1,
+            first_research: () => s.researchUnlocked.size >= 1,
+            full_research: () => s.researchUnlocked.size >= Object.keys(RESEARCH).length,
         };
 
         for (const ach of ACHIEVEMENTS) {
@@ -1067,7 +1148,7 @@ export default class GameScene extends Phaser.Scene {
 
     saveGame() {
         const data = {
-            v: 3,
+            v: 4,
             day: this.state.day, time: this.state.time,
             coins: this.state.coins, rep: this.state.rep,
             habitats: this.state.habitats.map(h => ({
@@ -1091,6 +1172,8 @@ export default class GameScene extends Phaser.Scene {
             activeMissions: this.state.activeMissions.map(m => ({
                 id: m.id, biome: m.biome, duration: m.duration, elapsed: m.elapsed
             })),
+            researchPoints: this.state.researchPoints,
+            researchUnlocked: [...this.state.researchUnlocked],
         };
         localStorage.setItem('havenwood_save', JSON.stringify(data));
     }
@@ -1107,6 +1190,8 @@ export default class GameScene extends Phaser.Scene {
             this.state.achievementsEarned = new Set(d.achievementsEarned || []);
             this.state.seasonsVisited = new Set(d.seasonsVisited || ['spring']);
             this.state.stats = { rescued: 0, visitors: 0, earned: 0, bred: 0, missionsComplete: 0, healed: 0, ...d.stats };
+            this.state.researchPoints = d.researchPoints || 0;
+            this.state.researchUnlocked = new Set(d.researchUnlocked || []);
             this.state.season = this.getSeason();
 
             for (const h of d.habitats) {

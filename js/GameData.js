@@ -106,6 +106,8 @@ export const ACHIEVEMENTS = [
     { id: 'all_upgrades', name: 'Fully Loaded', desc: 'Buy all upgrades' },
     { id: 'first_enrichment', name: 'Interior Designer', desc: 'Add an enrichment item' },
     { id: 'healer', name: 'Healer', desc: 'Cure a sick animal' },
+    { id: 'first_research', name: 'Scholar', desc: 'Complete your first research' },
+    { id: 'full_research', name: 'Genius', desc: 'Complete all research' },
 ];
 
 export const UPGRADES = {
@@ -124,6 +126,41 @@ export const STAFF_TYPES = {
     caretaker:  { id: 'caretaker', name: 'Caretaker', hireCost: 150, salary: 30, desc: 'Auto-feeds all animals', color: 0x5566AA },
     vet:        { id: 'vet', name: 'Veterinarian', hireCost: 200, salary: 40, desc: 'Keeps animals healthy', color: 0xAA5555 },
     guide:      { id: 'guide', name: 'Tour Guide', hireCost: 100, salary: 25, desc: '+25% visitor income', color: 0xAA8855 },
+};
+
+// Research tree: 4 branches x 4 tiers. Each node requires its parent and costs research points (earned from reputation).
+// `requires` is the parent node id (null = root). `effect` is a key checked in game logic.
+export const RESEARCH = {
+    // ── Wildlife Biology ──
+    wildlife_1:   { id: 'wildlife_1',   branch: 'wildlife', tier: 1, name: 'Field Study',         cost: 3,  requires: null,          desc: '+2 max species per rescue mission',    effect: 'mission_species_bonus' },
+    wildlife_2:   { id: 'wildlife_2',   branch: 'wildlife', tier: 2, name: 'Habitat Science',      cost: 5,  requires: 'wildlife_1',  desc: 'All habitats +1 capacity',             effect: 'habitat_cap_1' },
+    wildlife_3:   { id: 'wildlife_3',   branch: 'wildlife', tier: 3, name: 'Behavioral Study',     cost: 8,  requires: 'wildlife_2',  desc: 'Bonds form 3x faster',                 effect: 'fast_bonds' },
+    wildlife_4:   { id: 'wildlife_4',   branch: 'wildlife', tier: 4, name: 'Apex Conservation',    cost: 12, requires: 'wildlife_3',  desc: 'Rare/legendary rescues 2x more likely', effect: 'rare_boost' },
+
+    // ── Veterinary Science ──
+    vet_1:        { id: 'vet_1',        branch: 'vet', tier: 1, name: 'First Aid',            cost: 3,  requires: null,      desc: 'Illness chance reduced 40%',            effect: 'illness_resist' },
+    vet_2:        { id: 'vet_2',        branch: 'vet', tier: 2, name: 'Animal Nutrition',     cost: 5,  requires: 'vet_1',   desc: 'All feeding +20% effectiveness',        effect: 'feed_boost' },
+    vet_3:        { id: 'vet_3',        branch: 'vet', tier: 3, name: 'Breeding Program',     cost: 8,  requires: 'vet_2',   desc: 'Pregnancy time halved, cooldown -3 days', effect: 'breed_boost' },
+    vet_4:        { id: 'vet_4',        branch: 'vet', tier: 4, name: 'Miracle Medicine',     cost: 12, requires: 'vet_3',   desc: 'Vets cure instantly, heal cost -50%',   effect: 'super_vet' },
+
+    // ── Ecology & Enrichment ──
+    eco_1:        { id: 'eco_1',        branch: 'eco', tier: 1, name: 'Nature Crafts',        cost: 3,  requires: null,      desc: 'Enrichment costs -30%',                 effect: 'cheap_enrich' },
+    eco_2:        { id: 'eco_2',        branch: 'eco', tier: 2, name: 'Eco Design',           cost: 5,  requires: 'eco_1',   desc: 'Habitats hold 4 enrichments (was 3)',   effect: 'enrich_cap_4' },
+    eco_3:        { id: 'eco_3',        branch: 'eco', tier: 3, name: 'Seasonal Harmony',     cost: 8,  requires: 'eco_2',   desc: 'Season penalties removed',              effect: 'no_season_penalty' },
+    eco_4:        { id: 'eco_4',        branch: 'eco', tier: 4, name: 'Perfect Habitat',      cost: 12, requires: 'eco_3',   desc: 'Enrichment bonuses doubled',            effect: 'double_enrich' },
+
+    // ── Public Outreach ──
+    outreach_1:   { id: 'outreach_1',   branch: 'outreach', tier: 1, name: 'Flyer Campaign',      cost: 3,  requires: null,          desc: '+30% visitor frequency',                effect: 'more_visitors' },
+    outreach_2:   { id: 'outreach_2',   branch: 'outreach', tier: 2, name: 'Education Center',    cost: 5,  requires: 'outreach_1',  desc: 'School groups pay 2x',                  effect: 'school_boost' },
+    outreach_3:   { id: 'outreach_3',   branch: 'outreach', tier: 3, name: 'Media Coverage',      cost: 8,  requires: 'outreach_2',  desc: 'VIP min rep lowered to 50',             effect: 'vip_easier' },
+    outreach_4:   { id: 'outreach_4',   branch: 'outreach', tier: 4, name: 'World Renown',        cost: 12, requires: 'outreach_3',  desc: 'All visitor income +50%',               effect: 'income_50' },
+};
+
+export const RESEARCH_BRANCHES = {
+    wildlife: { name: 'Wildlife Biology', color: 0x55AA55, icon: '\u{1F43E}' },
+    vet:      { name: 'Veterinary Science', color: 0xAA5555, icon: '\u{2695}' },
+    eco:      { name: 'Ecology', color: 0x55AAAA, icon: '\u{1F33F}' },
+    outreach: { name: 'Public Outreach', color: 0xAAAA55, icon: '\u{1F4E2}' },
 };
 
 export const RESCUE_MSG = [

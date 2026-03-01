@@ -1,5 +1,6 @@
 import { W, H, HABITATS, SPECIES, RARITY_COLOR, CLR, SEASONS, UPGRADES, STAFF_TYPES,
-    TRAITS, ILLNESSES, ENRICHMENTS, MISSIONS, VISITOR_TYPES, ACHIEVEMENTS } from '../GameData.js';
+    TRAITS, ILLNESSES, ENRICHMENTS, MISSIONS, VISITOR_TYPES, ACHIEVEMENTS,
+    RESEARCH, RESEARCH_BRANCHES } from '../GameData.js';
 
 export default class HUDScene extends Phaser.Scene {
     constructor() { super('HUDScene'); }
@@ -13,6 +14,7 @@ export default class HUDScene extends Phaser.Scene {
         this.missionPanel = null;
         this.journalPanel = null;
         this.habitatPanel = null;
+        this.researchPanel = null;
         this.activeBuild = null;
 
         this.createTopBar();
@@ -26,6 +28,7 @@ export default class HUDScene extends Phaser.Scene {
         const s = this.gs.state;
         this.updateCoins(s.coins);
         this.updateTime({ time: s.time, day: s.day, season: s.season, rep: s.rep });
+        this.rpTxt.setText(s.researchPoints.toString());
     }
 
     /* ========== TOP BAR ========== */
@@ -38,6 +41,8 @@ export default class HUDScene extends Phaser.Scene {
         this.dayTxt = this.txt(12, 12, 'Day 1', 10);
         this.seasonTxt = this.txt(130, 12, 'Spring', 8, '#88CC88');
         this.timeTxt = this.txt(W / 2, 12, '6:00 AM', 10).setOrigin(0.5, 0);
+        this.add.image(W - 280, 21, 'icon_research').setScale(1.2);
+        this.rpTxt = this.txt(W - 268, 12, '0', 9, '#44DDAA');
         this.repTxt = this.txt(W - 210, 12, '0', 9, CLR.gold);
         this.repLabel = this.txt(W - 228, 14, '\u2605', 10, CLR.gold);
         this.add.image(W - 140, 21, 'icon_coin').setScale(1.4);
@@ -65,6 +70,7 @@ export default class HUDScene extends Phaser.Scene {
             { key: 'missions', label: 'Missions', cost: null, color: 0x66AA66 },
             { key: 'upgrades', label: 'Upgrades', cost: null, color: 0xCCAA33 },
             { key: 'staff', label: 'Staff', cost: null, color: 0x5588BB },
+            { key: 'research', label: 'Research', cost: null, color: 0x44DDAA },
             { key: 'journal', label: 'Journal', cost: null, color: 0xAA77CC },
         ];
         const allItems = [...buildItems, ...mgmtItems];
@@ -83,6 +89,7 @@ export default class HUDScene extends Phaser.Scene {
                 if (item.key === 'upgrades') { this.togglePanel('upgradePanel', () => this.showUpgradePanel()); return; }
                 if (item.key === 'staff') { this.togglePanel('staffPanel', () => this.showStaffPanel()); return; }
                 if (item.key === 'missions') { this.togglePanel('missionPanel', () => this.showMissionPanel()); return; }
+                if (item.key === 'research') { this.togglePanel('researchPanel', () => this.showResearchPanel()); return; }
                 if (item.key === 'journal') { this.togglePanel('journalPanel', () => this.showJournalPanel()); return; }
                 this.closeAllPanels();
                 this.activeBuild = item.key;
@@ -124,6 +131,10 @@ export default class HUDScene extends Phaser.Scene {
         ev.on('staffUpdate', () => { if (this.staffPanel) this.showStaffPanel(); });
         ev.on('missionsUpdate', () => { if (this.missionPanel) this.showMissionPanel(); });
         ev.on('achievementEarned', () => { if (this.journalPanel) this.showJournalPanel(); });
+        ev.on('researchUpdate', () => {
+            this.rpTxt.setText(this.gs.state.researchPoints.toString());
+            if (this.researchPanel) this.showResearchPanel();
+        });
     }
 
     updateTime(d) {
@@ -353,7 +364,8 @@ export default class HUDScene extends Phaser.Scene {
         const ht = HABITATS[hab.type];
         const cap = this.gs.getHabitatCapacity(hab);
         const enrichList = hab.enrichments || [];
-        const pw = 230, maxEnrich = 3;
+        const maxEnrich = this.gs.hasResearch('enrich_cap_4') ? 4 : 3;
+        const pw = 230;
 
         const compatEnrich = Object.values(ENRICHMENTS).filter(e => !e.habitats || e.habitats.includes(hab.type));
         const ph = 90 + enrichList.length * 18 + compatEnrich.length * 30 + 30;
@@ -385,13 +397,14 @@ export default class HUDScene extends Phaser.Scene {
             yy += 18;
             for (const en of compatEnrich) {
                 if (enrichList.includes(en.id) && enrichList.filter(e => e === en.id).length >= 1) continue;
-                const canAfford = this.gs.state.coins >= en.cost;
+                const eCost = this.gs.hasResearch('cheap_enrich') ? Math.round(en.cost * 0.7) : en.cost;
+                const canAfford = this.gs.state.coins >= eCost;
                 const rowBg = this.add.graphics();
                 rowBg.fillStyle(0x332211, 0.5); rowBg.fillRoundedRect(6, yy, pw - 12, 26, 3);
                 ct.add(rowBg);
                 ct.add(this.txt(10, yy + 3, en.name, 5));
                 ct.add(this.txt(10, yy + 15, `+${en.happyBonus} happy`, 5, '#88CC88'));
-                ct.add(this.txt(pw - 48, yy + 3, `${en.cost}g`, 5, canAfford ? CLR.gold : '#884444').setOrigin(1, 0));
+                ct.add(this.txt(pw - 48, yy + 3, `${eCost}g`, 5, canAfford ? CLR.gold : '#884444').setOrigin(1, 0));
                 if (canAfford) {
                     const buyBtn = this.txt(pw - 10, yy + 8, 'ADD', 5, '#44CC44').setOrigin(1, 0).setInteractive({ useHandCursor: true });
                     buyBtn.on('pointerdown', () => { this.gs.addEnrichment(hab.id, en.id); this.showHabitatPanel(hab); });
@@ -402,7 +415,7 @@ export default class HUDScene extends Phaser.Scene {
                 yy += 28;
             }
         } else {
-            ct.add(this.txt(8, yy, 'Enrichment full (3/3)', 5, '#888888'));
+            ct.add(this.txt(8, yy, `Enrichment full (${maxEnrich}/${maxEnrich})`, 5, '#888888'));
             yy += 18;
         }
 
@@ -577,6 +590,96 @@ export default class HUDScene extends Phaser.Scene {
         }
     }
 
+    /* ========== RESEARCH PANEL ========== */
+
+    showResearchPanel() {
+        if (this.researchPanel) this.researchPanel.destroy();
+        const branches = Object.keys(RESEARCH_BRANCHES);
+        const pw = 620, ph = 440;
+        const px = W / 2 - pw / 2, py = 42;
+        const ct = this.add.container(px, py).setDepth(290);
+        const bg = this.add.graphics();
+        bg.fillStyle(0x1a0e04, 0.97); bg.fillRoundedRect(0, 0, pw, ph, 8);
+        bg.lineStyle(2, 0x44DDAA); bg.strokeRoundedRect(0, 0, pw, ph, 8);
+        ct.add(bg);
+
+        ct.add(this.txt(pw / 2, 12, 'RESEARCH', 12, CLR.gold).setOrigin(0.5));
+        ct.add(this.txt(pw / 2, 30, `Research Points: ${this.gs.state.researchPoints}`, 7, '#44DDAA').setOrigin(0.5));
+
+        const closeBtn = this.txt(pw - 10, 6, 'X', 8, '#FF6666').setOrigin(0.5, 0).setInteractive({ useHandCursor: true });
+        closeBtn.on('pointerdown', () => { ct.destroy(); this.researchPanel = null; });
+        ct.add(closeBtn);
+
+        const unlocked = this.gs.state.researchUnlocked;
+        const colW = (pw - 40) / branches.length;
+        const startY = 52;
+        const nodeH = 82;
+        const gfx = this.add.graphics();
+        ct.add(gfx);
+
+        branches.forEach((branchId, bi) => {
+            const branch = RESEARCH_BRANCHES[branchId];
+            const cx = 20 + bi * colW + colW / 2;
+
+            ct.add(this.txt(cx, startY, branch.name, 6, '#' + branch.color.toString(16).padStart(6, '0')).setOrigin(0.5));
+
+            const nodes = Object.values(RESEARCH).filter(r => r.branch === branchId).sort((a, b) => a.tier - b.tier);
+            nodes.forEach((node, ni) => {
+                const ny = startY + 18 + ni * nodeH;
+                const nw = colW - 12, nh = 70;
+                const nx = cx - nw / 2;
+
+                const isUnlocked = unlocked.has(node.id);
+                const canUnlock = this.gs.canUnlockResearch(node.id);
+                const parentUnlocked = !node.requires || unlocked.has(node.requires);
+
+                if (ni > 0) {
+                    const prevY = startY + 18 + (ni - 1) * nodeH + nh;
+                    gfx.lineStyle(2, isUnlocked || canUnlock ? branch.color : 0x333333, isUnlocked ? 0.8 : 0.3);
+                    gfx.lineBetween(cx, prevY, cx, ny);
+                }
+
+                const nodeBg = this.add.graphics();
+                if (isUnlocked) {
+                    nodeBg.fillStyle(branch.color, 0.3);
+                    nodeBg.lineStyle(2, branch.color, 0.9);
+                } else if (canUnlock) {
+                    nodeBg.fillStyle(branch.color, 0.12);
+                    nodeBg.lineStyle(2, branch.color, 0.6);
+                } else {
+                    nodeBg.fillStyle(0x111111, 0.5);
+                    nodeBg.lineStyle(1, 0x333333, 0.4);
+                }
+                nodeBg.fillRoundedRect(nx, ny, nw, nh, 4);
+                nodeBg.strokeRoundedRect(nx, ny, nw, nh, 4);
+                ct.add(nodeBg);
+
+                const nameClr = isUnlocked ? '#FFFFFF' : (parentUnlocked ? '#CCCCCC' : '#666666');
+                ct.add(this.txt(cx, ny + 8, node.name, 5, nameClr).setOrigin(0.5));
+                ct.add(this.txt(cx, ny + 22, node.desc, 4, isUnlocked ? '#AABB99' : '#888888')
+                    .setOrigin(0.5).setWordWrapWidth(nw - 8));
+
+                if (isUnlocked) {
+                    ct.add(this.txt(cx, ny + nh - 12, 'DONE', 5, '#66CC66').setOrigin(0.5));
+                } else if (canUnlock) {
+                    const costTxt = this.txt(cx - 24, ny + nh - 14, `${node.cost} RP`, 5, '#44DDAA').setOrigin(0.5);
+                    ct.add(costTxt);
+                    const btn = this.txt(cx + 24, ny + nh - 14, 'UNLOCK', 5, '#44CC44')
+                        .setOrigin(0.5).setInteractive({ useHandCursor: true });
+                    btn.on('pointerdown', () => { this.gs.unlockResearch(node.id); });
+                    btn.on('pointerover', () => btn.setColor('#88FF88'));
+                    btn.on('pointerout', () => btn.setColor('#44CC44'));
+                    ct.add(btn);
+                } else {
+                    const reason = !parentUnlocked ? 'Locked' : `${node.cost} RP`;
+                    ct.add(this.txt(cx, ny + nh - 12, reason, 5, '#555555').setOrigin(0.5));
+                }
+            });
+        });
+
+        this.researchPanel = ct;
+    }
+
     /* ========== JOURNAL PANEL ========== */
 
     showJournalPanel() {
@@ -686,6 +789,8 @@ export default class HUDScene extends Phaser.Scene {
             ['Animals Healed', s.stats.healed],
             ['Total Earned', `${s.stats.earned}g`],
             ['Upgrades', `${s.upgrades.size}/${Object.keys(UPGRADES).length}`],
+            ['Research', `${s.researchUnlocked.size}/${Object.keys(RESEARCH).length}`],
+            ['Research Points', s.researchPoints],
             ['Achievements', `${s.achievementsEarned.size}/${ACHIEVEMENTS.length}`],
         ];
         let yy = y;
@@ -705,7 +810,7 @@ export default class HUDScene extends Phaser.Scene {
     }
 
     closeAllPanels() {
-        ['animalPanel', 'upgradePanel', 'staffPanel', 'missionPanel', 'journalPanel', 'habitatPanel'].forEach(k => {
+        ['animalPanel', 'upgradePanel', 'staffPanel', 'missionPanel', 'journalPanel', 'habitatPanel', 'researchPanel'].forEach(k => {
             if (this[k]) { this[k].destroy(); this[k] = null; }
         });
         if (this._missionRefresh) { this._missionRefresh.destroy(); this._missionRefresh = null; }

@@ -506,6 +506,14 @@ export class SpriteGenerator {
             g.fillStyle(0xFFAADD);
             g.fillCircle(5, 4, 2);
         });
+        tex(scene, 'icon_research', 16, 16, g => {
+            g.fillStyle(0x44DDAA);
+            g.fillRect(6, 2, 4, 8);
+            g.fillRect(2, 4, 12, 4);
+            g.fillStyle(0x33BB88);
+            g.fillCircle(8, 12, 3);
+            g.fillRect(7, 9, 2, 3);
+        });
     }
 
     static staff(scene) {
