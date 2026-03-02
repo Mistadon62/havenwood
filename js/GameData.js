@@ -58,7 +58,7 @@ export const TRAITS = {
     shy:      { id: 'shy',      name: 'Shy',       happyMult: 1.1, hungerMult: 0.9, petBonus: 0.7, desc: 'Timid but low maintenance' },
     grumpy:   { id: 'grumpy',   name: 'Grumpy',    happyMult: 1.3, hungerMult: 1.0, petBonus: 0.5, desc: 'Hard to please' },
     social:   { id: 'social',   name: 'Social',    happyMult: 0.8, hungerMult: 1.0, petBonus: 1.2, desc: 'Loves company, bonds easily' },
-    curious:  { id: 'curious',  name: 'Curious',   happyMult: 1.0, hungerMult: 1.0, petBonus: 1.0, enrichBonus: 1.5, desc: 'Benefits extra from enrichment' },
+    curious:  { id: 'curious',  name: 'Curious',   happyMult: 1.0, hungerMult: 1.0, petBonus: 1.0, enrichBonus: 1.5, desc: 'Benefits extra from enrichments' },
     lazy:     { id: 'lazy',     name: 'Lazy',      happyMult: 0.7, hungerMult: 0.8, petBonus: 0.9, desc: 'Relaxed, rarely unhappy' },
 };
 export const TRAIT_IDS = Object.keys(TRAITS);

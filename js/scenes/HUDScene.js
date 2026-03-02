@@ -1,7 +1,8 @@
 // UI overlay scene running parallel to GameScene. Has its own camera, unaffected by GameScene zoom.
 // Communicates via this.game.events; this.gs = GameScene reference for state and method calls.
-// Manages toolbar (hidden during habitat zoom), habitat/animal panels, rescue popup with time-pause,
-// build popup, and management panels (upgrades, staff, missions, research, journal).
+// Manages toolbar (hidden during habitat zoom), habitat/animal panels (with close X and back bar),
+// rescue popup with time-pause, build popup, and management panels (vertically centered).
+// hasOpenPanel() lets GameScene suppress world clicks while a management panel is visible.
 import { W, H, HABITATS, SPECIES, RARITY_COLOR, CLR, SEASONS, UPGRADES, STAFF_TYPES,
     TRAITS, ILLNESSES, ENRICHMENTS, MISSIONS, VISITOR_TYPES, ACHIEVEMENTS,
     RESEARCH, RESEARCH_BRANCHES } from '../GameData.js';
@@ -40,6 +41,7 @@ export default class HUDScene extends Phaser.Scene {
     /* ========== TOP BAR ========== */
 
     // Day, season, clock, reputation star, research icon, coins, save button.
+    // All elements are vertically centered at midY=21 using setOrigin(_, 0.5).
     createTopBar() {
         const bar = this.add.graphics();
         bar.fillStyle(CLR.uiBg, 0.9); bar.fillRect(0, 0, W, 42);
@@ -487,6 +489,7 @@ export default class HUDScene extends Phaser.Scene {
     /* ========== HABITAT INFO PANEL ========== */
 
     // Habitat details, current enrichments, add-enrichment options. Shown when zoomed in.
+    // Has a red X close button in the top-right corner that triggers zoomOut.
     // Hides the toolbar and creates a centered "< Back" button bar at the bottom of the screen.
     showHabitatPanel(hab) {
         if (this.habitatPanel) this.habitatPanel.destroy();
@@ -583,7 +586,7 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== UPGRADES PANEL ========== */
 
-    // Lists upgrades with buy buttons.
+    // Lists upgrades with buy buttons. Vertically centered between top and bottom bars.
     showUpgradePanel() {
         if (this.upgradePanel) this.upgradePanel.destroy();
         const pw = 380, entries = Object.values(UPGRADES);
@@ -626,7 +629,7 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== STAFF PANEL ========== */
 
-    // Hire/fire staff members.
+    // Hire/fire staff members. Vertically centered between top and bottom bars.
     showStaffPanel() {
         if (this.staffPanel) this.staffPanel.destroy();
         const pw = 380, currentStaff = this.gs.state.staff;
@@ -682,7 +685,7 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== MISSION PANEL ========== */
 
-    // Launch rescue missions, view progress bars.
+    // Launch rescue missions, view progress bars. Vertically centered between top and bottom bars.
     showMissionPanel() {
         if (this.missionPanel) this.missionPanel.destroy();
         const pw = 420, missions = Object.values(MISSIONS);
@@ -750,7 +753,7 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== RESEARCH PANEL ========== */
 
-    // Tabbed UI: one branch at a time, 4 tiers per branch, unlock buttons.
+    // Tabbed UI: one branch at a time, 4 tiers per branch, unlock buttons. Vertically centered.
     showResearchPanel() {
         if (this.researchPanel) this.researchPanel.destroy();
         if (!this._researchTab) this._researchTab = 'wildlife';
@@ -858,7 +861,7 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== JOURNAL PANEL ========== */
 
-    // Tabbed: Bestiary, Achievements, Stats.
+    // Tabbed: Bestiary, Achievements, Stats. Vertically centered between top and bottom bars.
     showJournalPanel() {
         if (this.journalPanel) this.journalPanel.destroy();
 
@@ -992,6 +995,9 @@ export default class HUDScene extends Phaser.Scene {
 
     // Returns a y position that vertically centers a panel of given height between the top and bottom bars.
     centerPanelY(ph) { return Math.max(46, 42 + (H - 104 - ph) / 2); }
+
+    // True if any management panel (upgrades, staff, missions, research, journal) is open.
+    hasOpenPanel() { return !!(this.upgradePanel || this.staffPanel || this.missionPanel || this.journalPanel || this.researchPanel); }
 
     // Destroys all open panels and mission refresh timer. keepZoom=true preserves the
     // camera zoom and back bar (used by rescue events so they don't interrupt the zoomed view).

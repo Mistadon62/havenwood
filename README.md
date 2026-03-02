@@ -45,7 +45,7 @@ havenwood/
 |---|---|
 | `GameData.js` | Central data registry. Every species, habitat, upgrade, research node, achievement, etc. is defined here. Change game balance by editing this file. |
 | `GameScene.js` | The game simulation. Manages the grid map, animal behavior, visitors, staff, time/seasons, breeding, illness, missions, research, economy, achievements, and save/load. |
-| `HUDScene.js` | All UI. Runs as a parallel Phaser scene on top of GameScene. Toolbar with Build popup menu for habitat placement, management panels, and notifications. Communicates via `this.game.events` (Phaser's global event emitter). |
+| `HUDScene.js` | All UI. Runs as a parallel Phaser scene on top of GameScene. Toolbar with Build popup menu for habitat placement, vertically centered management panels, and notifications. Exposes `hasOpenPanel()` so GameScene can suppress world clicks while a panel is visible. Communicates via `this.game.events` (Phaser's global event emitter). |
 | `SpriteGenerator.js` | Draws every texture at boot using Phaser's Graphics API — animals, terrain, UI icons, particles, enrichment items, staff, visitors. Zero external image files. |
 | `SoundManager.js` | Generates all sound effects procedurally using the Web Audio API — oscillators and filtered noise. Zero audio files. |
 
@@ -99,7 +99,7 @@ Capacity can be increased by the Habitat Plus upgrade (+1) and the Wildlife Biol
 
 #### Habitat Zoom View
 
-Clicking a habitat from the sanctuary overview zooms the camera (2.5x) to center on it and opens the habitat info panel on the left. The bottom toolbar is replaced with a centered "< Back" button. Animals are only clickable while zoomed in. Pressing ESC or clicking Back zooms back out to the sanctuary overview, closing both the habitat and any open animal panel. The zoom uses Phaser's `camera.pan()` and `camera.zoomTo()` with `force: true` so it can be safely interrupted (e.g., by rescue events).
+Clicking a habitat from the sanctuary overview zooms the camera (2.5x) to center on it and opens the habitat info panel on the left. The panel has a red X close button in its top-right corner, and the bottom toolbar is replaced with a centered "< Back" button — both zoom back out. Animals are only clickable while zoomed in; hovering over an animal shows a glow effect that follows the sprite shape (using Phaser's `preFX.addGlow`). Pressing ESC or clicking Back/X zooms back out to the sanctuary overview, closing both the habitat and any open animal panel. The zoom uses Phaser's `camera.pan()` and `camera.zoomTo()` with `force: true` so it can be safely interrupted (e.g., by rescue events).
 
 ### Animals
 
@@ -139,6 +139,8 @@ Visitor types: Family, Tourist, Photographer, School, VIP — each with differen
 | Caretaker | 150g | 30g/day | Auto-feeds all animals |
 | Veterinarian | 200g | 40g/day | Heals animals, auto-cures illness |
 | Tour Guide | 100g | 25g/day | +25% visitor income |
+
+Volunteers, caretakers, and vets can walk freely into habitats. Tour guides avoid habitats the same way visitors do.
 
 If you can't afford salaries at the start of a day, staff leave automatically.
 

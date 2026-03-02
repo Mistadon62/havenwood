@@ -140,8 +140,10 @@ export default class GameScene extends Phaser.Scene {
     /* ========== INPUT ========== */
     // Pointer move shows build preview in build mode; in default mode, hovering over a habitat
     // shows a pointer cursor and faint stroke outline. Pointerdown places habitat or zooms in.
-    // World clicks are suppressed while zoomed (viewingHabitat). Right-click or ESC exits build
-    // mode; ESC also zooms out if viewing a habitat. Browser context menu is suppressed on the canvas.
+    // World clicks and hover outlines are suppressed while zoomed (viewingHabitat) or while a
+    // HUD management panel is open (hasOpenPanel check prevents clicking through panels).
+    // Right-click or ESC exits build mode; ESC also zooms out if viewing a habitat.
+    // Browser context menu is suppressed on the canvas.
 
     setupInput() {
         this.input.on('pointermove', ptr => {
@@ -160,6 +162,8 @@ export default class GameScene extends Phaser.Scene {
             }
             this.preview.setVisible(false);
             if (this.state.viewingHabitat) { this.hoverOutline.setVisible(false); return; }
+            const hud = this.scene.get('HUDScene');
+            if (hud && hud.hasOpenPanel()) { this.hoverOutline.setVisible(false); this.game.canvas.style.cursor = 'default'; return; }
             const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
             if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
                 const cell = this.grid[gy]?.[gx];
@@ -183,6 +187,8 @@ export default class GameScene extends Phaser.Scene {
             if (ptr.rightButtonDown()) { this.exitBuild(); return; }
             if (this._skipPointerDown) { this._skipPointerDown = false; return; }
             if (this.state.viewingHabitat) return;
+            const hud = this.scene.get('HUDScene');
+            if (hud && hud.hasOpenPanel()) return;
             if (this.state.buildMode) {
                 const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
                 if (this.canPlace(this.state.buildMode, gx, gy)) { this.placeHabitat(this.state.buildMode, gx, gy); this.exitBuild(); }
@@ -210,6 +216,7 @@ export default class GameScene extends Phaser.Scene {
     // Zoom camera (2.5x) to center on a habitat; zoom out restores default view.
     // Uses camera.pan/zoomTo with force:true so rescue events can't leave the camera stuck.
     // viewingHabitat tracks the active habitat id; world clicks and build mode are suppressed while set.
+    // zoomOut clears any active animal hover glow and emits habitatViewClosed before animating.
 
     zoomToHabitat(hab) {
         const ht = HABITATS[hab.type];
@@ -393,6 +400,7 @@ export default class GameScene extends Phaser.Scene {
     /* ========== ANIMALS ========== */
     // Spawn, wander, bob, hunger/happiness/health decay, traits, illness, bonds, breeding.
     // Animals are only clickable while zoomed into their habitat (viewingHabitat guard).
+    // Hovering over an animal while zoomed in adds a preFX glow that follows the sprite shape.
     // updateAnimals emits animalUpdate every ~2s so the HUD animal panel auto-refreshes.
 
     addAnimal(speciesId, name, habitatId, opts = {}) {
@@ -1046,6 +1054,7 @@ export default class GameScene extends Phaser.Scene {
 
     /* ========== STAFF ========== */
     // Hired NPCs: caretakers feed, volunteers feed one habitat, vets heal. Wander and auto-work.
+    // Volunteers, caretakers, and vets can walk into habitats; tour guides avoid them like visitors.
 
     hireStaff(typeId) {
         const st = STAFF_TYPES[typeId];
