@@ -1,6 +1,7 @@
 /**
  * GameScene - Core gameplay scene for Havenwood, a Phaser 3 animal sanctuary management game.
- * Handles map, building, animals, visitors, staff, missions, research, time, seasons, and save/load.
+ * Handles map, building, habitat zoom view, animals, visitors, staff, missions, research, time,
+ * seasons, rescue events (with time-pause), and save/load.
  */
 import { TILE, COLS, ROWS, W, H, MAP_Y, TIME_SCALE, START_COINS, HABITATS, SPECIES, RARITY_WEIGHT, RESCUE_MSG, CLR,
     SEASONS, SEASON_ORDER, SEASON_LENGTH, SEASON_CYCLE, UPGRADES, STAFF_TYPES,
@@ -36,6 +37,8 @@ export default class GameScene extends Phaser.Scene {
             breedingPairs: [],
             researchPoints: 0,
             researchUnlocked: new Set(),
+            viewingHabitat: null,
+            rescuePaused: false,
         };
         this.visitors = [];
         this.staffSprites = [];
@@ -134,8 +137,9 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== INPUT ========== */
-    // Pointer move shows build preview; pointerdown places habitat or opens habitat info.
-    // Right-click or ESC exits build mode. Browser context menu is suppressed on the canvas.
+    // Pointer move shows build preview; pointerdown places habitat or clicks a habitat to zoom in.
+    // World clicks are suppressed while zoomed (viewingHabitat). Right-click or ESC exits build
+    // mode; ESC also zooms out if viewing a habitat. Browser context menu is suppressed on the canvas.
 
     setupInput() {
         this.input.on('pointermove', ptr => {
@@ -154,6 +158,7 @@ export default class GameScene extends Phaser.Scene {
         this.input.on('pointerdown', ptr => {
             if (ptr.rightButtonDown()) { this.exitBuild(); return; }
             if (this._skipPointerDown) { this._skipPointerDown = false; return; }
+            if (this.state.viewingHabitat) return;
             if (this.state.buildMode) {
                 const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
                 if (this.canPlace(this.state.buildMode, gx, gy)) { this.placeHabitat(this.state.buildMode, gx, gy); this.exitBuild(); }
@@ -163,15 +168,49 @@ export default class GameScene extends Phaser.Scene {
                     const cell = this.grid[gy]?.[gx];
                     if (cell && typeof cell === 'string' && cell.startsWith('hab_')) {
                         const hab = this.state.habitats.find(h => h.id === cell);
-                        if (hab) { this.sfx.click(); this.game.events.emit('showHabitatInfo', hab); }
+                        if (hab) { this.sfx.click(); this.zoomToHabitat(hab); this.game.events.emit('showHabitatInfo', hab); }
                     }
                 }
             }
         });
 
-        this.input.keyboard.on('keydown-ESC', () => this.exitBuild());
+        this.input.keyboard.on('keydown-ESC', () => {
+            if (this.state.viewingHabitat || this.cameras.main.zoom > 1) this.zoomOut();
+            else this.exitBuild();
+        });
 
         this.game.canvas.addEventListener('contextmenu', e => e.preventDefault());
+    }
+
+    /* ========== HABITAT ZOOM ========== */
+    // Zoom camera (2.5x) to center on a habitat; zoom out restores default view.
+    // Uses camera.pan/zoomTo with force:true so rescue events can't leave the camera stuck.
+    // viewingHabitat tracks the active habitat id; world clicks and build mode are suppressed while set.
+
+    zoomToHabitat(hab) {
+        const ht = HABITATS[hab.type];
+        const cx = hab.gx * TILE + (ht.w * TILE) / 2;
+        const cy = MAP_Y + hab.gy * TILE + (ht.h * TILE) / 2;
+        this.state.viewingHabitat = hab.id;
+
+        const cam = this.cameras.main;
+        cam.pan(cx, cy, 400, 'Quad.easeInOut', true);
+        cam.zoomTo(2.5, 400, 'Quad.easeInOut', true);
+    }
+
+    zoomOut() {
+        if (!this.state.viewingHabitat && this.cameras.main.zoom === 1) return;
+        this.state.viewingHabitat = null;
+
+        const cam = this.cameras.main;
+        cam.pan(W / 2, H / 2, 350, 'Quad.easeInOut', true);
+        cam.zoomTo(1, 350, 'Quad.easeInOut', true, (_cam, progress) => {
+            if (progress === 1) {
+                cam.scrollX = 0;
+                cam.scrollY = 0;
+                this.game.events.emit('habitatViewClosed');
+            }
+        });
     }
 
     /* ========== BUILD ========== */
@@ -328,6 +367,8 @@ export default class GameScene extends Phaser.Scene {
 
     /* ========== ANIMALS ========== */
     // Spawn, wander, bob, hunger/happiness/health decay, traits, illness, bonds, breeding.
+    // Animals are only clickable while zoomed into their habitat (viewingHabitat guard).
+    // updateAnimals emits animalUpdate every ~2s so the HUD animal panel auto-refreshes.
 
     addAnimal(speciesId, name, habitatId, opts = {}) {
         const hab = this.state.habitats.find(h => h.id === habitatId);
@@ -359,6 +400,7 @@ export default class GameScene extends Phaser.Scene {
         if (animal.isBaby) sprite.setScale(0.6);
 
         sprite.on('pointerdown', () => {
+            if (!this.state.viewingHabitat) return;
             this._skipPointerDown = true;
             this.sfx.click();
             this.game.events.emit('showAnimalInfo', animal);
@@ -482,6 +524,11 @@ export default class GameScene extends Phaser.Scene {
                 if (!a.illness) { a.sickIcon.destroy(); a.sickIcon = null; }
                 else a.sickIcon.setPosition(a.sprite.x - 12, a.sprite.y - 16);
             }
+        }
+        this._animalRefreshTimer = (this._animalRefreshTimer || 0) + delta;
+        if (this._animalRefreshTimer >= 2000) {
+            this._animalRefreshTimer = 0;
+            this.game.events.emit('animalUpdate');
         }
     }
 
@@ -619,9 +666,11 @@ export default class GameScene extends Phaser.Scene {
 
     /* ========== ILLNESS ========== */
     // Random chance per tick; hunger/happiness increase risk. Vets can auto-cure.
+    // Emits animalUpdate when illness state changes so the HUD panel refreshes immediately.
 
     checkIllness() {
         const hasVet = this.state.staff.some(s => s.type === 'vet');
+        let changed = false;
         for (const a of this.state.animals) {
             if (a.illness) {
                 const vetChance = this.hasResearch('super_vet') ? 1.0 : 0.3;
@@ -630,6 +679,7 @@ export default class GameScene extends Phaser.Scene {
                     if (a.sickIcon) { a.sickIcon.destroy(); a.sickIcon = null; }
                     a.health = Math.min(100, a.health + 15);
                     this.game.events.emit('notification', `Vet cured ${a.name}!`);
+                    changed = true;
                 }
                 continue;
             }
@@ -643,8 +693,10 @@ export default class GameScene extends Phaser.Scene {
                 a.illness = { type: Phaser.Utils.Array.GetRandom(types), dayStarted: this.state.day };
                 const ill = ILLNESSES[a.illness.type];
                 this.game.events.emit('notification', `${a.name} has ${ill.name}!`);
+                changed = true;
             }
         }
+        if (changed) this.game.events.emit('animalUpdate');
     }
 
     /* ========== BONDS ========== */
@@ -1104,6 +1156,8 @@ export default class GameScene extends Phaser.Scene {
 
     /* ========== RESCUE ========== */
     // Timed events: pick species by rarity weights, show rescue dialog, accept adds animal.
+    // HUDScene pauses time (rescuePaused) and shows a grey tint while the popup is active.
+    // If zoomed into a habitat, panels stay open; accepting re-emits showHabitatInfo to refresh.
 
     triggerRescue(forceSpecies) {
         const sp = forceSpecies ? SPECIES[forceSpecies] : this.pickSpecies();
@@ -1151,6 +1205,10 @@ export default class GameScene extends Phaser.Scene {
             this.game.events.emit('notification', `New species discovered: ${SPECIES[ev.speciesId].name}!`);
         }
         this.game.events.emit('notification', `${ev.name} the ${SPECIES[ev.speciesId].name} has been rescued!`);
+        if (this.state.viewingHabitat) {
+            const viewedHab = this.state.habitats.find(h => h.id === this.state.viewingHabitat);
+            if (viewedHab) this.game.events.emit('showHabitatInfo', viewedHab);
+        }
     }
 
     /* ========== ACHIEVEMENTS ========== */
@@ -1324,8 +1382,10 @@ export default class GameScene extends Phaser.Scene {
 
     /* ========== UPDATE ========== */
     // Main loop: time, animals, visitors, staff, missions, ambient sound.
+    // Skipped entirely while rescuePaused is set (rescue popup freezes all simulation).
 
     update(time, delta) {
+        if (this.state.rescuePaused) return;
         this.updateTime(delta);
         this.updateAnimals(delta, time);
         this.updateVisitors(delta);

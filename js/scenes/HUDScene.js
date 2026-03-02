@@ -1,5 +1,7 @@
-// UI overlay scene running parallel to GameScene. Communicates via this.game.events.
-// this.gs = GameScene reference for state and method calls.
+// UI overlay scene running parallel to GameScene. Has its own camera, unaffected by GameScene zoom.
+// Communicates via this.game.events; this.gs = GameScene reference for state and method calls.
+// Manages toolbar (hidden during habitat zoom), habitat/animal panels, rescue popup with time-pause,
+// build popup, and management panels (upgrades, staff, missions, research, journal).
 import { W, H, HABITATS, SPECIES, RARITY_COLOR, CLR, SEASONS, UPGRADES, STAFF_TYPES,
     TRAITS, ILLNESSES, ENRICHMENTS, MISSIONS, VISITOR_TYPES, ACHIEVEMENTS,
     RESEARCH, RESEARCH_BRANCHES } from '../GameData.js';
@@ -61,12 +63,15 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== TOOLBAR ========== */
 
-    // Bottom bar: Select, Build (opens habitat popup), and management toggles (Missions, Upgrades, Staff, Research, Journal).
+    // Bottom bar: Build (opens habitat popup) and management toggles (Missions, Upgrades, Staff, Research, Journal).
+    // All elements stored in toolbarElements for hide/show during habitat zoom.
     createToolbar() {
         const barY = H - 62;
+        this.toolbarElements = [];
         const bar = this.add.graphics();
         bar.fillStyle(CLR.uiBg, 0.9); bar.fillRect(0, barY, W, 62);
         bar.lineStyle(1, CLR.uiBorder); bar.lineBetween(0, barY, W, barY);
+        this.toolbarElements.push(bar);
 
         const allItems = [
             { key: 'build', label: 'Build', cost: null, color: 0x66BB55 },
@@ -84,7 +89,9 @@ export default class HUDScene extends Phaser.Scene {
             const x = startX + i * gap, y = barY + 31;
             const bg = this.add.graphics();
             this.drawToolBtn(bg, x, y, item.color, false, gap);
+            this.toolbarElements.push(bg);
             const hit = this.add.rectangle(x, y, gap - 4, 50, 0, 0).setInteractive({ useHandCursor: true });
+            this.toolbarElements.push(hit);
             hit.on('pointerover', () => this.drawToolBtn(bg, x, y, item.color, true, gap));
             hit.on('pointerout', () => {
                 const isActive = item.key === this.activeBuild ||
@@ -104,11 +111,19 @@ export default class HUDScene extends Phaser.Scene {
                 if (item.key) this.gs.enterBuild(item.key);
                 else this.gs.exitBuild();
             });
-            this.txt(x, y - 8, item.label, 6).setOrigin(0.5);
-            if (item.cost !== null) this.txt(x, y + 6, `${item.cost}g`, 5, CLR.gold).setOrigin(0.5);
+            const lbl = this.txt(x, y - 8, item.label, 6).setOrigin(0.5);
+            this.toolbarElements.push(lbl);
+            if (item.cost !== null) {
+                const costTxt = this.txt(x, y + 6, `${item.cost}g`, 5, CLR.gold).setOrigin(0.5);
+                this.toolbarElements.push(costTxt);
+            }
             this.toolBtns.push({ bg, x, y, color: item.color, key: item.key, gap });
         });
     }
+
+    hideToolbar() { if (this.toolbarElements) this.toolbarElements.forEach(e => e.setVisible(false)); }
+    showToolbar() { if (this.toolbarElements) this.toolbarElements.forEach(e => e.setVisible(true)); }
+    destroyBackBar() { if (this._backBarElements) { this._backBarElements.forEach(e => e.destroy()); this._backBarElements = null; } }
 
     // Draws a single toolbar button with active/hover state.
     drawToolBtn(bg, x, y, color, active, gap = 88) {
@@ -189,7 +204,8 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== EVENTS ========== */
 
-    // Subscribes to game events: timeUpdate, coinsUpdate, rescueEvent, showAnimalInfo, etc.
+    // Subscribes to game events: timeUpdate, coinsUpdate, rescueEvent, showAnimalInfo, showHabitatInfo,
+    // animalUpdate (auto-refreshes animal panel), habitatViewClosed (cleanup on zoom-out), etc.
     listenEvents() {
         const ev = this.game.events;
         ev.on('timeUpdate', this.updateTime, this);
@@ -206,6 +222,18 @@ export default class HUDScene extends Phaser.Scene {
                     (b.key === 'build' && mode && HABITATS[mode]);
                 this.drawToolBtn(b.bg, b.x, b.y, b.color, isActive, b.gap);
             });
+        });
+        ev.on('habitatViewClosed', () => {
+            if (this.habitatPanel) { this.habitatPanel.destroy(); this.habitatPanel = null; }
+            if (this.animalPanel) { this.animalPanel.destroy(); this.animalPanel = null; this._viewedAnimal = null; }
+            this.destroyBackBar();
+            this.showToolbar();
+        });
+        ev.on('animalUpdate', () => {
+            if (this.animalPanel && this._viewedAnimal) {
+                const fresh = this.gs.state.animals.find(a => a.id === this._viewedAnimal.id);
+                if (fresh) this.showAnimal(fresh);
+            }
         });
         ev.on('seasonChanged', () => {});
         ev.on('upgradesUpdate', () => { if (this.upgradePanel) this.showUpgradePanel(); });
@@ -287,10 +315,14 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== RESCUE POPUP ========== */
 
-    // Modal with rescued animal details; Accept/Pass buttons.
+    // Modal with rescued animal details; Accept/Pass buttons. Pauses game time (rescuePaused),
+    // dims the screen with a grey tint, and preserves any open habitat/animal panels.
     showRescue(ev) {
         if (this.rescuePopup) this.rescuePopup.destroy();
-        this.closeAllPanels();
+        this.gs.state.rescuePaused = true;
+
+        const tint = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.45).setDepth(295);
+
         const sp = SPECIES[ev.speciesId], rc = RARITY_COLOR[sp.rarity];
         const cx = W / 2, cy = H / 2, pw = 420, ph = 260;
         const ct = this.add.container(cx, cy).setDepth(300);
@@ -311,9 +343,10 @@ export default class HUDScene extends Phaser.Scene {
         ct.add(accBg);
         const accLabel = hasSpace ? 'Rescue!' : 'No Room';
         const accBtn = this.txt(-47, 103, accLabel, 8).setOrigin(0.5);
+        const dismissRescue = () => { tint.destroy(); ct.destroy(); this.rescuePopup = null; this.gs.state.rescuePaused = false; };
         if (hasSpace) {
             accBtn.setInteractive({ useHandCursor: true });
-            accBtn.on('pointerdown', () => { this.game.events.emit('rescueAccepted', ev); ct.destroy(); this.rescuePopup = null; });
+            accBtn.on('pointerdown', () => { dismissRescue(); this.game.events.emit('rescueAccepted', ev); });
             accBtn.on('pointerover', () => accBtn.setColor(CLR.gold));
             accBtn.on('pointerout', () => accBtn.setColor(CLR.uiText));
         } else { accBtn.setColor('#888888'); }
@@ -322,7 +355,7 @@ export default class HUDScene extends Phaser.Scene {
         decBg.fillStyle(0x8B2222, 0.85); decBg.fillRoundedRect(5, 88, 85, 30, 4);
         ct.add(decBg);
         const decBtn = this.txt(47, 103, 'Pass', 8).setOrigin(0.5).setInteractive({ useHandCursor: true });
-        decBtn.on('pointerdown', () => { ct.destroy(); this.rescuePopup = null; });
+        decBtn.on('pointerdown', () => { dismissRescue(); });
         decBtn.on('pointerover', () => decBtn.setColor('#FF8888'));
         decBtn.on('pointerout', () => decBtn.setColor(CLR.uiText));
         ct.add(decBtn);
@@ -334,88 +367,99 @@ export default class HUDScene extends Phaser.Scene {
     /* ========== ANIMAL INFO PANEL ========== */
 
     // Selected animal: stats, trait, illness, breed status, bonds, actions (Feed, Pet, Treat, Heal, Breed).
+    // Only shown when zoomed into a habitat. Tracks _viewedAnimal for auto-refresh via animalUpdate event.
     showAnimal(animal) {
         if (this.animalPanel) this.animalPanel.destroy();
         if (this.rescuePopup) return;
+        this._viewedAnimal = animal;
 
         const sp = SPECIES[animal.speciesId], rc = RARITY_COLOR[sp.rarity];
-        const px = W - 220, py = 48, pw = 214;
+        const pw = 230, px = W - pw - 6, py = 48;
         const hasHeal = this.gs.state.upgrades.has('medical_kit') || animal.illness;
         const canBreed = this.gs.canBreed(animal);
-        let ph = 210;
-        if (hasHeal) ph += 32;
-        if (canBreed || animal.isPregnant || animal.isBaby) ph += 32;
-        ph += 52;
 
         const ct = this.add.container(px, py).setDepth(250);
-        const bg = this.add.graphics();
-        bg.fillStyle(0x1a0e04, 0.94); bg.fillRoundedRect(0, 0, pw, ph, 6);
-        bg.lineStyle(2, CLR.uiBorder); bg.strokeRoundedRect(0, 0, pw, ph, 6);
-        ct.add(bg);
 
         ct.add(this.txt(pw / 2, 12, animal.name, 10, CLR.gold).setOrigin(0.5));
         const rClr = '#' + rc.toString(16).padStart(6, '0');
-        ct.add(this.txt(pw / 2, 27, `${sp.name} (${sp.rarity})`, 6, rClr).setOrigin(0.5));
-        ct.add(this.add.image(pw / 2, 55, `animal_${animal.speciesId}`).setScale(1.2));
+        ct.add(this.txt(pw / 2, 28, `${sp.name} (${sp.rarity})`, 6, rClr).setOrigin(0.5));
+        ct.add(this.add.image(pw / 2, 56, `animal_${animal.speciesId}`).setScale(1.2));
 
-        // Trait
+        let yy = 76;
         const tr = TRAITS[animal.trait];
-        if (tr) ct.add(this.txt(pw / 2, 75, `${tr.name}: ${tr.desc}`, 5, '#AABB99').setOrigin(0.5));
-
-        // Status icons row
-        let statusY = 84;
-        if (animal.isBaby) ct.add(this.txt(8, statusY, 'BABY', 5, '#FFCC66'));
-        if (animal.isPregnant) ct.add(this.txt(50, statusY, 'PREGNANT', 5, '#FF88CC'));
-        if (animal.illness) {
-            const ill = ILLNESSES[animal.illness.type];
-            ct.add(this.txt(110, statusY, ill ? ill.name : 'Sick', 5, '#FF4444'));
+        if (tr) {
+            const trTxt = this.txt(8, yy, `${tr.name}: ${tr.desc}`, 5, '#AABB99').setWordWrapWidth(pw - 16);
+            ct.add(trTxt);
+            yy += trTxt.height + 4;
         }
 
-        this.statBar(ct, 10, 100, pw - 20, 'Hunger', animal.hunger, 0xFF9944);
-        this.statBar(ct, 10, 120, pw - 20, 'Happy', animal.happiness, 0xFF6B8A);
-        this.statBar(ct, 10, 140, pw - 20, 'Health', animal.health, 0x66CC66);
+        const hasStatus = animal.isBaby || animal.isPregnant || animal.illness;
+        if (hasStatus) {
+            let sx = 8;
+            if (animal.isBaby) { ct.add(this.txt(sx, yy, 'BABY', 5, '#FFCC66')); sx += 52; }
+            if (animal.isPregnant) { ct.add(this.txt(sx, yy, 'PREGNANT', 5, '#FF88CC')); sx += 80; }
+            if (animal.illness) {
+                const ill = ILLNESSES[animal.illness.type];
+                ct.add(this.txt(sx, yy, ill ? ill.name : 'Sick', 5, '#FF4444'));
+            }
+            yy += 16;
+        }
 
-        let btnY = 162;
+        yy += 4;
+        this.statBar(ct, 10, yy, pw - 20, 'Hunger', animal.hunger, 0xFF9944);
+        this.statBar(ct, 10, yy + 20, pw - 20, 'Happy', animal.happiness, 0xFF6B8A);
+        this.statBar(ct, 10, yy + 40, pw - 20, 'Health', animal.health, 0x66CC66);
+        yy += 64;
+
         const bw = Math.floor((pw - 24) / 3);
-        this.panelBtn(ct, 8, btnY, bw, 'Feed', 0x44AA44, () => { this.gs.feedAnimal(animal.id); this.showAnimal(animal); });
-        this.panelBtn(ct, 8 + bw + 4, btnY, bw, 'Pet', 0xCC6688, () => { this.gs.petAnimal(animal.id); this.showAnimal(animal); });
-        this.panelBtn(ct, 8 + (bw + 4) * 2, btnY, bw, 'Treat', 0xCCAA33, () => { this.gs.treatAnimal(animal.id); this.showAnimal(animal); });
-        ct.add(this.txt(8 + (bw + 4) * 2 + bw - 2, btnY + 24, '20g', 5, CLR.gold).setOrigin(1, 0));
+        this.panelBtn(ct, 8, yy, bw, 'Feed', 0x44AA44, () => { this.gs.feedAnimal(animal.id); this.showAnimal(animal); });
+        this.panelBtn(ct, 8 + bw + 4, yy, bw, 'Pet', 0xCC6688, () => { this.gs.petAnimal(animal.id); this.showAnimal(animal); });
+        this.panelBtn(ct, 8 + (bw + 4) * 2, yy, bw, 'Treat', 0xCCAA33, () => { this.gs.treatAnimal(animal.id); this.showAnimal(animal); });
+        ct.add(this.txt(8 + (bw + 4) * 2 + bw - 2, yy + 24, '20g', 5, CLR.gold).setOrigin(1, 0));
+        yy += 32;
 
         if (hasHeal) {
-            btnY += 30;
             const healLabel = animal.illness ? `Heal (${ILLNESSES[animal.illness.type]?.treatCost || 30}g)` : 'Heal (30g)';
-            this.panelBtn(ct, 8, btnY, 120, healLabel, 0x44AAAA, () => { this.gs.healAnimal(animal.id); this.showAnimal(animal); });
+            this.panelBtn(ct, 8, yy, 120, healLabel, 0x44AAAA, () => { this.gs.healAnimal(animal.id); this.showAnimal(animal); });
+            yy += 30;
         }
 
         if (canBreed) {
-            btnY += 30;
-            this.panelBtn(ct, 8, btnY, 120, 'Breed', 0xCC66AA, () => { this.gs.startBreeding(animal.id); this.showAnimal(animal); });
+            this.panelBtn(ct, 8, yy, 120, 'Breed', 0xCC66AA, () => { this.gs.startBreeding(animal.id); this.showAnimal(animal); });
+            yy += 30;
         } else if (animal.isPregnant) {
-            btnY += 30;
             const pctLeft = Math.max(0, Math.round(animal.pregnancyTimer / 720));
-            ct.add(this.txt(8, btnY + 4, `Due in ~${pctLeft} days`, 6, '#FF88CC'));
+            ct.add(this.txt(8, yy + 4, `Due in ~${pctLeft} days`, 6, '#FF88CC'));
+            yy += 22;
         } else if (animal.breedCooldown > 0) {
-            btnY += 30;
             const dLeft = Math.max(0, Math.ceil(animal.breedCooldown / 720));
-            ct.add(this.txt(8, btnY + 4, `Breed cooldown: ${dLeft}d`, 5, '#888888'));
+            ct.add(this.txt(8, yy + 4, `Breed cooldown: ${dLeft}d`, 5, '#888888'));
+            yy += 22;
         }
 
-        // Bonds
-        btnY += 22;
         if (animal.bonds.length > 0) {
+            yy += 6;
             const bondNames = animal.bonds.slice(0, 3).map(bid => {
                 const b = this.gs.state.animals.find(a => a.id === bid);
                 return b ? b.name : '?';
             }).join(', ');
-            ct.add(this.txt(8, btnY, `Friends: ${bondNames}`, 5, '#66BBFF'));
-            btnY += 12;
+            const bondTxt = this.txt(8, yy, `Friends: ${bondNames}`, 5, '#66BBFF').setWordWrapWidth(pw - 16);
+            ct.add(bondTxt);
+            yy += bondTxt.height + 4;
         }
 
-        ct.add(this.txt(pw / 2, ph - 14, `Appeal: ${sp.appeal}`, 6, '#AAAAAA').setOrigin(0.5));
+        yy += 6;
+        ct.add(this.txt(pw / 2, yy, `Appeal: ${sp.appeal}`, 6, '#AAAAAA').setOrigin(0.5, 0));
+        yy += 18;
+
+        const ph = yy + 8;
+        const bg = this.add.graphics();
+        bg.fillStyle(0x1a0e04, 0.94); bg.fillRoundedRect(0, 0, pw, ph, 6);
+        bg.lineStyle(2, CLR.uiBorder); bg.strokeRoundedRect(0, 0, pw, ph, 6);
+        ct.addAt(bg, 0);
 
         const closeBtn = this.txt(pw - 8, 4, 'X', 8, '#FF6666').setOrigin(0.5, 0).setInteractive({ useHandCursor: true });
-        closeBtn.on('pointerdown', () => { ct.destroy(); this.animalPanel = null; });
+        closeBtn.on('pointerdown', () => { ct.destroy(); this.animalPanel = null; this._viewedAnimal = null; });
         ct.add(closeBtn);
 
         this.animalPanel = ct;
@@ -446,32 +490,30 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== HABITAT INFO PANEL ========== */
 
-    // Habitat details, current enrichments, add-enrichment options.
+    // Habitat details, current enrichments, add-enrichment options. Shown when zoomed in.
+    // Hides the toolbar and creates a centered "< Back" button bar at the bottom of the screen.
     showHabitatPanel(hab) {
         if (this.habitatPanel) this.habitatPanel.destroy();
+        this.destroyBackBar();
         if (this.rescuePopup) return;
 
         const ht = HABITATS[hab.type];
         const cap = this.gs.getHabitatCapacity(hab);
         const enrichList = hab.enrichments || [];
         const maxEnrich = this.gs.hasResearch('enrich_cap_4') ? 4 : 3;
-        const pw = 230;
+        const pw = 240;
 
         const compatEnrich = Object.values(ENRICHMENTS).filter(e => !e.habitats || e.habitats.includes(hab.type));
-        const ph = 90 + enrichList.length * 18 + compatEnrich.length * 30 + 30;
 
         const px = 8, py = 48;
         const ct = this.add.container(px, py).setDepth(250);
-        const bg = this.add.graphics();
-        bg.fillStyle(0x1a0e04, 0.94); bg.fillRoundedRect(0, 0, pw, ph, 6);
-        bg.lineStyle(2, ht.stroke); bg.strokeRoundedRect(0, 0, pw, ph, 6);
-        ct.add(bg);
 
-        ct.add(this.txt(pw / 2, 10, ht.name, 10, CLR.gold).setOrigin(0.5));
-        ct.add(this.txt(pw / 2, 26, `${hab.animals.length}/${cap} animals`, 7).setOrigin(0.5));
-        ct.add(this.txt(pw / 2, 38, ht.desc, 5, '#AAAAAA').setOrigin(0.5).setWordWrapWidth(pw - 16));
+        ct.add(this.txt(pw / 2, 12, ht.name, 10, CLR.gold).setOrigin(0.5));
+        ct.add(this.txt(pw / 2, 28, `${hab.animals.length}/${cap} animals`, 7).setOrigin(0.5));
+        const descTxt = this.txt(8, 42, ht.desc, 5, '#AAAAAA').setWordWrapWidth(pw - 16);
+        ct.add(descTxt);
 
-        let yy = 62;
+        let yy = 42 + descTxt.height + 8;
         if (enrichList.length > 0) {
             ct.add(this.txt(8, yy, 'Enrichments:', 6, '#AABB99'));
             yy += 18;
@@ -484,35 +526,56 @@ export default class HUDScene extends Phaser.Scene {
 
         if (enrichList.length < maxEnrich) {
             ct.add(this.txt(8, yy, 'Add Enrichment:', 6, '#CCAA66'));
-            yy += 18;
+            yy += 20;
             for (const en of compatEnrich) {
                 if (enrichList.includes(en.id) && enrichList.filter(e => e === en.id).length >= 1) continue;
                 const eCost = this.gs.hasResearch('cheap_enrich') ? Math.round(en.cost * 0.7) : en.cost;
                 const canAfford = this.gs.state.coins >= eCost;
                 const rowBg = this.add.graphics();
-                rowBg.fillStyle(0x332211, 0.5); rowBg.fillRoundedRect(6, yy, pw - 12, 26, 3);
+                rowBg.fillStyle(0x332211, 0.5); rowBg.fillRoundedRect(6, yy, pw - 12, 28, 3);
                 ct.add(rowBg);
-                ct.add(this.txt(10, yy + 3, en.name, 5));
-                ct.add(this.txt(10, yy + 15, `+${en.happyBonus} happy`, 5, '#88CC88'));
-                ct.add(this.txt(pw - 48, yy + 3, `${eCost}g`, 5, canAfford ? CLR.gold : '#884444').setOrigin(1, 0));
+                ct.add(this.txt(10, yy + 4, en.name, 5));
+                ct.add(this.txt(10, yy + 16, `+${en.happyBonus} happy`, 5, '#88CC88'));
+                ct.add(this.txt(pw - 50, yy + 4, `${eCost}g`, 5, canAfford ? CLR.gold : '#884444').setOrigin(1, 0));
                 if (canAfford) {
-                    const buyBtn = this.txt(pw - 10, yy + 8, 'ADD', 5, '#44CC44').setOrigin(1, 0).setInteractive({ useHandCursor: true });
+                    const buyBtn = this.txt(pw - 10, yy + 9, 'ADD', 5, '#44CC44').setOrigin(1, 0).setInteractive({ useHandCursor: true });
                     buyBtn.on('pointerdown', () => { this.gs.addEnrichment(hab.id, en.id); this.showHabitatPanel(hab); });
                     buyBtn.on('pointerover', () => buyBtn.setColor('#88FF88'));
                     buyBtn.on('pointerout', () => buyBtn.setColor('#44CC44'));
                     ct.add(buyBtn);
                 }
-                yy += 28;
+                yy += 30;
             }
         } else {
             ct.add(this.txt(8, yy, `Enrichment full (${maxEnrich}/${maxEnrich})`, 5, '#888888'));
             yy += 18;
         }
 
-        const closeBtn = this.txt(pw - 8, 4, 'X', 8, '#FF6666').setOrigin(0.5, 0).setInteractive({ useHandCursor: true });
-        closeBtn.on('pointerdown', () => { ct.destroy(); this.habitatPanel = null; });
-        ct.add(closeBtn);
+        const ph = yy + 8;
+        const bg = this.add.graphics();
+        bg.fillStyle(0x1a0e04, 0.94); bg.fillRoundedRect(0, 0, pw, ph, 6);
+        bg.lineStyle(2, ht.stroke); bg.strokeRoundedRect(0, 0, pw, ph, 6);
+        ct.addAt(bg, 0);
 
+        this.hideToolbar();
+
+        const barY = H - 62;
+        const backBar = this.add.graphics().setDepth(250);
+        backBar.fillStyle(CLR.uiBg, 0.9); backBar.fillRect(0, barY, W, 62);
+        backBar.lineStyle(1, CLR.uiBorder); backBar.lineBetween(0, barY, W, barY);
+
+        const bbW = 160, bbH = 38;
+        const bbX = W / 2 - bbW / 2, bbY = barY + 12;
+        const bbBg = this.add.graphics().setDepth(250);
+        bbBg.fillStyle(0x664422, 0.75); bbBg.fillRoundedRect(bbX, bbY, bbW, bbH, 6);
+        bbBg.lineStyle(2, 0xAA8855); bbBg.strokeRoundedRect(bbX, bbY, bbW, bbH, 6);
+
+        const bbBtn = this.txt(W / 2, bbY + bbH / 2, '< Back', 9, '#FFCC88').setOrigin(0.5).setDepth(250).setInteractive({ useHandCursor: true });
+        bbBtn.on('pointerdown', () => { this.gs.zoomOut(); });
+        bbBtn.on('pointerover', () => { bbBtn.setColor('#FFEECC'); bbBg.clear(); bbBg.fillStyle(0x886633, 0.85); bbBg.fillRoundedRect(bbX, bbY, bbW, bbH, 6); bbBg.lineStyle(2, 0xCCBB77); bbBg.strokeRoundedRect(bbX, bbY, bbW, bbH, 6); });
+        bbBtn.on('pointerout', () => { bbBtn.setColor('#FFCC88'); bbBg.clear(); bbBg.fillStyle(0x664422, 0.75); bbBg.fillRoundedRect(bbX, bbY, bbW, bbH, 6); bbBg.lineStyle(2, 0xAA8855); bbBg.strokeRoundedRect(bbX, bbY, bbW, bbH, 6); });
+
+        this._backBarElements = [backBar, bbBg, bbBtn];
         this.habitatPanel = ct;
     }
 
@@ -925,11 +988,14 @@ export default class HUDScene extends Phaser.Scene {
         showFn();
     }
 
-    // Destroys all open panels and mission refresh timer.
-    closeAllPanels() {
+    // Destroys all open panels and mission refresh timer. keepZoom=true preserves the
+    // camera zoom and back bar (used by rescue events so they don't interrupt the zoomed view).
+    closeAllPanels(keepZoom = false) {
+        if (!keepZoom && this.gs.state.viewingHabitat) { this.gs.zoomOut(); this.showToolbar(); }
         ['animalPanel', 'upgradePanel', 'staffPanel', 'missionPanel', 'journalPanel', 'habitatPanel', 'researchPanel'].forEach(k => {
             if (this[k]) { this[k].destroy(); this[k] = null; }
         });
+        if (!keepZoom) this.destroyBackBar();
         this.closeBuildPopup();
         if (this._missionRefresh) { this._missionRefresh.destroy(); this._missionRefresh = null; }
     }

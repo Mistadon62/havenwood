@@ -68,9 +68,9 @@ BootScene  →  MenuScene  →  GameScene (+ HUDScene launched in parallel)
 
 GameScene and HUDScene communicate via Phaser's global event system (`this.game.events`):
 
-- **GameScene emits**: `timeUpdate`, `coinsUpdate`, `rescueEvent`, `showAnimalInfo`, `showHabitatInfo`, `notification`, `buildModeChanged`, `seasonChanged`, `upgradesUpdate`, `staffUpdate`, `missionsUpdate`, `achievementEarned`, `researchUpdate`
+- **GameScene emits**: `timeUpdate`, `coinsUpdate`, `rescueEvent`, `showAnimalInfo`, `showHabitatInfo`, `notification`, `buildModeChanged`, `seasonChanged`, `upgradesUpdate`, `staffUpdate`, `missionsUpdate`, `achievementEarned`, `researchUpdate`, `animalUpdate`, `habitatViewClosed`
 - **HUDScene emits**: `rescueAccepted` (when player accepts a rescue)
-- **HUDScene reads**: `this.gs.state` for current game data, calls `this.gs.methodName()` for player actions
+- **HUDScene reads**: `this.gs.state` for current game data, calls `this.gs.methodName()` for player actions (including `zoomOut()` from the Back button)
 
 ---
 
@@ -97,6 +97,10 @@ GameScene and HUDScene communicate via Phaser's global event system (`this.game.
 
 Capacity can be increased by the Habitat Plus upgrade (+1) and the Wildlife Biology research tree (+1).
 
+#### Habitat Zoom View
+
+Clicking a habitat from the sanctuary overview zooms the camera (2.5x) to center on it and opens the habitat info panel on the left. The bottom toolbar is replaced with a centered "< Back" button. Animals are only clickable while zoomed in. Pressing ESC or clicking Back zooms back out to the sanctuary overview, closing both the habitat and any open animal panel. The zoom uses Phaser's `camera.pan()` and `camera.zoomTo()` with `force: true` so it can be safely interrupted (e.g., by rescue events).
+
 ### Animals
 
 14 species across 4 rarity tiers (common, uncommon, rare, legendary). Some are seasonal-only. Each animal has:
@@ -106,7 +110,11 @@ Capacity can be increased by the Habitat Plus upgrade (+1) and the Wildlife Biol
 - **Bonds**: friendships with habitat-mates that form over time
 - **Illness**: random chance of getting sick; can be cured by vets or manual healing
 
-Animals wander within their habitat, bob up and down, sleep at night (with "zzz" particles), and display status icons when hungry or sick.
+Animals wander within their habitat, bob up and down, sleep at night (with "zzz" particles), and display status icons when hungry or sick. Animals are only clickable from the zoomed-in habitat view. The animal info panel auto-refreshes every 2 seconds and immediately on illness changes so stats and actions stay current.
+
+### Rescue Events
+
+Random rescue events pop up periodically (every ~50 seconds, 30% faster with Conservation upgrade). A grey tint dims the game and time pauses while the popup is shown. The player can accept (if a compatible habitat has room) or pass. Rescue events do not interrupt the current view — if zoomed into a habitat, the habitat and animal panels remain open behind the popup. If the rescued animal enters the currently viewed habitat, the panel refreshes to show the updated count.
 
 ### Breeding
 
