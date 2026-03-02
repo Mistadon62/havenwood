@@ -111,10 +111,10 @@ export default class HUDScene extends Phaser.Scene {
                 if (item.key) this.gs.enterBuild(item.key);
                 else this.gs.exitBuild();
             });
-            const lbl = this.txt(x, y - 8, item.label, 6).setOrigin(0.5);
+            const lbl = this.txt(x, item.cost !== null ? y - 6 : y, item.label, 6).setOrigin(0.5);
             this.toolbarElements.push(lbl);
             if (item.cost !== null) {
-                const costTxt = this.txt(x, y + 6, `${item.cost}g`, 5, CLR.gold).setOrigin(0.5);
+                const costTxt = this.txt(x, y + 8, `${item.cost}g`, 5, CLR.gold).setOrigin(0.5);
                 this.toolbarElements.push(costTxt);
             }
             this.toolBtns.push({ bg, x, y, color: item.color, key: item.key, gap });
@@ -136,6 +136,7 @@ export default class HUDScene extends Phaser.Scene {
     }
 
     /* ========== BUILD POPUP ========== */
+    // Habitat selection popup above toolbar. Unaffordable habitats are greyed out and non-interactive.
 
     toggleBuildPopup(anchorX, barY) {
         if (this.buildPopup) { this.closeBuildPopup(); return; }
@@ -163,33 +164,38 @@ export default class HUDScene extends Phaser.Scene {
         habitats.forEach((h, i) => {
             const bx = pad + i * cellW + cellW / 2;
             const by = ph / 2;
+            const cost = this.gs.getHabitatCost(h.id);
+            const canAfford = this.gs.state.coins >= cost;
+            const rx = bx - cellW / 2 + 4, ry = by - 30, rw = cellW - 8, rh = 60;
+
             const btnBg = this.add.graphics();
-            btnBg.fillStyle(h.fill, 0.3);
-            btnBg.fillRoundedRect(bx - cellW / 2 + 4, by - 30, cellW - 8, 60, 4);
+            btnBg.fillStyle(canAfford ? h.fill : 0x444444, canAfford ? 0.3 : 0.25);
+            btnBg.fillRoundedRect(rx, ry, rw, rh, 4);
             ct.add(btnBg);
 
-            const cost = this.gs.getHabitatCost(h.id);
-            ct.add(this.txt(bx, by - 12, h.name, 7).setOrigin(0.5));
-            ct.add(this.txt(bx, by + 6, `${cost}g`, 6, CLR.gold).setOrigin(0.5));
+            ct.add(this.txt(bx, by - 12, h.name, 7, canAfford ? CLR.uiText : '#666666').setOrigin(0.5));
+            ct.add(this.txt(bx, by + 6, `${cost}g`, 6, canAfford ? CLR.gold : '#884444').setOrigin(0.5));
 
-            const hit = this.add.rectangle(bx, by, cellW - 8, 60, 0, 0).setInteractive({ useHandCursor: true });
-            hit.on('pointerover', () => {
-                btnBg.clear();
-                btnBg.fillStyle(h.fill, 0.55);
-                btnBg.fillRoundedRect(bx - cellW / 2 + 4, by - 30, cellW - 8, 60, 4);
-                btnBg.lineStyle(1, h.fill, 0.8);
-                btnBg.strokeRoundedRect(bx - cellW / 2 + 4, by - 30, cellW - 8, 60, 4);
-            });
-            hit.on('pointerout', () => {
-                btnBg.clear();
-                btnBg.fillStyle(h.fill, 0.3);
-                btnBg.fillRoundedRect(bx - cellW / 2 + 4, by - 30, cellW - 8, 60, 4);
-            });
-            hit.on('pointerdown', () => {
-                this.closeBuildPopup();
-                this.gs.enterBuild(h.id);
-            });
-            ct.add(hit);
+            if (canAfford) {
+                const hit = this.add.rectangle(bx, by, rw, rh, 0, 0).setInteractive({ useHandCursor: true });
+                hit.on('pointerover', () => {
+                    btnBg.clear();
+                    btnBg.fillStyle(h.fill, 0.55);
+                    btnBg.fillRoundedRect(rx, ry, rw, rh, 4);
+                    btnBg.lineStyle(1, h.fill, 0.8);
+                    btnBg.strokeRoundedRect(rx, ry, rw, rh, 4);
+                });
+                hit.on('pointerout', () => {
+                    btnBg.clear();
+                    btnBg.fillStyle(h.fill, 0.3);
+                    btnBg.fillRoundedRect(rx, ry, rw, rh, 4);
+                });
+                hit.on('pointerdown', () => {
+                    this.closeBuildPopup();
+                    this.gs.enterBuild(h.id);
+                });
+                ct.add(hit);
+            }
         });
 
         ct.setScale(0.85).setAlpha(0);
@@ -268,48 +274,30 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== NOTIFICATIONS ========== */
 
-    // Queued toast notifications; max 4 visible, auto-dismiss with fade.
+    // Queued toast notifications; displayed one at a time, auto-dismiss with fade.
     notify(text) {
-        if (!this._notifs) this._notifs = [];
+        if (!this._notifQueue) this._notifQueue = [];
+        this._notifQueue.push(text);
+        if (!this._notifActive) this._showNextNotif();
+    }
 
-        const maxVisible = 4;
-        if (this._notifs.length >= maxVisible) {
-            const oldest = this._notifs.shift();
-            this.tweens.killTweensOf(oldest);
-            oldest.destroy();
-        }
+    _showNextNotif() {
+        if (!this._notifQueue || this._notifQueue.length === 0) { this._notifActive = false; return; }
+        this._notifActive = true;
+        const text = this._notifQueue.shift();
+        const topY = 50;
 
-        const baseY = 56;
-        const spacing = 28;
-        const slot = this._notifs.length;
-
-        const n = this.add.text(W / 2, baseY + slot * spacing, text, {
+        const n = this.add.text(W / 2, topY + 8, text, {
             fontFamily: '"Press Start 2P", monospace', fontSize: '9px', color: CLR.uiText,
             stroke: '#000000', strokeThickness: 2,
             backgroundColor: '#2D1B0EDD', padding: { x: 14, y: 8 }, wordWrap: { width: 580 }
-        }).setOrigin(0.5).setAlpha(0).setDepth(200);
+        }).setOrigin(0.5, 0).setAlpha(0).setDepth(200);
 
-        this._notifs.push(n);
-        this.tweens.add({ targets: n, alpha: 1, y: n.y - 8, duration: 300 });
+        this.tweens.add({ targets: n, alpha: 1, y: topY, duration: 300 });
         this.tweens.add({
-            targets: n, alpha: 0, y: n.y - 20,
-            delay: 3200, duration: 500,
-            onComplete: () => {
-                const idx = this._notifs.indexOf(n);
-                if (idx !== -1) this._notifs.splice(idx, 1);
-                n.destroy();
-                this._repositionNotifs();
-            }
-        });
-    }
-
-    // Repacks visible notifications vertically after one is dismissed.
-    _repositionNotifs() {
-        if (!this._notifs) return;
-        const baseY = 48;
-        const spacing = 28;
-        this._notifs.forEach((n, i) => {
-            this.tweens.add({ targets: n, y: baseY + i * spacing, duration: 200, ease: 'Quad.easeOut' });
+            targets: n, alpha: 0, y: topY - 12,
+            delay: 2400, duration: 400,
+            onComplete: () => { n.destroy(); this._showNextNotif(); }
         });
     }
 

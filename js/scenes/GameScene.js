@@ -51,6 +51,7 @@ export default class GameScene extends Phaser.Scene {
         this.overlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000033, 0).setDepth(100);
         this.seasonOverlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0).setDepth(99);
         this.preview = this.add.graphics().setDepth(60).setVisible(false);
+        this.hoverOutline = this.add.graphics().setDepth(59).setVisible(false);
 
         this.setupParticles();
         this.setupInput();
@@ -137,22 +138,45 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== INPUT ========== */
-    // Pointer move shows build preview; pointerdown places habitat or clicks a habitat to zoom in.
+    // Pointer move shows build preview in build mode; in default mode, hovering over a habitat
+    // shows a pointer cursor and faint stroke outline. Pointerdown places habitat or zooms in.
     // World clicks are suppressed while zoomed (viewingHabitat). Right-click or ESC exits build
     // mode; ESC also zooms out if viewing a habitat. Browser context menu is suppressed on the canvas.
 
     setupInput() {
         this.input.on('pointermove', ptr => {
-            if (!this.state.buildMode) { this.preview.setVisible(false); return; }
+            if (this.state.buildMode) {
+                this.hoverOutline.setVisible(false);
+                const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
+                const ht = HABITATS[this.state.buildMode];
+                const ok = this.canPlace(this.state.buildMode, gx, gy);
+                const c = ok ? 0x00ff00 : 0xff0000;
+                this.preview.clear().setVisible(true);
+                this.preview.fillStyle(c, 0.25);
+                this.preview.fillRect(gx * TILE, MAP_Y + gy * TILE, ht.w * TILE, ht.h * TILE);
+                this.preview.lineStyle(2, c, 0.7);
+                this.preview.strokeRect(gx * TILE, MAP_Y + gy * TILE, ht.w * TILE, ht.h * TILE);
+                return;
+            }
+            this.preview.setVisible(false);
+            if (this.state.viewingHabitat) { this.hoverOutline.setVisible(false); return; }
             const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
-            const ht = HABITATS[this.state.buildMode];
-            const ok = this.canPlace(this.state.buildMode, gx, gy);
-            const c = ok ? 0x00ff00 : 0xff0000;
-            this.preview.clear().setVisible(true);
-            this.preview.fillStyle(c, 0.25);
-            this.preview.fillRect(gx * TILE, MAP_Y + gy * TILE, ht.w * TILE, ht.h * TILE);
-            this.preview.lineStyle(2, c, 0.7);
-            this.preview.strokeRect(gx * TILE, MAP_Y + gy * TILE, ht.w * TILE, ht.h * TILE);
+            if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
+                const cell = this.grid[gy]?.[gx];
+                if (cell && typeof cell === 'string' && cell.startsWith('hab_')) {
+                    const hab = this.state.habitats.find(h => h.id === cell);
+                    if (hab) {
+                        const ht = HABITATS[hab.type];
+                        this.hoverOutline.clear().setVisible(true);
+                        this.hoverOutline.lineStyle(2, ht.stroke, 0.5);
+                        this.hoverOutline.strokeRect(hab.gx * TILE, MAP_Y + hab.gy * TILE, ht.w * TILE, ht.h * TILE);
+                        this.game.canvas.style.cursor = 'pointer';
+                        return;
+                    }
+                }
+            }
+            this.hoverOutline.setVisible(false);
+            this.game.canvas.style.cursor = 'default';
         });
 
         this.input.on('pointerdown', ptr => {
@@ -192,6 +216,8 @@ export default class GameScene extends Phaser.Scene {
         const cx = hab.gx * TILE + (ht.w * TILE) / 2;
         const cy = MAP_Y + hab.gy * TILE + (ht.h * TILE) / 2;
         this.state.viewingHabitat = hab.id;
+        this.hoverOutline.setVisible(false);
+        this.game.canvas.style.cursor = 'default';
 
         const cam = this.cameras.main;
         cam.pan(cx, cy, 400, 'Quad.easeInOut', true);
