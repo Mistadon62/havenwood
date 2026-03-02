@@ -1178,10 +1178,13 @@ export default class GameScene extends Phaser.Scene {
 
     /* ========== RESCUE ========== */
     // Timed events: pick species by rarity weights, show rescue dialog, accept adds animal.
-    // HUDScene pauses time (rescuePaused) and shows a grey tint while the popup is active.
+    // Only one rescue at a time — triggerRescue skips if rescuePaused. The rescue timer is paused
+    // while a popup is active so events don't queue up. HUDScene pauses game time (rescuePaused),
+    // shows a grey tint, and resumes the timer on dismiss.
     // If zoomed into a habitat, panels stay open; accepting re-emits showHabitatInfo to refresh.
 
     triggerRescue(forceSpecies) {
+        if (this.state.rescuePaused) return;
         const sp = forceSpecies ? SPECIES[forceSpecies] : this.pickSpecies();
         const name = Phaser.Utils.Array.GetRandom(sp.names);
         const hab = this.findCompatibleHabitat(sp);

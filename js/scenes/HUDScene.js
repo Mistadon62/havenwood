@@ -307,9 +307,12 @@ export default class HUDScene extends Phaser.Scene {
     // dims the screen with a grey tint, and preserves any open habitat/animal panels.
     showRescue(ev) {
         if (this.rescuePopup) this.rescuePopup.destroy();
+        if (this._rescueTint) this._rescueTint.destroy();
         this.gs.state.rescuePaused = true;
+        if (this.gs.rescueTimer) this.gs.rescueTimer.paused = true;
 
-        const tint = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.45).setDepth(295);
+        this._rescueTint = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.45).setDepth(295);
+        const tint = this._rescueTint;
 
         const sp = SPECIES[ev.speciesId], rc = RARITY_COLOR[sp.rarity];
         const cx = W / 2, cy = H / 2, pw = 420, ph = 260;
@@ -331,7 +334,11 @@ export default class HUDScene extends Phaser.Scene {
         ct.add(accBg);
         const accLabel = hasSpace ? 'Rescue!' : 'No Room';
         const accBtn = this.txt(-47, 103, accLabel, 8).setOrigin(0.5);
-        const dismissRescue = () => { tint.destroy(); ct.destroy(); this.rescuePopup = null; this.gs.state.rescuePaused = false; };
+        const dismissRescue = () => {
+            tint.destroy(); ct.destroy(); this.rescuePopup = null; this._rescueTint = null;
+            this.gs.state.rescuePaused = false;
+            if (this.gs.rescueTimer) this.gs.rescueTimer.paused = false;
+        };
         if (hasSpace) {
             accBtn.setInteractive({ useHandCursor: true });
             accBtn.on('pointerdown', () => { dismissRescue(); this.game.events.emit('rescueAccepted', ev); });
