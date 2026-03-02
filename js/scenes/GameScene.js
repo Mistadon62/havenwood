@@ -129,6 +129,7 @@ export default class GameScene extends Phaser.Scene {
 
     /* ========== INPUT ========== */
     // Pointer move shows build preview; pointerdown places habitat or opens habitat info.
+    // Right-click or ESC exits build mode. Browser context menu is suppressed on the canvas.
 
     setupInput() {
         this.input.on('pointermove', ptr => {
@@ -149,7 +150,7 @@ export default class GameScene extends Phaser.Scene {
             if (this._skipPointerDown) { this._skipPointerDown = false; return; }
             if (this.state.buildMode) {
                 const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor(ptr.worldY / TILE);
-                if (this.canPlace(this.state.buildMode, gx, gy)) this.placeHabitat(this.state.buildMode, gx, gy);
+                if (this.canPlace(this.state.buildMode, gx, gy)) { this.placeHabitat(this.state.buildMode, gx, gy); this.exitBuild(); }
             } else {
                 const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor(ptr.worldY / TILE);
                 if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
@@ -163,6 +164,8 @@ export default class GameScene extends Phaser.Scene {
         });
 
         this.input.keyboard.on('keydown-ESC', () => this.exitBuild());
+
+        this.game.canvas.addEventListener('contextmenu', e => e.preventDefault());
     }
 
     /* ========== BUILD ========== */
@@ -218,7 +221,6 @@ export default class GameScene extends Phaser.Scene {
 
         if (opts.cost !== false) {
             this.spendCoins(this.getHabitatCost(type));
-            this.cameras.main.flash(150, 200, 255, 200, true);
             this.sfx.build();
         }
         return hab;

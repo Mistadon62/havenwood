@@ -69,7 +69,6 @@ export default class HUDScene extends Phaser.Scene {
         bar.lineStyle(1, CLR.uiBorder); bar.lineBetween(0, barY, W, barY);
 
         const allItems = [
-            { key: null, label: 'Select', cost: null, color: 0xAAAAAA },
             { key: 'build', label: 'Build', cost: null, color: 0x66BB55 },
             { key: 'missions', label: 'Missions', cost: null, color: 0x66AA66 },
             { key: 'upgrades', label: 'Upgrades', cost: null, color: 0xCCAA33 },
