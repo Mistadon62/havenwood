@@ -227,6 +227,7 @@ export default class GameScene extends Phaser.Scene {
     zoomOut() {
         if (!this.state.viewingHabitat && this.cameras.main.zoom === 1) return;
         this.state.viewingHabitat = null;
+        this.game.events.emit('habitatViewClosed');
 
         const cam = this.cameras.main;
         cam.pan(W / 2, H / 2, 350, 'Quad.easeInOut', true);
@@ -234,7 +235,6 @@ export default class GameScene extends Phaser.Scene {
             if (progress === 1) {
                 cam.scrollX = 0;
                 cam.scrollY = 0;
-                this.game.events.emit('habitatViewClosed');
             }
         });
     }
@@ -282,12 +282,8 @@ export default class GameScene extends Phaser.Scene {
         gfx.lineStyle(2, ht.stroke, 0.9); gfx.strokeRect(px + 1, py + 1, pw - 2, ph - 2);
 
         const decor = this.addHabitatDecor(type, gx, gy, ht);
-        const label = this.add.text(px + pw / 2, py + 4, ht.name, {
-            fontFamily: '"Press Start 2P", monospace', fontSize: '8px', color: '#FFFFFF',
-            stroke: '#000000', strokeThickness: 2
-        }).setOrigin(0.5, 0).setDepth(15);
 
-        const hab = { id, type, gx, gy, w: ht.w, h: ht.h, animals: [], gfx, label, decor, enrichments: [] };
+        const hab = { id, type, gx, gy, w: ht.w, h: ht.h, animals: [], gfx, decor, enrichments: [] };
         this.state.habitats.push(hab);
 
         if (opts.cost !== false) {
@@ -363,7 +359,7 @@ export default class GameScene extends Phaser.Scene {
 
         const px = (hab.gx + 0.3 + Math.random() * (hab.w - 0.6)) * TILE;
         const py = MAP_Y + (hab.gy + 0.4 + Math.random() * (hab.h - 0.8)) * TILE;
-        const spr = this.add.image(px, py, `enrich_${enrichId}`).setDepth(14).setScale(0.9);
+        const spr = this.add.image(px, py, `enrich_${enrichId}`).setDepth(11).setScale(0.9);
         this.enrichmentSprites.push({ habitatId, enrichId, sprite: spr });
 
         this.sfx.build();
@@ -1355,7 +1351,7 @@ export default class GameScene extends Phaser.Scene {
                     for (const eId of h.enrichments) {
                         const px = (hab.gx + 0.3 + Math.random() * (hab.w - 0.6)) * TILE;
                         const py = MAP_Y + (hab.gy + 0.4 + Math.random() * (hab.h - 0.8)) * TILE;
-                        const spr = this.add.image(px, py, `enrich_${eId}`).setDepth(14).setScale(0.9);
+                        const spr = this.add.image(px, py, `enrich_${eId}`).setDepth(11).setScale(0.9);
                         this.enrichmentSprites.push({ habitatId: hab.id, enrichId: eId, sprite: spr });
                     }
                 }
