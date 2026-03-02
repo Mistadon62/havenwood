@@ -90,10 +90,10 @@ GameScene and HUDScene communicate via Phaser's global event system (`this.game.
 
 | Habitat | Cost | Size | Capacity | Animal Types |
 |---|---|---|---|---|
-| Meadow | 100g | 4x3 | 3 | mammal_small, bird |
-| Forest | 200g | 4x4 | 4 | mammal_large, mammal_small |
-| Pond | 150g | 3x3 | 3 | aquatic, amphibian, bird |
-| Barn | 250g | 3x3 | 5 | domestic |
+| Meadow | 100g | 5x4 | 3 | mammal_small, bird |
+| Forest | 200g | 5x5 | 4 | mammal_large, mammal_small |
+| Pond | 150g | 4x4 | 3 | aquatic, amphibian, bird |
+| Barn | 250g | 4x4 | 5 | domestic |
 
 Capacity can be increased by the Habitat Plus upgrade (+1) and the Wildlife Biology research tree (+1).
 

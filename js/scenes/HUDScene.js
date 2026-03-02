@@ -78,7 +78,7 @@ export default class HUDScene extends Phaser.Scene {
 
         const allItems = [
             { key: 'build', label: 'Build', cost: null, color: 0x66BB55 },
-            { key: 'missions', label: 'Missions', cost: null, color: 0x66AA66 },
+            { key: 'missions', label: 'Rescue', cost: null, color: 0x66AA66 },
             { key: 'upgrades', label: 'Upgrades', cost: null, color: 0xCCAA33 },
             { key: 'staff', label: 'Staff', cost: null, color: 0x5588BB },
             { key: 'research', label: 'Research', cost: null, color: 0x44DDAA },
@@ -114,7 +114,7 @@ export default class HUDScene extends Phaser.Scene {
                 if (item.key) this.gs.enterBuild(item.key);
                 else this.gs.exitBuild();
             });
-            const lbl = this.txt(x, item.cost !== null ? y - 6 : y, item.label, 6).setOrigin(0.5);
+            const lbl = this.txt(x, item.cost !== null ? y - 6 : y, item.label, 7).setOrigin(0.5);
             this.toolbarElements.push(lbl);
             if (item.cost !== null) {
                 const costTxt = this.txt(x, y + 8, `${item.cost}g`, 5, CLR.gold).setOrigin(0.5);
