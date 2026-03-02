@@ -227,6 +227,9 @@ export default class GameScene extends Phaser.Scene {
     zoomOut() {
         if (!this.state.viewingHabitat && this.cameras.main.zoom === 1) return;
         this.state.viewingHabitat = null;
+        for (const a of this.state.animals) {
+            if (a.sprite._hoverGlow) { a.sprite.preFX.remove(a.sprite._hoverGlow); a.sprite._hoverGlow = null; }
+        }
         this.game.events.emit('habitatViewClosed');
 
         const cam = this.cameras.main;
@@ -426,6 +429,14 @@ export default class GameScene extends Phaser.Scene {
             this._skipPointerDown = true;
             this.sfx.click();
             this.game.events.emit('showAnimalInfo', animal);
+        });
+        sprite.on('pointerover', () => {
+            if (!this.state.viewingHabitat) return;
+            if (!sprite.preFX) return;
+            sprite._hoverGlow = sprite.preFX.addGlow(0xffffff, 2, 0, false, 0.15, 10);
+        });
+        sprite.on('pointerout', () => {
+            if (sprite._hoverGlow) { sprite.preFX.remove(sprite._hoverGlow); sprite._hoverGlow = null; }
         });
 
         this.state.animals.push(animal);
