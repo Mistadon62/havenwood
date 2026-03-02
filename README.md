@@ -114,13 +114,12 @@ Two same-species adults in the same habitat can breed if both are healthy and of
 
 ### Visitors
 
-Visitors spawn during business hours (8 AM - 6 PM), walk in from the entrance, wander, then leave. Income per visitor is calculated from:
+Visitors spawn during business hours (8 AM - 6 PM), walk in through the entrance gap, wander open tiles (avoiding habitats), then leave. Income comes in two parts:
 
-- Average animal happiness
-- Total animal appeal (modified by visitor type preferences)
-- Enrichment appeal bonuses
-- Visitor type multiplier (Family, Tourist, Photographer, School, VIP)
-- Season bonuses, upgrades, research bonuses, and staff multipliers
+- **Admission fee** (on entry): flat 5g base, scaled by visitor type multiplier and income upgrades/research
+- **Donation** (on exit): satisfaction-based tip calculated from average animal happiness, total animal appeal (modified by visitor type preferences), enrichment appeal bonuses, season bonuses, gift shop upgrade, and tour guide staff multipliers
+
+Visitor types: Family, Tourist, Photographer, School, VIP — each with different income multipliers, species/rarity preferences, and stay durations.
 
 ### Staff
 

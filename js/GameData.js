@@ -1,12 +1,13 @@
 // Havenwood — central game data/config registry. All constants, species, habitats,
 // missions, upgrades, research, and UI palette used across the sanctuary management game.
 
-// Grid/layout constants — tile size, map dimensions, time scale, starting currency
+// Grid/layout constants — tile size, map dimensions, MAP_Y offset (top bar), canvas height includes UI bars, time scale, starting currency
 export const TILE = 32;
 export const COLS = 30;
 export const ROWS = 20;
 export const W = COLS * TILE;
-export const H = ROWS * TILE;
+export const MAP_Y = 42;
+export const H = MAP_Y + ROWS * TILE + 62;
 export const TIME_SCALE = 2;
 export const START_COINS = 500;
 

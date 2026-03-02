@@ -45,7 +45,7 @@ export class SpriteGenerator {
         this.enrichments(scene);
     }
 
-    // Terrain tiles: grass variants, path, fence.
+    // Terrain tiles: grass variants, path, fence (horizontal), fence_v (vertical for side walls).
     static terrain(scene) {
         const grasses = [CLR.grass1, CLR.grass2, CLR.grass3, CLR.grass4];
         for (let i = 0; i < 4; i++) {
@@ -81,6 +81,65 @@ export class SpriteGenerator {
             g.fillRect(0, 12, TILE, 2);
             g.fillRect(4, 4, 4, 2);
             g.fillRect(TILE - 8, 4, 4, 2);
+        });
+
+        tex(scene, 'fence_v', TILE, TILE, g => {
+            g.fillStyle(CLR.grass2);
+            g.fillRect(0, 0, TILE, TILE);
+            g.fillStyle(CLR.fence);
+            g.fillRect(12, 0, 6, TILE);
+            g.fillRect(4, 4, 20, 4);
+            g.fillRect(4, TILE - 8, 20, 4);
+            g.fillStyle(CLR.fenceLight);
+            g.fillRect(12, 0, 2, TILE);
+            g.fillRect(4, 4, 20, 2);
+            g.fillRect(4, TILE - 8, 20, 2);
+        });
+
+        // Corner: top-left origin — horizontal rail goes right, vertical rail goes down.
+        tex(scene, 'fence_tl', TILE, TILE, g => {
+            g.fillStyle(CLR.grass2); g.fillRect(0, 0, TILE, TILE);
+            g.fillStyle(CLR.fence);
+            g.fillRect(12, 12, TILE - 12, 6);
+            g.fillRect(12, 12, 6, TILE - 12);
+            g.fillRect(8, 8, 10, 10);
+            g.fillStyle(CLR.fenceLight);
+            g.fillRect(12, 12, TILE - 12, 2);
+            g.fillRect(12, 12, 2, TILE - 12);
+            g.fillRect(8, 8, 10, 2);
+        });
+        tex(scene, 'fence_tr', TILE, TILE, g => {
+            g.fillStyle(CLR.grass2); g.fillRect(0, 0, TILE, TILE);
+            g.fillStyle(CLR.fence);
+            g.fillRect(0, 12, 20, 6);
+            g.fillRect(12, 12, 6, TILE - 12);
+            g.fillRect(12, 8, 10, 10);
+            g.fillStyle(CLR.fenceLight);
+            g.fillRect(0, 12, 20, 2);
+            g.fillRect(12, 12, 2, TILE - 12);
+            g.fillRect(12, 8, 10, 2);
+        });
+        tex(scene, 'fence_bl', TILE, TILE, g => {
+            g.fillStyle(CLR.grass2); g.fillRect(0, 0, TILE, TILE);
+            g.fillStyle(CLR.fence);
+            g.fillRect(12, 12, TILE - 12, 6);
+            g.fillRect(12, 0, 6, 20);
+            g.fillRect(8, 12, 10, 10);
+            g.fillStyle(CLR.fenceLight);
+            g.fillRect(12, 12, TILE - 12, 2);
+            g.fillRect(12, 0, 2, 20);
+            g.fillRect(8, 12, 10, 2);
+        });
+        tex(scene, 'fence_br', TILE, TILE, g => {
+            g.fillStyle(CLR.grass2); g.fillRect(0, 0, TILE, TILE);
+            g.fillStyle(CLR.fence);
+            g.fillRect(0, 12, 20, 6);
+            g.fillRect(12, 0, 6, 20);
+            g.fillRect(12, 12, 10, 10);
+            g.fillStyle(CLR.fenceLight);
+            g.fillRect(0, 12, 20, 2);
+            g.fillRect(12, 0, 2, 20);
+            g.fillRect(12, 12, 10, 2);
         });
     }
 

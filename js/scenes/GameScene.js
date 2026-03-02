@@ -2,7 +2,7 @@
  * GameScene - Core gameplay scene for Havenwood, a Phaser 3 animal sanctuary management game.
  * Handles map, building, animals, visitors, staff, missions, research, time, seasons, and save/load.
  */
-import { TILE, COLS, ROWS, W, H, TIME_SCALE, START_COINS, HABITATS, SPECIES, RARITY_WEIGHT, RESCUE_MSG, CLR,
+import { TILE, COLS, ROWS, W, H, MAP_Y, TIME_SCALE, START_COINS, HABITATS, SPECIES, RARITY_WEIGHT, RESCUE_MSG, CLR,
     SEASONS, SEASON_ORDER, SEASON_LENGTH, SEASON_CYCLE, UPGRADES, STAFF_TYPES,
     TRAITS, TRAIT_IDS, ILLNESSES, ENRICHMENTS, MISSIONS, VISITOR_TYPES, ACHIEVEMENTS,
     RESEARCH, RESEARCH_BRANCHES } from '../GameData.js';
@@ -73,7 +73,8 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== MAP ========== */
-    // Builds the 2D grid: fence borders, entrance row, path tiles, and grass variants.
+    // Builds the 2D grid: fence borders (horizontal top/bottom, vertical sides, corner pieces), entrance gap
+    // with reserved path tiles in front, and grass variants.
 
     createMap() {
         for (let y = 0; y < ROWS; y++) {
@@ -81,21 +82,26 @@ export default class GameScene extends Phaser.Scene {
             for (let x = 0; x < COLS; x++) {
                 const isBorder = y === 0 || y === ROWS - 1 || x === 0 || x === COLS - 1;
                 const isEntrance = y === ROWS - 1 && x >= 13 && x <= 16;
-                const isPath = !isBorder && y === ROWS - 2 && x >= 13 && x <= 16;
-                this.grid[y][x] = isEntrance ? 'entrance' : isBorder ? 'fence' : isPath ? 'path' : null;
-                const px = x * TILE + TILE / 2, py = y * TILE + TILE / 2;
-                if (isEntrance || isPath) {
-                    this.add.image(px, py, 'path').setDepth(0);
+                const isEntrancePath = y === ROWS - 2 && x >= 13 && x <= 16;
+                this.grid[y][x] = (isEntrance || isEntrancePath) ? 'entrance' : isBorder ? 'fence' : null;
+                const px = x * TILE + TILE / 2, py = MAP_Y + y * TILE + TILE / 2;
+                if (isEntrance) {
+                    this.add.image(px, py, `grass_${((x * 7 + y * 13) % 4) + 1}`).setDepth(0);
                 } else if (isBorder) {
-                    this.add.image(px, py, 'fence').setDepth(0);
+                    const isTop = y === 0, isBot = y === ROWS - 1;
+                    const isLeft = x === 0, isRight = x === COLS - 1;
+                    let fenceTex = 'fence';
+                    if (isTop && isLeft) fenceTex = 'fence_tl';
+                    else if (isTop && isRight) fenceTex = 'fence_tr';
+                    else if (isBot && isLeft) fenceTex = 'fence_bl';
+                    else if (isBot && isRight) fenceTex = 'fence_br';
+                    else if (isLeft || isRight) fenceTex = 'fence_v';
+                    this.add.image(px, py, fenceTex).setDepth(0);
                 } else {
                     this.add.image(px, py, `grass_${((x * 7 + y * 13) % 4) + 1}`).setDepth(0);
                 }
             }
         }
-        this.add.text(W / 2, (ROWS - 1) * TILE + TILE / 2, 'ENTRANCE', {
-            fontFamily: '"Press Start 2P", monospace', fontSize: '8px', color: '#8B7355'
-        }).setOrigin(0.5).setDepth(1);
     }
 
     /* ========== PARTICLES ========== */
@@ -108,7 +114,7 @@ export default class GameScene extends Phaser.Scene {
         if (this.fireflyEmitter) { this.fireflyEmitter.destroy(); this.fireflyEmitter = null; }
         const s = SEASONS[this.state.season];
         if (s.particle) {
-            this.seasonEmitter = this.add.particles(0, -10, s.particle, {
+            this.seasonEmitter = this.add.particles(0, MAP_Y - 10, s.particle, {
                 x: { min: 0, max: W }, lifespan: this.state.season === 'winter' ? 7000 : 5000,
                 speedY: { min: 12, max: this.state.season === 'winter' ? 35 : 25 },
                 speedX: { min: -15, max: 15 }, scale: { min: 0.4, max: 1 },
@@ -119,7 +125,7 @@ export default class GameScene extends Phaser.Scene {
         }
         if (this.state.season === 'summer') {
             this.fireflyEmitter = this.add.particles(0, 0, 'particle_firefly', {
-                x: { min: 60, max: W - 60 }, y: { min: 80, max: H - 120 },
+                x: { min: 60, max: W - 60 }, y: { min: MAP_Y + 40, max: MAP_Y + ROWS * TILE - 80 },
                 lifespan: 2500, speedY: { min: -6, max: 6 }, speedX: { min: -6, max: 6 },
                 scale: { min: 0.3, max: 0.8 }, alpha: { start: 0.8, end: 0 },
                 quantity: 1, frequency: 700,
@@ -134,25 +140,25 @@ export default class GameScene extends Phaser.Scene {
     setupInput() {
         this.input.on('pointermove', ptr => {
             if (!this.state.buildMode) { this.preview.setVisible(false); return; }
-            const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor(ptr.worldY / TILE);
+            const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
             const ht = HABITATS[this.state.buildMode];
             const ok = this.canPlace(this.state.buildMode, gx, gy);
             const c = ok ? 0x00ff00 : 0xff0000;
             this.preview.clear().setVisible(true);
             this.preview.fillStyle(c, 0.25);
-            this.preview.fillRect(gx * TILE, gy * TILE, ht.w * TILE, ht.h * TILE);
+            this.preview.fillRect(gx * TILE, MAP_Y + gy * TILE, ht.w * TILE, ht.h * TILE);
             this.preview.lineStyle(2, c, 0.7);
-            this.preview.strokeRect(gx * TILE, gy * TILE, ht.w * TILE, ht.h * TILE);
+            this.preview.strokeRect(gx * TILE, MAP_Y + gy * TILE, ht.w * TILE, ht.h * TILE);
         });
 
         this.input.on('pointerdown', ptr => {
             if (ptr.rightButtonDown()) { this.exitBuild(); return; }
             if (this._skipPointerDown) { this._skipPointerDown = false; return; }
             if (this.state.buildMode) {
-                const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor(ptr.worldY / TILE);
+                const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
                 if (this.canPlace(this.state.buildMode, gx, gy)) { this.placeHabitat(this.state.buildMode, gx, gy); this.exitBuild(); }
             } else {
-                const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor(ptr.worldY / TILE);
+                const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
                 if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
                     const cell = this.grid[gy]?.[gx];
                     if (cell && typeof cell === 'string' && cell.startsWith('hab_')) {
@@ -183,7 +189,7 @@ export default class GameScene extends Phaser.Scene {
 
     canPlace(type, gx, gy) {
         const h = HABITATS[type];
-        if (gx < 1 || gy < 1 || gx + h.w > COLS - 1 || gy + h.h > ROWS - 2) return false;
+        if (gx < 1 || gy < 1 || gx + h.w > COLS - 1 || gy + h.h > ROWS - 1) return false;
         if (this.state.coins < this.getHabitatCost(type)) return false;
         for (let dy = 0; dy < h.h; dy++)
             for (let dx = 0; dx < h.w; dx++)
@@ -206,7 +212,7 @@ export default class GameScene extends Phaser.Scene {
                 this.grid[gy + dy][gx + dx] = id;
 
         const gfx = this.add.graphics().setDepth(10);
-        const px = gx * TILE, py = gy * TILE, pw = ht.w * TILE, ph = ht.h * TILE;
+        const px = gx * TILE, py = MAP_Y + gy * TILE, pw = ht.w * TILE, ph = ht.h * TILE;
         gfx.fillStyle(ht.fill, 0.4); gfx.fillRect(px, py, pw, ph);
         gfx.lineStyle(2, ht.stroke, 0.9); gfx.strokeRect(px + 1, py + 1, pw - 2, ph - 2);
 
@@ -228,7 +234,7 @@ export default class GameScene extends Phaser.Scene {
 
     addHabitatDecor(type, gx, gy, ht) {
         const rng = new Phaser.Math.RandomDataGenerator([`${gx}${gy}`]);
-        const base = gx * TILE, top = gy * TILE;
+        const base = gx * TILE, top = MAP_Y + gy * TILE;
         const g = this.add.graphics().setDepth(12);
         const objects = [g];
         if (type === 'forest') {
@@ -291,7 +297,7 @@ export default class GameScene extends Phaser.Scene {
         hab.enrichments.push(enrichId);
 
         const px = (hab.gx + 0.3 + Math.random() * (hab.w - 0.6)) * TILE;
-        const py = (hab.gy + 0.4 + Math.random() * (hab.h - 0.8)) * TILE;
+        const py = MAP_Y + (hab.gy + 0.4 + Math.random() * (hab.h - 0.8)) * TILE;
         const spr = this.add.image(px, py, `enrich_${enrichId}`).setDepth(14).setScale(0.9);
         this.enrichmentSprites.push({ habitatId, enrichId, sprite: spr });
 
@@ -328,7 +334,7 @@ export default class GameScene extends Phaser.Scene {
         if (!hab) return null;
 
         const ax = (hab.gx + 0.5 + Math.random() * (hab.w - 1)) * TILE;
-        const ay = (hab.gy + 0.5 + Math.random() * (hab.h - 1)) * TILE;
+        const ay = MAP_Y + (hab.gy + 0.5 + Math.random() * (hab.h - 1)) * TILE;
         const sprite = this.add.image(ax, ay, `animal_${speciesId}`).setDepth(40);
         sprite.setInteractive({ useHandCursor: true });
 
@@ -443,7 +449,7 @@ export default class GameScene extends Phaser.Scene {
                     a.wInterval = Phaser.Math.Between(2000, 6000);
                     if (hab) {
                         a.tx = (hab.gx + 0.5 + Math.random() * (hab.w - 1)) * TILE;
-                        a.ty = (hab.gy + 0.5 + Math.random() * (hab.h - 1)) * TILE;
+                        a.ty = MAP_Y + (hab.gy + 0.5 + Math.random() * (hab.h - 1)) * TILE;
                     }
                 }
                 const dx = a.tx - a.sprite.x, dy = a.ty - a.baseY;
@@ -810,7 +816,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== VISITORS ========== */
-    // Enter, wander, leave. Income from animal appeal, happiness, visitor type, upgrades, research, season.
+    // Enter (flat admission fee), wander open tiles avoiding habitats, leave (satisfaction-based donation).
 
     pickVisitorType() {
         const vipThreshold = this.hasResearch('vip_easier') ? 50 : null;
@@ -826,6 +832,17 @@ export default class GameScene extends Phaser.Scene {
         return types[0];
     }
 
+    randomOpenTile() {
+        for (let attempt = 0; attempt < 20; attempt++) {
+            const gx = Phaser.Math.Between(1, COLS - 2);
+            const gy = Phaser.Math.Between(1, ROWS - 2);
+            if (this.grid[gy][gx] === null) {
+                return { x: gx * TILE + TILE / 2, y: MAP_Y + gy * TILE + TILE / 2 };
+            }
+        }
+        return { x: Phaser.Math.Between(3, COLS - 4) * TILE, y: MAP_Y + Phaser.Math.Between(3, ROWS - 4) * TILE };
+    }
+
     trySpawnVisitor() {
         const t = this.state.time;
         if (t < 480 || t > 1080) return;
@@ -838,12 +855,12 @@ export default class GameScene extends Phaser.Scene {
         if (this.visitors.length >= maxVisitors) return;
 
         const vType = this.pickVisitorType();
-        const sprite = this.add.image(15 * TILE, (ROWS - 1) * TILE, `visitor_${vType.spriteIdx}`).setDepth(30).setAlpha(0.85);
+        const sprite = this.add.image(15 * TILE, MAP_Y + (ROWS - 1) * TILE, `visitor_${vType.spriteIdx}`).setDepth(30).setAlpha(0.85);
 
+        const dest = this.randomOpenTile();
         this.visitors.push({
             sprite, visitorType: vType.id,
-            tx: Phaser.Math.Between(3, COLS - 4) * TILE,
-            ty: Phaser.Math.Between(3, ROWS - 4) * TILE,
+            tx: dest.x, ty: dest.y,
             speed: Phaser.Math.Between(25, 40),
             timer: 0,
             maxTime: Phaser.Math.Between(12000, 25000) * (vType.stayMult || 1),
@@ -859,66 +876,87 @@ export default class GameScene extends Phaser.Scene {
             const dist = Math.sqrt(dx * dx + dy * dy);
             if (dist > 3) {
                 const spd = v.speed * delta / 1000;
-                v.sprite.x += (dx / dist) * spd;
-                v.sprite.y += (dy / dist) * spd;
-                v.sprite.setFlipX(dx < 0);
+                const nx = v.sprite.x + (dx / dist) * spd;
+                const ny = v.sprite.y + (dy / dist) * spd;
+                const gx = Math.floor(nx / TILE), gy = Math.floor((ny - MAP_Y) / TILE);
+                if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS && this.grid[gy]?.[gx] !== null && this.grid[gy][gx] !== 'entrance') {
+                    const rr = this.randomOpenTile(); v.tx = rr.x; v.ty = rr.y;
+                } else {
+                    v.sprite.x = nx;
+                    v.sprite.y = ny;
+                    v.sprite.setFlipX(dx < 0);
+                }
             } else if (v.phase === 'entering') {
                 v.phase = 'wandering';
-                v.tx = Phaser.Math.Between(3, COLS - 4) * TILE;
-                v.ty = Phaser.Math.Between(3, ROWS - 4) * TILE;
+                this.visitorAdmission(v);
+                const t1 = this.randomOpenTile(); v.tx = t1.x; v.ty = t1.y;
             } else if (v.phase === 'wandering') {
                 if (v.timer >= v.maxTime) {
-                    v.phase = 'leaving'; v.tx = 15 * TILE; v.ty = (ROWS - 1) * TILE;
+                    v.phase = 'leaving'; v.tx = 15 * TILE; v.ty = MAP_Y + (ROWS - 1) * TILE;
                 } else {
-                    v.tx = Phaser.Math.Between(3, COLS - 4) * TILE;
-                    v.ty = Phaser.Math.Between(3, ROWS - 4) * TILE;
+                    const t2 = this.randomOpenTile(); v.tx = t2.x; v.ty = t2.y;
                 }
             } else if (v.phase === 'leaving') {
-                this.visitorIncome(v); v.sprite.destroy(); this.visitors.splice(i, 1);
+                this.visitorDonation(v); v.sprite.destroy(); this.visitors.splice(i, 1);
             }
         }
     }
 
-    visitorIncome(v) {
+    visitorAdmission(v) {
         const vType = VISITOR_TYPES[v.visitorType] || VISITOR_TYPES.family;
-        let income = 5;
-        const avgHappy = this.state.animals.length > 0
-            ? this.state.animals.reduce((s, a) => s + a.happiness, 0) / this.state.animals.length : 50;
-        income *= (0.5 + avgHappy / 100);
+        let fee = 5;
+        if (this.state.upgrades.has('sanctuary_sign')) fee = Math.round(fee * 1.2);
+        if (this.hasResearch('income_50')) fee = Math.round(fee * 1.5);
+        fee = Math.round(fee * vType.incomeMult);
+        fee = Math.max(1, fee);
+        this.addCoins(fee);
 
-        for (const a of this.state.animals) {
-            let appeal = SPECIES[a.speciesId].appeal * 0.5;
-            if (vType.prefTypes?.length && vType.prefTypes.includes(SPECIES[a.speciesId].type)) appeal *= 1.5;
-            if (vType.prefRarity?.length && vType.prefRarity.includes(SPECIES[a.speciesId].rarity)) appeal *= 1.5;
-            income += appeal;
-        }
-
-        // Enrichment appeal bonus
-        for (const hab of this.state.habitats) {
-            income += this.getEnrichmentAppealBonus(hab) * 0.5;
-        }
-
-        let typeMult = vType.incomeMult;
-        if (vType.id === 'school' && this.hasResearch('school_boost')) typeMult *= 2;
-        income *= typeMult;
-        const seasonBonus = SEASONS[this.state.season].bonuses;
-        if (seasonBonus.income) income *= seasonBonus.income;
-        if (this.state.upgrades.has('sanctuary_sign')) income *= 1.2;
-        if (this.hasResearch('income_50')) income *= 1.5;
-        if (this.state.upgrades.has('gift_shop')) income += 3;
-        const guideCount = this.state.staff.filter(s => s.type === 'guide').length;
-        income *= (1 + guideCount * 0.25);
-
-        income = Math.round(Math.max(1, income));
-        this.addCoins(income);
-        this.state.stats.visitors++;
-        this.state.rep++;
-
-        const txt = this.add.text(v.sprite.x, v.sprite.y - 10, `+${income}`, {
+        const txt = this.add.text(v.sprite.x, v.sprite.y - 10, `+${fee}`, {
             fontFamily: '"Press Start 2P", monospace', fontSize: '8px', color: CLR.gold,
             stroke: '#000', strokeThickness: 2
         }).setOrigin(0.5).setDepth(55);
         this.tweens.add({ targets: txt, y: txt.y - 20, alpha: 0, duration: 800, onComplete: () => txt.destroy() });
+    }
+
+    visitorDonation(v) {
+        const vType = VISITOR_TYPES[v.visitorType] || VISITOR_TYPES.family;
+        let donation = 0;
+
+        const avgHappy = this.state.animals.length > 0
+            ? this.state.animals.reduce((s, a) => s + a.happiness, 0) / this.state.animals.length : 50;
+        donation += avgHappy * 0.06;
+
+        for (const a of this.state.animals) {
+            let appeal = SPECIES[a.speciesId].appeal * 0.3;
+            if (vType.prefTypes?.length && vType.prefTypes.includes(SPECIES[a.speciesId].type)) appeal *= 1.5;
+            if (vType.prefRarity?.length && vType.prefRarity.includes(SPECIES[a.speciesId].rarity)) appeal *= 1.5;
+            donation += appeal;
+        }
+
+        for (const hab of this.state.habitats) {
+            donation += this.getEnrichmentAppealBonus(hab) * 0.5;
+        }
+
+        let typeMult = vType.incomeMult;
+        if (vType.id === 'school' && this.hasResearch('school_boost')) typeMult *= 2;
+        donation *= typeMult;
+        const seasonBonus = SEASONS[this.state.season].bonuses;
+        if (seasonBonus.income) donation *= seasonBonus.income;
+        if (this.state.upgrades.has('gift_shop')) donation += 3;
+        const guideCount = this.state.staff.filter(s => s.type === 'guide').length;
+        donation *= (1 + guideCount * 0.25);
+
+        donation = Math.round(Math.max(0, donation));
+        if (donation > 0) {
+            this.addCoins(donation);
+            const txt = this.add.text(v.sprite.x, v.sprite.y - 10, `+${donation} tip`, {
+                fontFamily: '"Press Start 2P", monospace', fontSize: '8px', color: '#88DDAA',
+                stroke: '#000', strokeThickness: 2
+            }).setOrigin(0.5).setDepth(55);
+            this.tweens.add({ targets: txt, y: txt.y - 20, alpha: 0, duration: 800, onComplete: () => txt.destroy() });
+        }
+        this.state.stats.visitors++;
+        this.state.rep++;
     }
 
     /* ========== STAFF ========== */
@@ -931,11 +969,11 @@ export default class GameScene extends Phaser.Scene {
             this.sfx.error(); return false;
         }
         this.spendCoins(st.hireCost);
-        const sprite = this.add.image(15 * TILE, (ROWS - 2) * TILE, `staff_${typeId}`).setDepth(32).setAlpha(0.9);
+        const sprite = this.add.image(15 * TILE, MAP_Y + (ROWS - 2) * TILE, `staff_${typeId}`).setDepth(32).setAlpha(0.9);
         this.state.staff.push({
             id: genId('staff'), type: typeId, sprite,
             tx: Phaser.Math.Between(4, COLS - 5) * TILE,
-            ty: Phaser.Math.Between(4, ROWS - 5) * TILE, wTimer: 0
+            ty: MAP_Y + Phaser.Math.Between(4, ROWS - 5) * TILE, wTimer: 0
         });
         this.sfx.build();
         this.game.events.emit('notification', `${st.name} hired!`);
@@ -963,7 +1001,7 @@ export default class GameScene extends Phaser.Scene {
                 s.sprite.setFlipX(dx < 0);
             } else {
                 s.tx = Phaser.Math.Between(4, COLS - 5) * TILE;
-                s.ty = Phaser.Math.Between(4, ROWS - 5) * TILE;
+                s.ty = MAP_Y + Phaser.Math.Between(4, ROWS - 5) * TILE;
             }
         }
     }
@@ -1232,7 +1270,7 @@ export default class GameScene extends Phaser.Scene {
                     hab.enrichments = h.enrichments;
                     for (const eId of h.enrichments) {
                         const px = (hab.gx + 0.3 + Math.random() * (hab.w - 0.6)) * TILE;
-                        const py = (hab.gy + 0.4 + Math.random() * (hab.h - 0.8)) * TILE;
+                        const py = MAP_Y + (hab.gy + 0.4 + Math.random() * (hab.h - 0.8)) * TILE;
                         const spr = this.add.image(px, py, `enrich_${eId}`).setDepth(14).setScale(0.9);
                         this.enrichmentSprites.push({ habitatId: hab.id, enrichId: eId, sprite: spr });
                     }
@@ -1251,11 +1289,11 @@ export default class GameScene extends Phaser.Scene {
             }
             if (d.staff) {
                 for (const s of d.staff) {
-                    const sprite = this.add.image(15 * TILE, (ROWS - 2) * TILE, `staff_${s.type}`).setDepth(32).setAlpha(0.9);
+                    const sprite = this.add.image(15 * TILE, MAP_Y + (ROWS - 2) * TILE, `staff_${s.type}`).setDepth(32).setAlpha(0.9);
                     this.state.staff.push({
                         id: s.id, type: s.type, sprite,
                         tx: Phaser.Math.Between(4, COLS - 5) * TILE,
-                        ty: Phaser.Math.Between(4, ROWS - 5) * TILE, wTimer: 0
+                        ty: MAP_Y + Phaser.Math.Between(4, ROWS - 5) * TILE, wTimer: 0
                     });
                 }
             }
