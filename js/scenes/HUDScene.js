@@ -45,17 +45,18 @@ export default class HUDScene extends Phaser.Scene {
         bar.fillStyle(CLR.uiBg, 0.9); bar.fillRect(0, 0, W, 42);
         bar.lineStyle(1, CLR.uiBorder); bar.lineBetween(0, 42, W, 42);
 
-        this.dayTxt = this.txt(12, 12, 'Day 1', 10);
-        this.seasonTxt = this.txt(130, 12, 'Spring', 8, '#88CC88');
-        this.timeTxt = this.txt(W / 2, 12, '6:00 AM', 10).setOrigin(0.5, 0);
-        this.add.image(W - 280, 21, 'icon_research').setScale(1.2);
-        this.rpTxt = this.txt(W - 268, 12, '0', 9, '#44DDAA');
-        this.repTxt = this.txt(W - 210, 12, '0', 9, CLR.gold);
-        this.repLabel = this.txt(W - 228, 14, '\u2605', 10, CLR.gold);
-        this.add.image(W - 140, 21, 'icon_coin').setScale(1.4);
-        this.coinTxt = this.txt(W - 124, 12, '', 10, CLR.gold);
+        const midY = 21;
+        this.dayTxt = this.txt(12, midY, 'Day 1', 10).setOrigin(0, 0.5);
+        this.seasonTxt = this.txt(130, midY, 'Spring', 8, '#88CC88').setOrigin(0, 0.5);
+        this.timeTxt = this.txt(W / 2, midY, '6:00 AM', 10).setOrigin(0.5, 0.5);
+        this.add.image(W - 280, midY, 'icon_research').setScale(1.2);
+        this.rpTxt = this.txt(W - 268, midY, '0', 9, '#44DDAA').setOrigin(0, 0.5);
+        this.repLabel = this.txt(W - 228, midY - 3, '\u2605', 10, CLR.gold).setOrigin(0, 0.5);
+        this.repTxt = this.txt(W - 210, midY, '0', 9, CLR.gold).setOrigin(0, 0.5);
+        this.add.image(W - 140, midY, 'icon_coin').setScale(1.4);
+        this.coinTxt = this.txt(W - 124, midY, '', 10, CLR.gold).setOrigin(0, 0.5);
 
-        const saveBtn = this.txt(W - 50, 14, 'SAVE', 7, '#88AA88').setInteractive({ useHandCursor: true });
+        const saveBtn = this.txt(W - 50, midY, 'SAVE', 7, '#88AA88').setOrigin(0, 0.5).setInteractive({ useHandCursor: true });
         saveBtn.on('pointerdown', () => { this.gs.saveGame(); this.notify('Game saved!'); });
         saveBtn.on('pointerover', function () { this.setColor('#AAFFAA'); });
         saveBtn.on('pointerout', function () { this.setColor('#88AA88'); });
@@ -552,6 +553,12 @@ export default class HUDScene extends Phaser.Scene {
         bg.lineStyle(2, ht.stroke); bg.strokeRoundedRect(0, 0, pw, ph, 6);
         ct.addAt(bg, 0);
 
+        const closeBtn = this.txt(pw - 8, 6, 'X', 8, '#CC4444').setOrigin(1, 0).setInteractive({ useHandCursor: true });
+        closeBtn.on('pointerdown', () => { this.gs.zoomOut(); });
+        closeBtn.on('pointerover', () => closeBtn.setColor('#FF6666'));
+        closeBtn.on('pointerout', () => closeBtn.setColor('#CC4444'));
+        ct.add(closeBtn);
+
         this.hideToolbar();
 
         const barY = H - 62;
@@ -581,7 +588,7 @@ export default class HUDScene extends Phaser.Scene {
         if (this.upgradePanel) this.upgradePanel.destroy();
         const pw = 380, entries = Object.values(UPGRADES);
         const ph = 42 + entries.length * 44 + 8;
-        const px = W / 2 - pw / 2, py = 48;
+        const px = W / 2 - pw / 2, py = this.centerPanelY(ph);
         const ct = this.add.container(px, py).setDepth(280);
         const bg = this.add.graphics();
         bg.fillStyle(0x1a0e04, 0.96); bg.fillRoundedRect(0, 0, pw, ph, 8);
@@ -625,7 +632,7 @@ export default class HUDScene extends Phaser.Scene {
         const pw = 380, currentStaff = this.gs.state.staff;
         const hireRows = Object.keys(STAFF_TYPES).length;
         const ph = 66 + hireRows * 38 + (currentStaff.length > 0 ? 34 + currentStaff.length * 32 : 0) + 16;
-        const px = W / 2 - pw / 2, py = 48;
+        const px = W / 2 - pw / 2, py = this.centerPanelY(ph);
         const ct = this.add.container(px, py).setDepth(280);
         const bg = this.add.graphics();
         bg.fillStyle(0x1a0e04, 0.96); bg.fillRoundedRect(0, 0, pw, ph, 8);
@@ -681,7 +688,7 @@ export default class HUDScene extends Phaser.Scene {
         const pw = 420, missions = Object.values(MISSIONS);
         const active = this.gs.state.activeMissions;
         const ph = 56 + missions.length * 50 + (active.length > 0 ? 24 + active.length * 28 : 0) + 16;
-        const px = W / 2 - pw / 2, py = 48;
+        const px = W / 2 - pw / 2, py = this.centerPanelY(ph);
         const ct = this.add.container(px, py).setDepth(280);
         const bg = this.add.graphics();
         bg.fillStyle(0x1a0e04, 0.96); bg.fillRoundedRect(0, 0, pw, ph, 8);
@@ -750,7 +757,7 @@ export default class HUDScene extends Phaser.Scene {
 
         const branches = Object.keys(RESEARCH_BRANCHES);
         const pw = 420, ph = 430;
-        const px = W / 2 - pw / 2, py = 42;
+        const px = W / 2 - pw / 2, py = this.centerPanelY(ph);
         const ct = this.add.container(px, py).setDepth(290);
         const bg = this.add.graphics();
         bg.fillStyle(0x1a0e04, 0.97); bg.fillRoundedRect(0, 0, pw, ph, 8);
@@ -856,7 +863,7 @@ export default class HUDScene extends Phaser.Scene {
         if (this.journalPanel) this.journalPanel.destroy();
 
         const pw = 580, ph = 460;
-        const px = W / 2 - pw / 2, py = 42;
+        const px = W / 2 - pw / 2, py = this.centerPanelY(ph);
         const ct = this.add.container(px, py).setDepth(290);
         const bg = this.add.graphics();
         bg.fillStyle(0x1a0e04, 0.97); bg.fillRoundedRect(0, 0, pw, ph, 8);
@@ -982,6 +989,9 @@ export default class HUDScene extends Phaser.Scene {
         this.closeAllPanels();
         showFn();
     }
+
+    // Returns a y position that vertically centers a panel of given height between the top and bottom bars.
+    centerPanelY(ph) { return Math.max(46, 42 + (H - 104 - ph) / 2); }
 
     // Destroys all open panels and mission refresh timer. keepZoom=true preserves the
     // camera zoom and back bar (used by rescue events so they don't interrupt the zoomed view).

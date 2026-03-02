@@ -1071,11 +1071,24 @@ export default class GameScene extends Phaser.Scene {
             const dist = Math.sqrt(dx * dx + dy * dy);
             if (dist > 3) {
                 const spd = 22 * delta / 1000;
-                s.sprite.x += (dx / dist) * spd; s.sprite.y += (dy / dist) * spd;
+                const nx = s.sprite.x + (dx / dist) * spd;
+                const ny = s.sprite.y + (dy / dist) * spd;
+                if (s.type === 'guide') {
+                    const gx = Math.floor(nx / TILE), gy = Math.floor((ny - MAP_Y) / TILE);
+                    if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS && this.grid[gy]?.[gx] !== null && this.grid[gy][gx] !== 'entrance') {
+                        const rr = this.randomOpenTile(); s.tx = rr.x; s.ty = rr.y;
+                        continue;
+                    }
+                }
+                s.sprite.x = nx; s.sprite.y = ny;
                 s.sprite.setFlipX(dx < 0);
             } else {
-                s.tx = Phaser.Math.Between(4, COLS - 5) * TILE;
-                s.ty = MAP_Y + Phaser.Math.Between(4, ROWS - 5) * TILE;
+                if (s.type === 'guide') {
+                    const t = this.randomOpenTile(); s.tx = t.x; s.ty = t.y;
+                } else {
+                    s.tx = Phaser.Math.Between(4, COLS - 5) * TILE;
+                    s.ty = MAP_Y + Phaser.Math.Between(4, ROWS - 5) * TILE;
+                }
             }
         }
     }
