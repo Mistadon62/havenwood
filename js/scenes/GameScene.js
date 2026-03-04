@@ -46,6 +46,7 @@ export default class GameScene extends Phaser.Scene {
         this.habitatDecoObjects = [];
         this.enrichmentSprites = [];
         this._skipPointerDown = false;
+        this.timeSpeedMult = 1;
 
         this.createMap();
         this.overlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000033, 0).setDepth(100);
@@ -307,6 +308,7 @@ export default class GameScene extends Phaser.Scene {
             if (a.sprite._hoverGlow) { a.sprite.preFX.remove(a.sprite._hoverGlow); a.sprite._hoverGlow = null; }
         }
         this.game.events.emit('habitatViewClosed');
+        this._hideNPCs();
 
         const cam = this.cameras.main;
         cam.pan(W / 2, H / 2, 350, 'Quad.easeInOut', true);
@@ -385,6 +387,8 @@ export default class GameScene extends Phaser.Scene {
             a.sprite.setDepth(40);
         });
 
+        this._nudgeNPCsFromHabitat(gx, gy, ht.w, ht.h);
+        this._showNPCs();
         this._movingHabitat = null; this._moveOrigin = null; this._moveTracked = null;
         this.state.buildMode = null; this.preview.setVisible(false);
         this.game.events.emit('buildModeChanged', null);
@@ -404,6 +408,7 @@ export default class GameScene extends Phaser.Scene {
     enterBuild(type) {
         this.state.buildMode = type;
         this._createBuildPreview(type);
+        this._hideNPCs();
         this.game.events.emit('buildModeChanged', type);
     }
 
@@ -411,6 +416,7 @@ export default class GameScene extends Phaser.Scene {
         this.state.buildMode = null;
         this.preview.setVisible(false);
         this._destroyBuildPreview();
+        this._showNPCs();
         this.game.events.emit('buildModeChanged', null);
     }
 
@@ -438,6 +444,37 @@ export default class GameScene extends Phaser.Scene {
         this._buildPreview.gfx.destroy();
         this._buildPreview.decor.forEach(d => d.destroy());
         this._buildPreview = null;
+    }
+
+    _hideNPCs() {
+        for (const v of this.visitors) v.sprite.setVisible(false);
+        for (const s of this.state.staff) s.sprite.setVisible(false);
+    }
+
+    _showNPCs() {
+        for (const v of this.visitors) v.sprite.setVisible(true);
+        for (const s of this.state.staff) s.sprite.setVisible(true);
+    }
+
+    _nudgeNPCsFromHabitat(gx, gy, w, h) {
+        const left = gx * TILE, right = (gx + w) * TILE;
+        const top = MAP_Y + gy * TILE, bottom = MAP_Y + (gy + h) * TILE;
+        const nudge = (obj) => {
+            if (obj.x >= left && obj.x < right && obj.y >= top && obj.y < bottom) {
+                const dest = this.randomOpenTile();
+                obj.x = dest.x; obj.y = dest.y;
+                return dest;
+            }
+            return null;
+        };
+        for (const v of this.visitors) {
+            const d = nudge(v.sprite);
+            if (d) { v.tx = d.x; v.ty = d.y; }
+        }
+        for (const s of this.state.staff) {
+            const d = nudge(s.sprite);
+            if (d) { s.tx = d.x; s.ty = d.y; }
+        }
     }
 
     getHabitatCost(type) {
@@ -485,6 +522,7 @@ export default class GameScene extends Phaser.Scene {
             this.spendCoins(this.getHabitatCost(type));
             this.sfx.build();
         }
+        this._nudgeNPCsFromHabitat(gx, gy, ht.w, ht.h);
         return hab;
     }
 
@@ -985,7 +1023,7 @@ export default class GameScene extends Phaser.Scene {
     updateMissions(delta) {
         for (const mis of this.state.activeMissions) {
             if (mis.complete) continue;
-            mis.elapsed += TIME_SCALE * delta / 1000;
+            mis.elapsed += TIME_SCALE * this.timeSpeedMult * delta / 1000;
             if (mis.elapsed >= mis.duration) {
                 mis.complete = true;
                 this.completeMission(mis);
@@ -1063,7 +1101,7 @@ export default class GameScene extends Phaser.Scene {
     // 1440 min/day, TIME_SCALE for speed. Day/night overlay: dawn 05:00–07:00, dusk 17:00–20:00, night 21:00–05:00.
 
     updateTime(delta) {
-        this.state.time += TIME_SCALE * delta / 1000;
+        this.state.time += TIME_SCALE * this.timeSpeedMult * delta / 1000;
         if (this.state.time >= 1440) {
             this.state.time -= 1440;
             this.state.day++;

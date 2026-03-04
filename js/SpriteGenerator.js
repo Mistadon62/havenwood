@@ -603,6 +603,32 @@ export class SpriteGenerator {
             g.fillCircle(8, 12, 3);
             g.fillRect(7, 9, 2, 3);
         });
+
+        tex(scene, 'icon_tortoise', 14, 14, g => {
+            g.fillStyle(0x6B8E23);
+            g.fillCircle(7, 6, 5);
+            g.fillStyle(0x556B2F);
+            g.fillCircle(7, 6, 3);
+            g.fillStyle(0x8B7D6B);
+            g.fillCircle(3, 9, 2);
+            g.fillCircle(11, 9, 2);
+            g.fillCircle(12, 6, 2);
+        });
+
+        tex(scene, 'icon_hare', 14, 14, g => {
+            g.fillStyle(0xC4A882);
+            g.fillCircle(7, 8, 4);
+            g.fillCircle(9, 5, 3);
+            g.fillStyle(0xD4B892);
+            g.fillRect(7, 1, 2, 5);
+            g.fillRect(10, 1, 2, 5);
+            g.fillStyle(0xFFAAAA);
+            g.fillRect(8, 2, 1, 3);
+            g.fillRect(11, 2, 1, 3);
+            g.fillStyle(0xC4A882);
+            g.fillCircle(4, 10, 2);
+            g.fillCircle(10, 10, 2);
+        });
     }
 
     // Staff sprites: volunteer, caretaker, vet, guide (color-coded with role-specific details).

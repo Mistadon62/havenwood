@@ -40,7 +40,7 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== TOP BAR ========== */
 
-    // Day, season, clock, reputation star, research icon, coins, save button.
+    // Day, season, clock, speed controls (tortoise/hare), reputation star, research icon, coins, save button.
     // All elements are vertically centered at midY=21 using setOrigin(_, 0.5).
     createTopBar() {
         const bar = this.add.graphics();
@@ -50,7 +50,15 @@ export default class HUDScene extends Phaser.Scene {
         const midY = 21;
         this.dayTxt = this.txt(12, midY, 'Day 1', 10).setOrigin(0, 0.5);
         this.seasonTxt = this.txt(130, midY, 'Spring', 8, '#88CC88').setOrigin(0, 0.5);
-        this.timeTxt = this.txt(W / 2, midY, '6:00 AM', 10).setOrigin(0.5, 0.5);
+
+        const clockX = W / 2;
+        this.tortoiseBtn = this.add.image(clockX - 75, midY, 'icon_tortoise').setScale(1.3).setInteractive({ useHandCursor: true });
+        this.timeTxt = this.txt(clockX, midY, '6:00 AM', 10).setOrigin(0.5, 0.5).setInteractive({ useHandCursor: true });
+        this.hareBtn = this.add.image(clockX + 75, midY, 'icon_hare').setScale(1.3).setInteractive({ useHandCursor: true });
+        this.tortoiseBtn.on('pointerdown', () => this._setTimeSpeed('slow'));
+        this.hareBtn.on('pointerdown', () => this._setTimeSpeed('fast'));
+        this.timeTxt.on('pointerdown', () => this._setTimeSpeed('normal'));
+
         this.add.image(W - 280, midY, 'icon_research').setScale(1.2);
         this.rpTxt = this.txt(W - 268, midY, '0', 9, '#44DDAA').setOrigin(0, 0.5);
         this.repLabel = this.txt(W - 228, midY - 3, '\u2605', 10, CLR.gold).setOrigin(0, 0.5);
@@ -62,6 +70,26 @@ export default class HUDScene extends Phaser.Scene {
         saveBtn.on('pointerdown', () => { this.gs.saveGame(); this.notify('Game saved!'); });
         saveBtn.on('pointerover', function () { this.setColor('#AAFFAA'); });
         saveBtn.on('pointerout', function () { this.setColor('#88AA88'); });
+    }
+
+    _setTimeSpeed(mode) {
+        const current = this._activeSpeed || 'normal';
+        if (mode === current) mode = 'normal';
+        this._activeSpeed = mode;
+        this.gs.timeSpeedMult = mode === 'slow' ? 0.5 : mode === 'fast' ? 3 : 1;
+        this._updateSpeedGlow();
+    }
+
+    _updateSpeedGlow() {
+        if (this._speedGlow) {
+            this._speedGlowTarget.preFX.remove(this._speedGlow);
+            this._speedGlow = null; this._speedGlowTarget = null;
+        }
+        const mode = this._activeSpeed || 'normal';
+        if (mode === 'normal') return;
+        const btn = mode === 'slow' ? this.tortoiseBtn : this.hareBtn;
+        this._speedGlow = btn.preFX.addGlow(0xffffff, 2, 0, false, 0.15, 10);
+        this._speedGlowTarget = btn;
     }
 
     /* ========== TOOLBAR ========== */
@@ -98,16 +126,17 @@ export default class HUDScene extends Phaser.Scene {
             hit.on('pointerover', () => this.drawToolBtn(bg, x, y, item.color, true, gap));
             hit.on('pointerout', () => {
                 const isActive = item.key === this.activeBuild ||
-                    (item.key === 'build' && this.activeBuild && HABITATS[this.activeBuild]);
+                    (item.key === 'build' && this.activeBuild && HABITATS[this.activeBuild]) ||
+                    item.key === this._activePanel;
                 this.drawToolBtn(bg, x, y, item.color, isActive, gap);
             });
             hit.on('pointerdown', () => {
                 if (item.key === 'build') { this.toggleBuildPopup(x, barY); return; }
-                if (item.key === 'upgrades') { this.togglePanel('upgradePanel', () => this.showUpgradePanel()); return; }
-                if (item.key === 'staff') { this.togglePanel('staffPanel', () => this.showStaffPanel()); return; }
-                if (item.key === 'missions') { this.togglePanel('missionPanel', () => this.showMissionPanel()); return; }
-                if (item.key === 'research') { this.togglePanel('researchPanel', () => this.showResearchPanel()); return; }
-                if (item.key === 'journal') { this.togglePanel('journalPanel', () => this.showJournalPanel()); return; }
+                if (item.key === 'upgrades') { this.togglePanel('upgradePanel', () => this.showUpgradePanel(), 'upgrades'); return; }
+                if (item.key === 'staff') { this.togglePanel('staffPanel', () => this.showStaffPanel(), 'staff'); return; }
+                if (item.key === 'missions') { this.togglePanel('missionPanel', () => this.showMissionPanel(), 'missions'); return; }
+                if (item.key === 'research') { this.togglePanel('researchPanel', () => this.showResearchPanel(), 'research'); return; }
+                if (item.key === 'journal') { this.togglePanel('journalPanel', () => this.showJournalPanel(), 'journal'); return; }
                 this.closeAllPanels();
                 this.activeBuild = item.key;
                 this.toolBtns.forEach(b => this.drawToolBtn(b.bg, b.x, b.y, b.color, b.key === item.key, gap));
@@ -144,6 +173,8 @@ export default class HUDScene extends Phaser.Scene {
     toggleBuildPopup(anchorX, barY) {
         if (this.buildPopup) { this.closeBuildPopup(); return; }
         this.closeAllPanels();
+        this._activePanel = 'build';
+        this._refreshToolBtns();
 
         this._buildDismiss = this.add.rectangle(W / 2, H / 2, W, H, 0, 0)
             .setInteractive().setDepth(259);
@@ -209,6 +240,7 @@ export default class HUDScene extends Phaser.Scene {
     closeBuildPopup() {
         if (this._buildDismiss) { this._buildDismiss.destroy(); this._buildDismiss = null; }
         if (this.buildPopup) { this.buildPopup.destroy(); this.buildPopup = null; }
+        if (this._activePanel === 'build') { this._activePanel = null; this._refreshToolBtns(); }
     }
 
     /* ========== EVENTS ========== */
@@ -999,10 +1031,17 @@ export default class HUDScene extends Phaser.Scene {
     /* ========== HELPERS ========== */
 
     // Toggle panel: close if open, else close others and show.
-    togglePanel(panelKey, showFn) {
-        if (this[panelKey]) { this[panelKey].destroy(); this[panelKey] = null; return; }
+    togglePanel(panelKey, showFn, btnKey) {
+        if (this[panelKey]) {
+            this[panelKey].destroy(); this[panelKey] = null;
+            this._activePanel = null;
+            this._refreshToolBtns();
+            return;
+        }
         this.closeAllPanels();
+        this._activePanel = btnKey || null;
         showFn();
+        this._refreshToolBtns();
     }
 
     // Returns a y position that vertically centers a panel of given height between the top and bottom bars.
@@ -1021,6 +1060,18 @@ export default class HUDScene extends Phaser.Scene {
         if (!keepZoom) this.destroyBackBar();
         this.closeBuildPopup();
         if (this._missionRefresh) { this._missionRefresh.destroy(); this._missionRefresh = null; }
+        this._activePanel = null;
+        this._refreshToolBtns();
+    }
+
+    _refreshToolBtns() {
+        if (!this.toolBtns) return;
+        this.toolBtns.forEach(b => {
+            const isActive = b.key === this.activeBuild ||
+                (b.key === 'build' && this.activeBuild && HABITATS[this.activeBuild]) ||
+                b.key === this._activePanel;
+            this.drawToolBtn(b.bg, b.x, b.y, b.color, isActive, b.gap);
+        });
     }
 
     // Styled text with minimum font size enforcement.
