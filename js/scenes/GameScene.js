@@ -359,6 +359,9 @@ export default class GameScene extends Phaser.Scene {
         const hab = this._movingHabitat;
         if (!hab) return;
         const ht = HABITATS[hab.type];
+        const orig = this._moveOrigin;
+        const offsetX = (gx - orig.gx) * TILE;
+        const offsetY = (gy - orig.gy) * TILE;
 
         hab.gx = gx; hab.gy = gy;
         for (let dy = 0; dy < ht.h; dy++)
@@ -372,15 +375,13 @@ export default class GameScene extends Phaser.Scene {
         hab.decor = this.addHabitatDecor(hab.type, gx, gy, ht);
 
         this.enrichmentSprites.filter(e => e.habitatId === hab.id).forEach(e => {
-            e.sprite.x = (gx + 0.3 + Math.random() * (ht.w - 0.6)) * TILE;
-            e.sprite.y = MAP_Y + (gy + 0.4 + Math.random() * (ht.h - 0.8)) * TILE;
             e.sprite.setDepth(11);
         });
         this.state.animals.filter(a => a.habitatId === hab.id).forEach(a => {
-            const ax = (gx + 0.5 + Math.random() * (ht.w - 1)) * TILE;
-            const ay = MAP_Y + (gy + 0.5 + Math.random() * (ht.h - 1)) * TILE;
-            a.baseX = ax; a.baseY = ay; a.tx = ax; a.ty = ay;
-            a.sprite.x = Math.round(ax); a.sprite.y = Math.round(ay);
+            a.baseX += offsetX; a.baseY += offsetY;
+            a.tx = a.baseX; a.ty = a.baseY;
+            a.sprite.x = Math.round(a.baseX);
+            a.sprite.y = Math.round(a.baseY);
             a.sprite.setDepth(40);
         });
 

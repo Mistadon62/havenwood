@@ -45,7 +45,7 @@ havenwood/
 |---|---|
 | `GameData.js` | Central data registry. Every species, habitat, upgrade, research node, achievement, etc. is defined here. Change game balance by editing this file. |
 | `GameScene.js` | The game simulation. Manages the grid map, animal behavior, visitors, staff, time/seasons, breeding, illness, missions, research, economy, achievements, and save/load. |
-| `HUDScene.js` | All UI. Runs as a parallel Phaser scene on top of GameScene. Toolbar with Build popup menu for habitat placement, vertically centered management panels, and notifications. Exposes `hasOpenPanel()` so GameScene can suppress world clicks while a panel is visible. Communicates via `this.game.events` (Phaser's global event emitter). |
+| `HUDScene.js` | All UI. Runs as a parallel Phaser scene on top of GameScene. Toolbar with Build popup menu for habitat placement, vertically centered management panels (Rescue, Upgrades, Staff, Research, Journal — all closeable with ESC), and notifications. Exposes `hasOpenPanel()` and `closeAllPanels()` so GameScene can suppress world clicks and close panels via keyboard. Communicates via `this.game.events` (Phaser's global event emitter). |
 | `SpriteGenerator.js` | Draws every texture at boot using Phaser's Graphics API — animals, terrain, UI icons, particles, enrichment items, staff, visitors. Zero external image files. |
 | `SoundManager.js` | Generates all sound effects procedurally using the Web Audio API — oscillators and filtered noise. Zero audio files. |
 
@@ -60,7 +60,7 @@ BootScene  →  MenuScene  →  GameScene (+ HUDScene launched in parallel)
 ```
 
 - **BootScene**: Waits for the Google Font to load, calls `SpriteGenerator.generate()` to create all textures, then starts MenuScene.
-- **MenuScene**: Title screen. Checks `localStorage` for a save to show the "Continue" button.
+- **MenuScene**: Animated title screen with a procedurally generated night scene — dense layered forest with color-varied trees, a starry sky with twinkling stars and crescent moon, wildflower meadow, hopping clickable bunnies, and a campfire with smoke, benches, and a tent. Checks `localStorage` for a save to show the "Continue" button.
 - **GameScene**: The main simulation loop. Initializes game state, creates the tile map, sets up timed events, and runs `update()` every frame.
 - **HUDScene**: Launched by GameScene as a parallel overlay scene. Listens for events from GameScene to update the UI.
 
@@ -86,7 +86,7 @@ GameScene and HUDScene communicate via Phaser's global event system (`this.game.
 
 ### Habitats
 
-4 buildable habitat types placed on a 30x20 tile grid:
+4 buildable habitat types placed on a 30x20 tile grid. When entering build mode, a live preview of the habitat (background fill, border, and type-specific decor at 70% opacity) follows the cursor with a green/red overlay showing placement validity. Rescue events are suppressed during build mode.
 
 | Habitat | Cost | Size | Capacity | Animal Types |
 |---|---|---|---|---|
@@ -99,7 +99,11 @@ Capacity can be increased by the Habitat Plus upgrade (+1) and the Wildlife Biol
 
 #### Habitat Zoom View
 
-Clicking a habitat from the sanctuary overview zooms the camera (2.5x) to center on it and opens the habitat info panel on the left. The panel has a red X close button in its top-right corner, and the bottom toolbar is replaced with a centered "< Back" button — both zoom back out. Animals are only clickable while zoomed in; hovering over an animal shows a glow effect that follows the sprite shape (using Phaser's `preFX.addGlow`). Pressing ESC or clicking Back/X zooms back out to the sanctuary overview, closing both the habitat and any open animal panel. The zoom uses Phaser's `camera.pan()` and `camera.zoomTo()` with `force: true` so it can be safely interrupted (e.g., by rescue events).
+Clicking a habitat from the sanctuary overview zooms the camera (2.5x) to center on it and opens the habitat info panel on the left. The panel has a red X close button in its top-right corner, and the bottom toolbar is replaced with a centered "< Back" button — both zoom back out. Animals are only clickable while zoomed in; hovering over an animal shows a glow effect that follows the sprite shape (using Phaser's `preFX.addGlow`), which persists while the animal's info panel is open. Pressing ESC or clicking Back/X zooms back out to the sanctuary overview, closing both the habitat and any open animal panel. The zoom uses Phaser's `camera.pan()` and `camera.zoomTo()` with `force: true` so it can be safely interrupted. Grass extends 8 tiles beyond the main grid so the blue background never shows through when zooming into edge habitats.
+
+#### Move Habitat
+
+The habitat info panel includes a "Move Habitat" button. Clicking it zooms back out, pauses time and all movement, temporarily removes the habitat from the grid, and enters a placement preview mode. The full habitat — background, decor, enrichments, and animals — follows the cursor with a green/red overlay indicating valid or invalid placement. Click to confirm the new location; press ESC or right-click to cancel and return the habitat to its original spot. Rescue events are suppressed during move mode.
 
 ### Animals
 
@@ -114,7 +118,7 @@ Animals wander within their habitat, bob up and down, sleep at night (with "zzz"
 
 ### Rescue Events
 
-Random rescue events pop up periodically (every ~50 seconds, 30% faster with Conservation upgrade). A grey tint dims the game and time pauses while the popup is shown. The player can accept (if a compatible habitat has room) or pass. Rescue events do not interrupt the current view — if zoomed into a habitat, the habitat and animal panels remain open behind the popup. If the rescued animal enters the currently viewed habitat, the panel refreshes to show the updated count.
+Random rescue events pop up periodically (every ~50 seconds, 30% faster with Conservation upgrade). A grey tint dims the game and time pauses while the popup is shown. The player can accept (if a compatible habitat has room) or pass. Rescue events do not interrupt the current view — if zoomed into a habitat, the habitat and animal panels remain open behind the popup. If the rescued animal enters the currently viewed habitat, the panel refreshes to show the updated count. Rescue events are suppressed during build mode and habitat move mode to avoid interrupting placement.
 
 ### Breeding
 
@@ -122,7 +126,7 @@ Two same-species adults in the same habitat can breed if both are healthy and of
 
 ### Visitors
 
-Visitors spawn during business hours (8 AM - 6 PM), walk in through the entrance gap, wander open tiles (avoiding habitats), then leave. Income comes in two parts:
+Visitors spawn during business hours (8 AM - 6 PM), walk in through a randomized entrance tile (any of the 4 entrance tiles), wander open tiles (avoiding habitats), then leave via a random entrance tile. Income comes in two parts:
 
 - **Admission fee** (on entry): flat 5g base, scaled by visitor type multiplier and income upgrades/research
 - **Donation** (on exit): satisfaction-based tip calculated from average animal happiness, total animal appeal (modified by visitor type preferences), enrichment appeal bonuses, season bonuses, gift shop upgrade, and tour guide staff multipliers
