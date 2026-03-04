@@ -1104,6 +1104,17 @@ export default class HUDScene extends Phaser.Scene {
         this._refreshToolBtns();
     }
 
+    reopenPanel(btnKey) {
+        const map = {
+            upgrades: () => this.togglePanel('upgradePanel', () => this.showUpgradePanel(), 'upgrades'),
+            staff:    () => this.togglePanel('staffPanel',    () => this.showStaffPanel(),    'staff'),
+            missions: () => this.togglePanel('missionPanel',  () => this.showMissionPanel(),  'missions'),
+            research: () => this.togglePanel('researchPanel', () => this.showResearchPanel(), 'research'),
+            journal:  () => this.togglePanel('journalPanel',  () => this.showJournalPanel(),  'journal'),
+        };
+        if (map[btnKey]) map[btnKey]();
+    }
+
     // Returns a y position that vertically centers a panel of given height between the top and bottom bars.
     centerPanelY(ph) { return Math.max(46, 42 + (H - 104 - ph) / 2); }
 

@@ -453,6 +453,13 @@ export default class GameScene extends Phaser.Scene {
     // overlaid with a green/red tint for placement validation. Seasonal cost discounts apply.
 
     enterBuild(type) {
+        const hud = this.scene.get('HUDScene');
+        if (hud && hud.hasOpenPanel()) {
+            this._preBuildPanel = hud._activePanel;
+            hud.closeAllPanels(true);
+        } else {
+            this._preBuildPanel = null;
+        }
         this.state.buildMode = type;
         this._createBuildPreview(type);
         this._hideNPCs();
@@ -476,6 +483,10 @@ export default class GameScene extends Phaser.Scene {
                 ev.habitat = null;
                 hud.showRescue(ev);
             }
+        }
+        if (this._preBuildPanel && hud) {
+            hud.reopenPanel(this._preBuildPanel);
+            this._preBuildPanel = null;
         }
     }
 
@@ -756,6 +767,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     updateAnimals(delta, time) {
+        const sDelta = delta * this.timeSpeedMult;
         // Night: 21:00–05:00 (1260–300 min in 1440-min day)
         const isNight = this.state.time >= 1260 || this.state.time < 300;
         const seasonBonus = SEASONS[this.state.season].bonuses;
@@ -771,29 +783,29 @@ export default class GameScene extends Phaser.Scene {
             const enrichHappy = hab ? this.getEnrichmentHappyBonus(hab) * 0.002 : 0;
             const enrichMod = (tr.enrichBonus || 1);
 
-            a.hunger = Math.max(0, a.hunger - sp.hungerRate * (tr.hungerMult || 1) * hungerMult * delta / 1000);
-            if (a.hunger < 20) a.happiness = Math.max(0, a.happiness - 0.4 * delta / 1000);
+            a.hunger = Math.max(0, a.hunger - sp.hungerRate * (tr.hungerMult || 1) * hungerMult * sDelta / 1000);
+            if (a.hunger < 20) a.happiness = Math.max(0, a.happiness - 0.4 * sDelta / 1000);
             const happyDecay = 0.03 * (tr.happyMult || 1) * enrichUpgrade;
-            a.happiness = Math.max(0, Math.min(100, a.happiness - happyDecay * delta / 1000 + enrichHappy * enrichMod * delta / 1000));
-            if (a.health < 50) a.happiness = Math.max(0, a.happiness - 0.2 * delta / 1000);
+            a.happiness = Math.max(0, Math.min(100, a.happiness - happyDecay * sDelta / 1000 + enrichHappy * enrichMod * sDelta / 1000));
+            if (a.health < 50) a.happiness = Math.max(0, a.happiness - 0.2 * sDelta / 1000);
 
             // Bond happiness boost
             if (a.bonds.length > 0) {
-                a.happiness = Math.min(100, a.happiness + 0.005 * a.bonds.length * delta / 1000);
+                a.happiness = Math.min(100, a.happiness + 0.005 * a.bonds.length * sDelta / 1000);
             }
 
             // Illness drain
             if (a.illness) {
                 const ill = ILLNESSES[a.illness.type];
                 if (ill) {
-                    a.health = Math.max(0, a.health - ill.healthDrain * delta / 1000);
-                    a.happiness = Math.max(0, a.happiness - ill.happyDrain * delta / 1000);
+                    a.health = Math.max(0, a.health - ill.healthDrain * sDelta / 1000);
+                    a.happiness = Math.max(0, a.happiness - ill.happyDrain * sDelta / 1000);
                 }
             }
 
             // Baby growth: 720 = minutes per in-game day
             if (a.isBaby) {
-                a.growthTimer += delta / 1000;
+                a.growthTimer += sDelta / 1000;
                 const growDays = 5;
                 const growProgress = Math.min(1, a.growthTimer / (growDays * 720));
                 a.sprite.setScale(0.6 + 0.4 * growProgress);
@@ -806,11 +818,11 @@ export default class GameScene extends Phaser.Scene {
             }
 
             // Breeding cooldown
-            if (a.breedCooldown > 0) a.breedCooldown -= delta / 1000;
+            if (a.breedCooldown > 0) a.breedCooldown -= sDelta / 1000;
 
             // Pregnancy
             if (a.isPregnant) {
-                a.pregnancyTimer -= delta / 1000;
+                a.pregnancyTimer -= sDelta / 1000;
                 if (a.pregnancyTimer <= 0) {
                     a.isPregnant = false;
                     this.birthBaby(a);
@@ -820,7 +832,7 @@ export default class GameScene extends Phaser.Scene {
             if (a.sleeping) {
                 a.sprite.setAlpha(0.75);
                 if (!a.zzzTimer) a.zzzTimer = 0;
-                a.zzzTimer += delta;
+                a.zzzTimer += sDelta;
                 if (a.zzzTimer > 3000) {
                     a.zzzTimer = 0;
                     const z = this.add.image(a.sprite.x + 10, a.sprite.y - 12, 'particle_zzz').setDepth(55).setScale(0.5).setAlpha(0.7);
@@ -828,7 +840,7 @@ export default class GameScene extends Phaser.Scene {
                 }
             } else {
                 a.sprite.setAlpha(1);
-                a.wTimer += delta;
+                a.wTimer += sDelta;
                 if (a.wTimer >= a.wInterval) {
                     a.wTimer = 0;
                     a.wInterval = Phaser.Math.Between(2000, 6000);
@@ -840,7 +852,7 @@ export default class GameScene extends Phaser.Scene {
                 const dx = a.tx - a.baseX, dy = a.ty - a.baseY;
                 const dist = Math.sqrt(dx * dx + dy * dy);
                 if (dist > 1) {
-                    const spd = Math.min(18 * delta / 1000, dist);
+                    const spd = Math.min(18 * sDelta / 1000, dist);
                     a.baseX += (dx / dist) * spd;
                     a.baseY += (dy / dist) * spd;
                     a.sprite.setFlipX(dx < 0);
@@ -1268,13 +1280,14 @@ export default class GameScene extends Phaser.Scene {
     }
 
     updateVisitors(delta) {
+        const sDelta = delta * this.timeSpeedMult;
         for (let i = this.visitors.length - 1; i >= 0; i--) {
             const v = this.visitors[i];
-            v.timer += delta;
+            v.timer += sDelta;
             const dx = v.tx - v.sprite.x, dy = v.ty - v.sprite.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
             if (dist > 3) {
-                const spd = v.speed * delta / 1000;
+                const spd = v.speed * sDelta / 1000;
                 const nx = v.sprite.x + (dx / dist) * spd;
                 const ny = v.sprite.y + (dy / dist) * spd;
                 const gx = Math.floor(nx / TILE), gy = Math.floor((ny - MAP_Y) / TILE);
@@ -1391,12 +1404,13 @@ export default class GameScene extends Phaser.Scene {
     }
 
     updateStaff(delta) {
+        const sDelta = delta * this.timeSpeedMult;
         for (const s of this.state.staff) {
-            s.wTimer += delta;
+            s.wTimer += sDelta;
             const dx = s.tx - s.sprite.x, dy = s.ty - s.sprite.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
             if (dist > 3) {
-                const spd = 22 * delta / 1000;
+                const spd = 22 * sDelta / 1000;
                 const nx = s.sprite.x + (dx / dist) * spd;
                 const ny = s.sprite.y + (dy / dist) * spd;
                 if (s.type === 'guide') {
