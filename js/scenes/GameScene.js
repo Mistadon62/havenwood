@@ -187,6 +187,26 @@ export default class GameScene extends Phaser.Scene {
                 return;
             }
             this.preview.setVisible(false);
+            if (this._rescueSelectEvent) {
+                const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
+                if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
+                    const cell = this.grid[gy]?.[gx];
+                    if (cell && typeof cell === 'string' && cell.startsWith('hab_') && this._rescueCompatIds?.has(cell)) {
+                        const hab = this.state.habitats.find(h => h.id === cell);
+                        if (hab) {
+                            const ht = HABITATS[hab.type];
+                            this.hoverOutline.clear().setVisible(true);
+                            this.hoverOutline.lineStyle(3, 0x00ff88, 0.8);
+                            this.hoverOutline.strokeRect(hab.gx * TILE, MAP_Y + hab.gy * TILE, ht.w * TILE, ht.h * TILE);
+                            this.game.canvas.style.cursor = 'pointer';
+                            return;
+                        }
+                    }
+                }
+                this.hoverOutline.setVisible(false);
+                this.game.canvas.style.cursor = 'default';
+                return;
+            }
             if (this.state.viewingHabitat) { this.hoverOutline.setVisible(false); return; }
             const hud = this.scene.get('HUDScene');
             if (hud && hud.hasOpenPanel()) { this.hoverOutline.setVisible(false); this.game.canvas.style.cursor = 'default'; return; }
@@ -210,6 +230,31 @@ export default class GameScene extends Phaser.Scene {
         });
 
         this.input.on('pointerdown', ptr => {
+            if (this._rescueSelectEvent) {
+                const hud = this.scene.get('HUDScene');
+                if (ptr.rightButtonDown()) {
+                    const ev = this._rescueSelectEvent;
+                    this.exitRescueSelect();
+                    if (hud) { hud._pendingRescue = null; hud.showRescue(ev); }
+                    return;
+                }
+                const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
+                if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
+                    const cell = this.grid[gy]?.[gx];
+                    if (cell && typeof cell === 'string' && cell.startsWith('hab_') && this._rescueCompatIds?.has(cell)) {
+                        const hab = this.state.habitats.find(h => h.id === cell);
+                        if (hab) {
+                            const ev = this._rescueSelectEvent;
+                            this.exitRescueSelect();
+                            if (hud) hud._pendingRescue = null;
+                            this.state.rescuePaused = false;
+                            if (this.rescueTimer) this.rescueTimer.paused = false;
+                            this.acceptRescueInto(ev, hab);
+                        }
+                    }
+                }
+                return;
+            }
             if (ptr.rightButtonDown()) { if (this._movingHabitat) { this.cancelMove(); } else { this.exitBuild(); } return; }
             if (this._skipPointerDown) { this._skipPointerDown = false; return; }
             if (this.state.viewingHabitat) return;
@@ -236,6 +281,13 @@ export default class GameScene extends Phaser.Scene {
         });
 
         this.input.keyboard.on('keydown-ESC', () => {
+            if (this._rescueSelectEvent) {
+                const ev = this._rescueSelectEvent;
+                this.exitRescueSelect();
+                const hud = this.scene.get('HUDScene');
+                if (hud) { hud._pendingRescue = null; hud.showRescue(ev); }
+                return;
+            }
             if (this._movingHabitat) { this.cancelMove(); return; }
             const hud = this.scene.get('HUDScene');
             if (hud && hud.hasOpenPanel()) { hud.closeAllPanels(); return; }
@@ -422,8 +474,13 @@ export default class GameScene extends Phaser.Scene {
         if (hud && hud._pendingRescue) {
             const ev = hud._pendingRescue;
             hud._pendingRescue = null;
-            ev.habitat = this.findCompatibleHabitat(SPECIES[ev.speciesId]);
-            hud.showRescue(ev);
+            const hab = this.findCompatibleHabitat(SPECIES[ev.speciesId]);
+            if (hab) {
+                this.acceptRescueInto(ev, hab);
+            } else {
+                ev.habitat = null;
+                hud.showRescue(ev);
+            }
         }
     }
 
@@ -1499,15 +1556,23 @@ export default class GameScene extends Phaser.Scene {
     }
 
     findCompatibleHabitat(sp) {
-        return this.state.habitats.find(h => {
+        return this.findAllCompatibleHabitats(sp)[0] || null;
+    }
+
+    findAllCompatibleHabitats(sp) {
+        return this.state.habitats.filter(h => {
             const ht = HABITATS[h.type];
             return ht.types.includes(sp.type) && h.animals.length < this.getHabitatCapacity(h);
-        }) || null;
+        });
     }
 
     acceptRescue(ev) {
         const hab = this.findCompatibleHabitat(SPECIES[ev.speciesId]);
         if (!hab) { this.game.events.emit('notification', 'No compatible habitat! Build one first.'); this.sfx.error(); return; }
+        this.acceptRescueInto(ev, hab);
+    }
+
+    acceptRescueInto(ev, hab) {
         this.addAnimal(ev.speciesId, ev.name, hab.id);
         this.state.stats.rescued++;
         this.state.rep += 10;
@@ -1517,10 +1582,45 @@ export default class GameScene extends Phaser.Scene {
             this.game.events.emit('notification', `New species discovered: ${SPECIES[ev.speciesId].name}!`);
         }
         this.game.events.emit('notification', `${ev.name} the ${SPECIES[ev.speciesId].name} has been rescued!`);
+        this.sfx.rescue();
         if (this.state.viewingHabitat) {
             const viewedHab = this.state.habitats.find(h => h.id === this.state.viewingHabitat);
             if (viewedHab) this.game.events.emit('showHabitatInfo', viewedHab);
         }
+    }
+
+    /* ========== RESCUE HABITAT SELECTION ========== */
+    // When multiple compatible habitats exist, the player picks one from the zoomed-out view.
+    // Compatible habitats get a pulsing highlight; clicking one places the animal there.
+
+    enterRescueSelect(ev) {
+        this._rescueSelectEvent = ev;
+        const sp = SPECIES[ev.speciesId];
+        this._rescueCompatIds = new Set(this.findAllCompatibleHabitats(sp).map(h => h.id));
+        this._hideNPCs();
+
+        this._rescueHighlights = this.add.graphics().setDepth(61);
+        for (const hab of this.state.habitats) {
+            if (!this._rescueCompatIds.has(hab.id)) continue;
+            const ht = HABITATS[hab.type];
+            this._rescueHighlights.fillStyle(0x00ff88, 0.15);
+            this._rescueHighlights.fillRect(hab.gx * TILE, MAP_Y + hab.gy * TILE, ht.w * TILE, ht.h * TILE);
+            this._rescueHighlights.lineStyle(2, 0x00ff88, 0.7);
+            this._rescueHighlights.strokeRect(hab.gx * TILE, MAP_Y + hab.gy * TILE, ht.w * TILE, ht.h * TILE);
+        }
+
+        this._rescueLabel = this.add.text(W / 2, MAP_Y - 6, `Click a habitat to place ${ev.name}`, {
+            fontFamily: '"Press Start 2P"', fontSize: '9px', color: '#88FFAA', align: 'center'
+        }).setOrigin(0.5, 1).setDepth(62);
+    }
+
+    exitRescueSelect() {
+        if (this._rescueHighlights) { this._rescueHighlights.destroy(); this._rescueHighlights = null; }
+        if (this._rescueLabel) { this._rescueLabel.destroy(); this._rescueLabel = null; }
+        this._rescueSelectEvent = null;
+        this._rescueCompatIds = null;
+        this.hoverOutline.setVisible(false);
+        this._showNPCs();
     }
 
     /* ========== ACHIEVEMENTS ========== */

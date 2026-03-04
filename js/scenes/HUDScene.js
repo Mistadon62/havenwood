@@ -350,6 +350,7 @@ export default class HUDScene extends Phaser.Scene {
         const tint = this._rescueTint;
 
         const sp = SPECIES[ev.speciesId], rc = RARITY_COLOR[sp.rarity];
+        const compatHabs = this.gs.findAllCompatibleHabitats(sp);
         const cx = W / 2, cy = H / 2, pw = 420, ph = 260;
         const ct = this.add.container(cx, cy).setDepth(300);
         const bg = this.add.graphics();
@@ -363,15 +364,6 @@ export default class HUDScene extends Phaser.Scene {
         ct.add(this.txt(0, 34, sp.rarity.toUpperCase(), 7, rClr).setOrigin(0.5));
         if (sp.season) ct.add(this.txt(0, 50, `Seasonal: ${sp.season}`, 6, '#AABB99').setOrigin(0.5));
         ct.add(this.txt(0, 64, ev.msg, 6, '#CCBBAA').setOrigin(0.5).setWordWrapWidth(380));
-        const hasSpace = ev.habitat !== null;
-
-        const compatHab = Object.values(HABITATS).find(h => h.types.includes(sp.type));
-        const buildCost = compatHab ? this.gs.getHabitatCost(compatHab.id) : 0;
-        const canBuild = compatHab && this.gs.state.coins >= buildCost;
-        const numBtns = compatHab ? 3 : 2;
-        const btnW = numBtns === 3 ? 120 : 85;
-        const totalW = numBtns * btnW + (numBtns - 1) * 8;
-        const btnLeft = -totalW / 2;
 
         const dismissRescue = () => {
             tint.destroy(); ct.destroy(); this.rescuePopup = null; this._rescueTint = null;
@@ -379,27 +371,49 @@ export default class HUDScene extends Phaser.Scene {
             if (this.gs.rescueTimer) this.gs.rescueTimer.paused = false;
         };
 
-        const accBg = this.add.graphics();
-        accBg.fillStyle(hasSpace ? 0x228B22 : 0x555555, 0.85);
-        accBg.fillRoundedRect(btnLeft, 88, btnW, 30, 4);
-        ct.add(accBg);
-        const accLabel = hasSpace ? 'Rescue!' : 'No Room';
-        const accBtn = this.txt(btnLeft + btnW / 2, 103, accLabel, 8).setOrigin(0.5);
-        if (hasSpace) {
-            accBtn.setInteractive({ useHandCursor: true });
-            accBtn.on('pointerdown', () => { dismissRescue(); this.game.events.emit('rescueAccepted', ev); });
+        const btnW = 120, btnGap = 8;
+        if (compatHabs.length >= 1) {
+            const totalW = 2 * btnW + btnGap;
+            const btnLeft = -totalW / 2;
+
+            const accBg = this.add.graphics();
+            accBg.fillStyle(0x228B22, 0.85); accBg.fillRoundedRect(btnLeft, 88, btnW, 30, 4);
+            ct.add(accBg);
+            const accBtn = this.txt(btnLeft + btnW / 2, 103, 'Rescue!', 8).setOrigin(0.5).setInteractive({ useHandCursor: true });
+            accBtn.on('pointerdown', () => {
+                if (compatHabs.length === 1) {
+                    dismissRescue();
+                    this.gs.acceptRescueInto(ev, compatHabs[0]);
+                } else {
+                    tint.destroy(); ct.destroy(); this.rescuePopup = null; this._rescueTint = null;
+                    this._pendingRescue = ev;
+                    this.gs.enterRescueSelect(ev);
+                }
+            });
             accBtn.on('pointerover', () => accBtn.setColor(CLR.gold));
             accBtn.on('pointerout', () => accBtn.setColor(CLR.uiText));
-        } else { accBtn.setColor('#888888'); }
-        ct.add(accBtn);
+            ct.add(accBtn);
 
-        if (compatHab) {
-            const bldX = btnLeft + btnW + 8;
+            const decBg = this.add.graphics();
+            decBg.fillStyle(0x8B2222, 0.85); decBg.fillRoundedRect(btnLeft + btnW + btnGap, 88, btnW, 30, 4);
+            ct.add(decBg);
+            const decBtn = this.txt(btnLeft + btnW + btnGap + btnW / 2, 103, 'Pass', 8).setOrigin(0.5).setInteractive({ useHandCursor: true });
+            decBtn.on('pointerdown', () => { dismissRescue(); });
+            decBtn.on('pointerover', () => decBtn.setColor('#FF8888'));
+            decBtn.on('pointerout', () => decBtn.setColor(CLR.uiText));
+            ct.add(decBtn);
+        } else {
+            const compatType = Object.values(HABITATS).find(h => h.types.includes(sp.type));
+            const buildCost = compatType ? this.gs.getHabitatCost(compatType.id) : 0;
+            const canBuild = compatType && this.gs.state.coins >= buildCost;
+            const totalW = 2 * btnW + btnGap;
+            const btnLeft = -totalW / 2;
+
             const bldBg = this.add.graphics();
-            bldBg.fillStyle(canBuild ? 0x1a6090 : 0x555555, 0.85);
-            bldBg.fillRoundedRect(bldX, 88, btnW, 30, 4);
+            bldBg.fillStyle(canBuild ? 0x1a6090 : 0x555555, 0.85); bldBg.fillRoundedRect(btnLeft, 88, btnW, 30, 4);
             ct.add(bldBg);
-            const bldBtn = this.txt(bldX + btnW / 2, 103, `Build (${buildCost}g)`, 7).setOrigin(0.5);
+            const bldLabel = compatType ? `Build (${buildCost}g)` : 'No Habitat';
+            const bldBtn = this.txt(btnLeft + btnW / 2, 103, bldLabel, 7).setOrigin(0.5);
             if (canBuild) {
                 bldBtn.setInteractive({ useHandCursor: true });
                 bldBtn.on('pointerdown', () => {
@@ -407,23 +421,23 @@ export default class HUDScene extends Phaser.Scene {
                     this.gs.state.rescuePaused = false;
                     if (this.gs.rescueTimer) this.gs.rescueTimer.paused = false;
                     this._pendingRescue = ev;
-                    this.gs.enterBuild(compatHab.id);
+                    this.gs.enterBuild(compatType.id);
                 });
                 bldBtn.on('pointerover', () => bldBtn.setColor('#88CCFF'));
                 bldBtn.on('pointerout', () => bldBtn.setColor(CLR.uiText));
             } else { bldBtn.setColor('#888888'); }
             ct.add(bldBtn);
+
+            const decBg = this.add.graphics();
+            decBg.fillStyle(0x8B2222, 0.85); decBg.fillRoundedRect(btnLeft + btnW + btnGap, 88, btnW, 30, 4);
+            ct.add(decBg);
+            const decBtn = this.txt(btnLeft + btnW + btnGap + btnW / 2, 103, 'Pass', 8).setOrigin(0.5).setInteractive({ useHandCursor: true });
+            decBtn.on('pointerdown', () => { dismissRescue(); });
+            decBtn.on('pointerover', () => decBtn.setColor('#FF8888'));
+            decBtn.on('pointerout', () => decBtn.setColor(CLR.uiText));
+            ct.add(decBtn);
         }
 
-        const decX = btnLeft + (numBtns - 1) * (btnW + 8);
-        const decBg = this.add.graphics();
-        decBg.fillStyle(0x8B2222, 0.85); decBg.fillRoundedRect(decX, 88, btnW, 30, 4);
-        ct.add(decBg);
-        const decBtn = this.txt(decX + btnW / 2, 103, 'Pass', 8).setOrigin(0.5).setInteractive({ useHandCursor: true });
-        decBtn.on('pointerdown', () => { dismissRescue(); });
-        decBtn.on('pointerover', () => decBtn.setColor('#FF8888'));
-        decBtn.on('pointerout', () => decBtn.setColor(CLR.uiText));
-        ct.add(decBtn);
         ct.setScale(0);
         this.tweens.add({ targets: ct, scaleX: 1, scaleY: 1, duration: 280, ease: 'Back.easeOut' });
         this.rescuePopup = ct;
