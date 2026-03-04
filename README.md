@@ -43,9 +43,9 @@ havenwood/
 
 | File | Role |
 |---|---|
-| `GameData.js` | Central data registry. Every species, habitat, upgrade, research node, achievement, etc. is defined here. Change game balance by editing this file. |
-| `GameScene.js` | The game simulation. Manages the grid map, animal behavior, visitors, staff, time/seasons, breeding, illness, missions, research, economy, achievements, and save/load. |
-| `HUDScene.js` | All UI. Runs as a parallel Phaser scene on top of GameScene. Toolbar with Build popup menu for habitat placement, vertically centered management panels (Rescue, Upgrades, Staff, Research, Journal — all closeable with ESC), and notifications. Exposes `hasOpenPanel()` and `closeAllPanels()` so GameScene can suppress world clicks and close panels via keyboard. Communicates via `this.game.events` (Phaser's global event emitter). |
+| `GameData.js` | Central data registry. Every species, habitat, upgrade, research node, achievement, etc. is defined here. Species variants include breed-only entries with parent recipes. Change game balance by editing this file. |
+| `GameScene.js` | The game simulation. Manages the grid map, animal behavior, visitors, staff, time/seasons, automatic breeding, illness, missions, research, economy, achievements, and save/load. |
+| `HUDScene.js` | All UI. Runs as a parallel Phaser scene on top of GameScene. Toolbar with Build popup menu for habitat placement, vertically centered management panels (Rescue, Upgrades, Staff, Research, Journal — all closeable with ESC), settings/pause menu, and notifications. Exposes `hasOpenPanel()` and `closeAllPanels()` so GameScene can suppress world clicks and close panels via keyboard. Communicates via `this.game.events` (Phaser's global event emitter). |
 | `SpriteGenerator.js` | Draws every texture at boot using Phaser's Graphics API — animals, terrain, UI icons, particles, enrichment items, staff, visitors. Zero external image files. |
 | `SoundManager.js` | Generates all sound effects procedurally using the Web Audio API — oscillators and filtered noise. Zero audio files. |
 
@@ -99,7 +99,7 @@ Capacity can be increased by the Habitat Plus upgrade (+1) and the Wildlife Biol
 
 #### Habitat Zoom View
 
-Clicking a habitat from the sanctuary overview zooms the camera (2.5x) to center on it and opens the habitat info panel on the left. The panel has a red X close button in its top-right corner, and the bottom toolbar is replaced with a centered "< Back" button — both zoom back out. Animals are only clickable while zoomed in; hovering over an animal shows a glow effect that follows the sprite shape (using Phaser's `preFX.addGlow`), which persists while the animal's info panel is open. Pressing ESC or clicking Back/X zooms back out to the sanctuary overview, closing both the habitat and any open animal panel. The zoom uses Phaser's `camera.pan()` and `camera.zoomTo()` with `force: true` so it can be safely interrupted. Grass extends 8 tiles beyond the main grid so the blue background never shows through when zooming into edge habitats.
+Clicking a habitat from the sanctuary overview zooms the camera (2.5x) to center on it, opens the habitat info panel on the left, and auto-selects a random animal. The panel has a red X close button in its top-right corner, and the bottom toolbar is replaced with a centered "< Back" button — both zoom back out. Animals are only clickable while zoomed in; hovering over an animal shows a glow effect that follows the sprite shape (using Phaser's `preFX.addGlow`), which persists while the animal's info panel is open. Navigation arrows (`<` / `>`) below the animal panel cycle through all animals in the habitat, transferring the glow highlight. Pressing ESC or clicking Back/X zooms back out to the sanctuary overview, closing both the habitat and any open animal panel. The zoom uses Phaser's `camera.pan()` and `camera.zoomTo()` with `force: true` so it can be safely interrupted. Grass extends 8 tiles beyond the main grid so the blue background never shows through when zooming into edge habitats.
 
 #### Move Habitat
 
@@ -107,14 +107,14 @@ The habitat info panel includes a "Move Habitat" button. Clicking it zooms back 
 
 ### Animals
 
-14 species across 4 rarity tiers (common, uncommon, rare, legendary). Some are seasonal-only. Each animal has:
+14 species across 4 rarity tiers (common, uncommon, rare, legendary). Some are seasonal-only. Each species has multiple color variants with unique names; each individual animal has a gender (male/female, shown with a colored icon in the panel). Each animal has:
 
 - **Stats**: hunger, happiness, health (all 0-100)
 - **Trait**: randomly assigned personality (playful, shy, grumpy, social, curious, lazy) that modifies stat rates
 - **Bonds**: friendships with habitat-mates that form over time
 - **Illness**: random chance of getting sick; can be cured by vets or manual healing
 
-Animals wander within their habitat, bob up and down, sleep at night (with "zzz" particles), and display status icons when hungry or sick. Animals are only clickable from the zoomed-in habitat view. The animal info panel auto-refreshes every 2 seconds and immediately on illness changes so stats and actions stay current. If another compatible habitat with room exists, a "Relocate" button appears in the animal panel — clicking it zooms out and lets the player pick a destination habitat from the highlighted options.
+Animals wander within their habitat, bob up and down, sleep at night (with "zzz" particles), and display status icons when hungry or sick. Animals are only clickable from the zoomed-in habitat view. The animal info panel auto-refreshes every 2 seconds and immediately on illness changes so stats and actions stay current. Navigation arrows below the panel let the player cycle through all animals in the habitat. If another compatible habitat with room exists, a "Relocate" button appears in the animal panel — clicking it zooms out and lets the player pick a destination habitat from the highlighted options.
 
 ### Rescue Events
 
@@ -122,7 +122,9 @@ Random rescue events pop up periodically (every ~50 seconds, 30% faster with Con
 
 ### Breeding
 
-Two same-species adults in the same habitat can breed if both are healthy and off cooldown. Initiates a pregnancy timer, then a baby is born. Babies grow to adults over 5 game-days. The Vet research branch can halve pregnancy time and reduce cooldown.
+Breeding happens automatically. A male and female of the same species in the same habitat will occasionally start expecting a baby on their own, provided both are adults, healthy, and off cooldown, and the habitat has room. The game checks eligible pairs every 15 seconds with a 6% chance per pair (12% with the breed boost research). The female carries the pregnancy. Babies grow to adults over 5 game-days. The Vet research branch can halve pregnancy time and reduce cooldown.
+
+Each species has 2 special **breed-only variants** that can only be obtained by breeding specific parent variant combinations together. These exclusive variants cannot appear in rescue events or missions. The bestiary's variant sub-page shows them in a separate "Breed-Only" section with star markers, and once discovered, reveals the parent combination recipe. Undiscovered breed-only slots display a "Breed Only" hint so players know to experiment with breeding pairs.
 
 ### Visitors
 
@@ -193,8 +195,9 @@ Place items in habitats to boost animal happiness and visitor appeal:
 ### Save System
 
 - **Auto-save**: every 60 seconds to `localStorage` (key: `havenwood_save`)
-- **Manual save**: SAVE button in top bar
+- **Manual save**: via the settings menu (gear icon in top bar)
 - **Export**: download save as JSON file
+- **Exit to Menu**: saves and returns to the title screen via the settings menu
 - Save format version is tracked (`v: 4`) for migration compatibility
 - `Set` objects (upgrades, discoveries, achievements, research) are serialized as arrays
 

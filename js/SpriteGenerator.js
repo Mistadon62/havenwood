@@ -149,6 +149,13 @@ export class SpriteGenerator {
             tex(scene, `animal_${id}`, TILE, TILE, g => {
                 this['draw_' + id]?.(g, sp.color) ?? this.drawGeneric(g, sp.color);
             });
+            if (sp.variants) {
+                sp.variants.forEach((v, i) => {
+                    tex(scene, `animal_${id}_${i}`, TILE, TILE, g => {
+                        this['draw_' + id]?.(g, v.color) ?? this.drawGeneric(g, v.color);
+                    });
+                });
+            }
         });
     }
 

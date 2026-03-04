@@ -1,7 +1,8 @@
 /**
  * GameScene - Core gameplay scene for Havenwood, a Phaser 3 animal sanctuary management game.
- * Handles map, building, habitat zoom view, animals, visitors, staff, missions, research, time,
- * seasons, rescue events (with time-pause), animal relocation, and save/load.
+ * Handles map, building, habitat zoom view (with auto-select and animal cycling), animals,
+ * visitors, staff, automatic breeding, missions, research, time, seasons, rescue events
+ * (with time-pause), settings/pause menu, animal relocation, and save/load.
  */
 import { TILE, COLS, ROWS, W, H, MAP_Y, TIME_SCALE, START_COINS, HABITATS, SPECIES, RARITY_WEIGHT, RESCUE_MSG, CLR,
     SEASONS, SEASON_ORDER, SEASON_LENGTH, SEASON_CYCLE, UPGRADES, STAFF_TYPES,
@@ -28,6 +29,8 @@ export default class GameScene extends Phaser.Scene {
             buildMode: null,
             habitats: [], animals: [], staff: [],
             discoveries: new Set(),
+            seenVariants: new Set(),
+            rescuedVariants: new Set(),
             upgrades: new Set(),
             achievementsEarned: new Set(),
             seasonsVisited: new Set(['spring']),
@@ -39,6 +42,7 @@ export default class GameScene extends Phaser.Scene {
             researchUnlocked: new Set(),
             viewingHabitat: null,
             rescuePaused: false,
+            settingsPaused: false,
         };
         this.visitors = [];
         this.staffSprites = [];
@@ -72,6 +76,7 @@ export default class GameScene extends Phaser.Scene {
         this.time.addEvent({ delay: 5000, callback: () => this.staffWork(), loop: true });
         this.time.addEvent({ delay: 10000, callback: () => this.checkIllness(), loop: true });
         this.time.addEvent({ delay: 8000, callback: () => this.updateBonds(), loop: true });
+        this.time.addEvent({ delay: 15000, callback: () => this.checkAutoBreed(), loop: true });
         this.time.addEvent({ delay: 5000, callback: () => this.checkAchievements(), loop: true });
 
         this.game.events.on('rescueAccepted', this.acceptRescue, this);
@@ -146,10 +151,12 @@ export default class GameScene extends Phaser.Scene {
 
     /* ========== INPUT ========== */
     // Pointer move shows build preview in build mode; in default mode, hovering over a habitat
-    // shows a pointer cursor and faint stroke outline. Pointerdown places habitat or zooms in.
+    // shows a pointer cursor and faint stroke outline. Pointerdown places habitat or zooms in;
+    // zooming in auto-selects a random animal after the camera animation completes.
     // World clicks and hover outlines are suppressed while zoomed (viewingHabitat) or while a
     // HUD management panel is open (hasOpenPanel check prevents clicking through panels).
-    // Right-click or ESC exits build mode; ESC also zooms out if viewing a habitat.
+    // Right-click or ESC exits build mode; ESC also closes the settings menu, zooms out,
+    // or closes open management panels (in priority order).
     // Browser context menu is suppressed on the canvas.
 
     setupInput() {
@@ -270,13 +277,24 @@ export default class GameScene extends Phaser.Scene {
                     const cell = this.grid[gy]?.[gx];
                     if (cell && typeof cell === 'string' && cell.startsWith('hab_')) {
                         const hab = this.state.habitats.find(h => h.id === cell);
-                        if (hab) { this.sfx.click(); this.zoomToHabitat(hab); this.game.events.emit('showHabitatInfo', hab); }
+                        if (hab) {
+                            this.sfx.click();
+                            this.zoomToHabitat(hab);
+                            this.game.events.emit('showHabitatInfo', hab);
+                            const habAnimals = this.state.animals.filter(a => a.habitatId === hab.id);
+                            if (habAnimals.length > 0) {
+                                const pick = Phaser.Utils.Array.GetRandom(habAnimals);
+                                this.time.delayedCall(420, () => this.selectAnimal(pick));
+                            }
+                        }
                     }
                 }
             }
         });
 
         this.input.keyboard.on('keydown-ESC', () => {
+            const hud = this.scene.get('HUDScene');
+            if (hud && hud.settingsPanel) { hud.closeSettingsMenu(); return; }
             if (this._habSelectMode) {
                 const cancel = this._habSelectMode.onCancel;
                 this._exitHabitatSelect();
@@ -284,7 +302,6 @@ export default class GameScene extends Phaser.Scene {
                 return;
             }
             if (this._movingHabitat) { this.cancelMove(); return; }
-            const hud = this.scene.get('HUDScene');
             if (hud && hud.hasOpenPanel()) { hud.closeAllPanels(); return; }
             if (this.state.viewingHabitat || this.cameras.main.zoom > 1) this.zoomOut();
             else this.exitBuild();
@@ -298,6 +315,7 @@ export default class GameScene extends Phaser.Scene {
     // Uses camera.pan/zoomTo with force:true so rescue events can't leave the camera stuck.
     // viewingHabitat tracks the active habitat id; world clicks and build mode are suppressed while set.
     // zoomOut clears any active animal hover glow and emits habitatViewClosed before animating.
+    // On zoom-in, a random animal is auto-selected after the camera animation completes.
 
     zoomToHabitat(hab) {
         const ht = HABITATS[hab.type];
@@ -337,6 +355,15 @@ export default class GameScene extends Phaser.Scene {
             this._selectedAnimal.sprite._hoverGlow = null;
         }
         this._selectedAnimal = null;
+    }
+
+    selectAnimal(animal) {
+        this.clearSelectedAnimal();
+        this._selectedAnimal = animal;
+        if (animal.sprite.preFX && !animal.sprite._hoverGlow) {
+            animal.sprite._hoverGlow = animal.sprite.preFX.addGlow(0xffffff, 2, 0, false, 0.15, 10);
+        }
+        this.game.events.emit('showAnimalInfo', animal);
     }
 
     /* ========== MOVE HABITAT ========== */
@@ -741,25 +768,36 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== ANIMALS ========== */
-    // Spawn, wander, bob, hunger/happiness/health decay, traits, illness, bonds, breeding.
+    // Spawn, wander, bob, hunger/happiness/health decay, traits, illness, bonds.
     // Animals are only clickable while zoomed into their habitat (viewingHabitat guard).
     // Hovering over an animal while zoomed in adds a preFX glow that follows the sprite shape.
+    // selectAnimal() centralizes selection: clears previous glow, applies new glow, emits showAnimalInfo.
     // updateAnimals emits animalUpdate every ~2s so the HUD animal panel auto-refreshes.
 
     addAnimal(speciesId, name, habitatId, opts = {}) {
         const hab = this.state.habitats.find(h => h.id === habitatId);
         if (!hab) return null;
+        const sp = SPECIES[speciesId];
+
+        let vi = opts.variantIdx;
+        if (vi == null) {
+            const idx = sp.variants.findIndex(v => v.name === name);
+            vi = idx >= 0 ? idx : Phaser.Math.Between(0, sp.variants.length - 1);
+        }
+        const variant = sp.variants[vi];
+        const gender = opts.gender || (variant ? (variant.gender === 'm' ? 'male' : 'female') : (Math.random() < 0.5 ? 'male' : 'female'));
 
         const ax = (hab.gx + 0.5 + Math.random() * (hab.w - 1)) * TILE;
         const ay = MAP_Y + (hab.gy + 0.5 + Math.random() * (hab.h - 1)) * TILE;
-        const sprite = this.add.image(ax, ay, `animal_${speciesId}`).setDepth(40);
+        const texKey = `animal_${speciesId}_${vi}`;
+        const sprite = this.add.image(ax, ay, texKey).setDepth(40);
         sprite.setInteractive({ useHandCursor: true });
 
         const trait = opts.trait || Phaser.Utils.Array.GetRandom(TRAIT_IDS);
 
         const animal = {
             id: opts.id || genId('a'), speciesId, name, habitatId,
-            gender: opts.gender || (Math.random() < 0.5 ? 'male' : 'female'),
+            variantIdx: vi, gender,
             hunger: opts.hunger ?? 75, happiness: opts.happiness ?? 60, health: opts.health ?? 100,
             sprite, tx: ax, ty: ay,
             wTimer: 0, wInterval: Phaser.Math.Between(2000, 6000),
@@ -772,6 +810,7 @@ export default class GameScene extends Phaser.Scene {
             breedCooldown: opts.breedCooldown || 0,
             isPregnant: opts.isPregnant || false,
             pregnancyTimer: opts.pregnancyTimer || 0,
+            mateVariantIdx: opts.mateVariantIdx,
         };
 
         if (animal.isBaby) sprite.setScale(0.6);
@@ -780,12 +819,7 @@ export default class GameScene extends Phaser.Scene {
             if (!this.state.viewingHabitat) return;
             this._skipPointerDown = true;
             this.sfx.click();
-            this.clearSelectedAnimal();
-            this._selectedAnimal = animal;
-            if (!sprite._hoverGlow && sprite.preFX) {
-                sprite._hoverGlow = sprite.preFX.addGlow(0xffffff, 2, 0, false, 0.15, 10);
-            }
-            this.game.events.emit('showAnimalInfo', animal);
+            this.selectAnimal(animal);
         });
         sprite.on('pointerover', () => {
             if (!this.state.viewingHabitat) return;
@@ -997,55 +1031,83 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== BREEDING ========== */
-    // Same species, same habitat, both adult/healthy. Pregnancy and cooldown in minutes (720 = 1 day).
+    // Automatic: male+female of same species, same habitat, both adult/healthy/off cooldown.
+    // checkAutoBreed runs periodically from a timer; small random chance per eligible pair per check.
 
-    canBreed(animal) {
-        if (animal.isBaby || animal.isPregnant || animal.breedCooldown > 0) return false;
-        if (animal.illness) return false;
-        const hab = this.state.habitats.find(h => h.id === animal.habitatId);
-        if (!hab || hab.animals.length >= this.getHabitatCapacity(hab)) return false;
-        const partner = this.state.animals.find(b =>
-            b.id !== animal.id && b.speciesId === animal.speciesId &&
-            b.habitatId === animal.habitatId && !b.isBaby && !b.isPregnant &&
-            b.breedCooldown <= 0 && !b.illness
-        );
-        return !!partner;
-    }
+    checkAutoBreed() {
+        const checked = new Set();
+        for (const a of this.state.animals) {
+            if (a.isBaby || a.isPregnant || a.breedCooldown > 0 || a.illness) continue;
+            if (checked.has(a.id)) continue;
+            const hab = this.state.habitats.find(h => h.id === a.habitatId);
+            if (!hab || hab.animals.length >= this.getHabitatCapacity(hab)) continue;
+            const partner = this.state.animals.find(b =>
+                b.id !== a.id && b.speciesId === a.speciesId &&
+                b.habitatId === a.habitatId && !b.isBaby && !b.isPregnant &&
+                b.breedCooldown <= 0 && !b.illness &&
+                b.gender !== a.gender
+            );
+            if (!partner) continue;
+            checked.add(a.id); checked.add(partner.id);
 
-    startBreeding(animalId) {
-        const a = this.state.animals.find(x => x.id === animalId);
-        if (!a || !this.canBreed(a)) { this.sfx.error(); return; }
-        const partner = this.state.animals.find(b =>
-            b.id !== a.id && b.speciesId === a.speciesId &&
-            b.habitatId === a.habitatId && !b.isBaby && !b.isPregnant &&
-            b.breedCooldown <= 0 && !b.illness
-        );
-        if (!partner) return;
+            const breedBoost = this.hasResearch('breed_boost');
+            const chance = breedBoost ? 0.12 : 0.06;
+            if (Math.random() > chance) continue;
 
-        a.isPregnant = true;
-        const breedBoost = this.hasResearch('breed_boost');
-        // pregnancyTimer in minutes: 720 = 1 in-game day
-        a.pregnancyTimer = (breedBoost ? 1.5 : 3) * 720;
-        a.breedCooldown = (breedBoost ? 4 : 7) * 720;
-        partner.breedCooldown = (breedBoost ? 4 : 7) * 720;
+            // Female carries the pregnancy
+            const mother = a.gender === 'female' ? a : partner;
+            const father = mother === a ? partner : a;
+            mother.isPregnant = true;
+            mother.mateVariantIdx = father.variantIdx;
+            mother.pregnancyTimer = (breedBoost ? 1.5 : 3) * 720;
+            mother.breedCooldown = (breedBoost ? 4 : 7) * 720;
+            father.breedCooldown = (breedBoost ? 4 : 7) * 720;
 
-        this.heartEffect(a.sprite.x, a.sprite.y);
-        this.heartEffect(partner.sprite.x, partner.sprite.y);
-        this.sfx.rescue();
-        this.game.events.emit('notification', `${a.name} and ${partner.name} are expecting!`);
+            this.heartEffect(a.sprite.x, a.sprite.y);
+            this.heartEffect(partner.sprite.x, partner.sprite.y);
+            this.sfx.rescue();
+            this.game.events.emit('notification', `${mother.name} and ${father.name} are expecting!`);
+        }
     }
 
     birthBaby(parent) {
         const sp = SPECIES[parent.speciesId];
-        const name = Phaser.Utils.Array.GetRandom(sp.names);
-        const baby = this.addAnimal(parent.speciesId, name, parent.habitatId, { isBaby: true });
+        const pA = parent.variantIdx;
+        const pB = parent.mateVariantIdx;
+
+        // Check for breed-only variant recipes
+        let vi = null;
+        if (pA != null && pB != null) {
+            for (let i = 0; i < sp.variants.length; i++) {
+                const v = sp.variants[i];
+                if (!v.breedOnly || !v.parents) continue;
+                const [rA, rB] = v.parents;
+                if ((pA === rA && pB === rB) || (pA === rB && pB === rA)) {
+                    vi = i;
+                    break;
+                }
+            }
+        }
+        // Fall back to a random non-breedOnly variant
+        if (vi == null) {
+            const normal = sp.variants.map((v, i) => v.breedOnly ? -1 : i).filter(i => i >= 0);
+            vi = normal[Phaser.Math.Between(0, normal.length - 1)];
+        }
+
+        const v = sp.variants[vi];
+        const baby = this.addAnimal(sp.id, v.name, parent.habitatId, { isBaby: true, variantIdx: vi });
         if (baby) {
             this.state.stats.bred++;
+            this.state.rescuedVariants.add(`${sp.id}_${vi}`);
+            this.state.seenVariants.add(`${sp.id}_${vi}`);
             if (!this.state.discoveries.has(parent.speciesId)) this.state.discoveries.add(parent.speciesId);
-            this.game.events.emit('notification', `${name} the baby ${sp.name} was born!`);
+            const isSpecial = sp.variants[vi].breedOnly;
+            const label = isSpecial ? `★ Special variant! ${v.name}` : v.name;
+            this.game.events.emit('notification', `${label} the baby ${sp.name} was born!`);
             this.sfx.rescue();
             this.starEffect(parent.sprite.x, parent.sprite.y);
         }
+        parent.mateVariantIdx = undefined;
     }
 
     /* ========== ILLNESS ========== */
@@ -1160,11 +1222,15 @@ export default class GameScene extends Phaser.Scene {
             }
             const speciesId = Phaser.Utils.Array.GetRandom(pool);
             const sp = SPECIES[speciesId];
-            const name = Phaser.Utils.Array.GetRandom(sp.names);
+            const normal = sp.variants.map((v, i) => v.breedOnly ? -1 : i).filter(i => i >= 0);
+            const vi = normal[Phaser.Math.Between(0, normal.length - 1)];
+            const v = sp.variants[vi];
             const hab = this.findCompatibleHabitat(sp);
             if (hab) {
-                this.addAnimal(speciesId, name, hab.id);
+                this.addAnimal(speciesId, v.name, hab.id, { variantIdx: vi });
                 this.state.stats.rescued++;
+                this.state.rescuedVariants.add(`${speciesId}_${vi}`);
+                this.state.seenVariants.add(`${speciesId}_${vi}`);
                 if (!this.state.discoveries.has(speciesId)) {
                     this.state.discoveries.add(speciesId);
                     this.game.events.emit('notification', `New species discovered: ${sp.name}!`);
@@ -1563,14 +1629,17 @@ export default class GameScene extends Phaser.Scene {
     // If zoomed into a habitat, panels stay open; accepting re-emits showHabitatInfo to refresh.
 
     triggerRescue(forceSpecies) {
-        if (this.state.rescuePaused || this.state.buildMode || this._habSelectMode) return;
+        if (this.state.rescuePaused || this.state.settingsPaused || this.state.buildMode || this._habSelectMode) return;
         const sp = forceSpecies ? SPECIES[forceSpecies] : this.pickSpecies();
-        const name = Phaser.Utils.Array.GetRandom(sp.names);
+        const normal = sp.variants.map((v, i) => v.breedOnly ? -1 : i).filter(i => i >= 0);
+        const vi = normal[Phaser.Math.Between(0, normal.length - 1)];
+        const v = sp.variants[vi];
         const hab = this.findCompatibleHabitat(sp);
         const tmpl = Phaser.Utils.Array.GetRandom(RESCUE_MSG);
-        const msg = tmpl.replace('{name}', name).replace('{species}', sp.name);
+        const msg = tmpl.replace('{name}', v.name).replace('{species}', sp.name);
+        this.state.seenVariants.add(`${sp.id}_${vi}`);
         this.sfx.rescue();
-        this.game.events.emit('rescueEvent', { speciesId: sp.id, name, habitat: hab, msg });
+        this.game.events.emit('rescueEvent', { speciesId: sp.id, name: v.name, variantIdx: vi, habitat: hab, msg });
     }
 
     // Weighted by RARITY_WEIGHT; season match and rare_boost research double odds.
@@ -1608,9 +1677,10 @@ export default class GameScene extends Phaser.Scene {
     }
 
     acceptRescueInto(ev, hab) {
-        this.addAnimal(ev.speciesId, ev.name, hab.id);
+        this.addAnimal(ev.speciesId, ev.name, hab.id, { variantIdx: ev.variantIdx });
         this.state.stats.rescued++;
         this.state.rep += 10;
+        this.state.rescuedVariants.add(`${ev.speciesId}_${ev.variantIdx}`);
         this.earnResearchPoints(1);
         if (!this.state.discoveries.has(ev.speciesId)) {
             this.state.discoveries.add(ev.speciesId);
@@ -1787,15 +1857,17 @@ export default class GameScene extends Phaser.Scene {
             })),
             animals: this.state.animals.map(a => ({
                 id: a.id, speciesId: a.speciesId, name: a.name, habitatId: a.habitatId,
-                gender: a.gender,
+                variantIdx: a.variantIdx, gender: a.gender,
                 hunger: a.hunger, happiness: a.happiness, health: a.health,
                 trait: a.trait, illness: a.illness, bonds: a.bonds,
                 isBaby: a.isBaby, growthTimer: a.growthTimer,
                 breedCooldown: a.breedCooldown, isPregnant: a.isPregnant,
-                pregnancyTimer: a.pregnancyTimer,
+                pregnancyTimer: a.pregnancyTimer, mateVariantIdx: a.mateVariantIdx,
             })),
             staff: this.state.staff.map(s => ({ id: s.id, type: s.type })),
             discoveries: [...this.state.discoveries],
+            seenVariants: [...this.state.seenVariants],
+            rescuedVariants: [...this.state.rescuedVariants],
             upgrades: [...this.state.upgrades],
             achievementsEarned: [...this.state.achievementsEarned],
             seasonsVisited: [...this.state.seasonsVisited],
@@ -1817,6 +1889,8 @@ export default class GameScene extends Phaser.Scene {
             this.state.day = d.day; this.state.time = d.time;
             this.state.coins = d.coins; this.state.rep = d.rep || 0;
             this.state.discoveries = new Set(d.discoveries || []);
+            this.state.seenVariants = new Set(d.seenVariants || []);
+            this.state.rescuedVariants = new Set(d.rescuedVariants || []);
             this.state.upgrades = new Set(d.upgrades || []);
             this.state.achievementsEarned = new Set(d.achievementsEarned || []);
             this.state.seasonsVisited = new Set(d.seasonsVisited || ['spring']);
@@ -1841,12 +1915,12 @@ export default class GameScene extends Phaser.Scene {
                 const hab = this.state.habitats.find(h => h.id === a.habitatId);
                 if (!hab) continue;
                 const animal = this.addAnimal(a.speciesId, a.name, hab.id, {
-                    id: a.id, gender: a.gender,
+                    id: a.id, variantIdx: a.variantIdx, gender: a.gender,
                     hunger: a.hunger, happiness: a.happiness, health: a.health,
                     trait: a.trait, illness: a.illness, bonds: a.bonds || [],
                     isBaby: a.isBaby, growthTimer: a.growthTimer,
                     breedCooldown: a.breedCooldown || 0, isPregnant: a.isPregnant,
-                    pregnancyTimer: a.pregnancyTimer || 0,
+                    pregnancyTimer: a.pregnancyTimer || 0, mateVariantIdx: a.mateVariantIdx,
                 });
             }
             if (d.staff) {
@@ -1886,10 +1960,10 @@ export default class GameScene extends Phaser.Scene {
 
     /* ========== UPDATE ========== */
     // Main loop: time, animals, visitors, staff, missions, ambient sound.
-    // Skipped entirely while rescuePaused is set (rescue popup freezes all simulation).
+    // Skipped entirely while rescuePaused or settingsPaused is set (rescue/settings freezes all simulation).
 
     update(time, delta) {
-        if (this.state.rescuePaused || this._movingHabitat || this._habSelectMode) return;
+        if (this.state.rescuePaused || this.state.settingsPaused || this._movingHabitat || this._habSelectMode) return;
         this.updateTime(delta);
         this.updateAnimals(delta, time);
         this.updateVisitors(delta);

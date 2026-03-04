@@ -1,8 +1,9 @@
 // UI overlay scene running parallel to GameScene. Has its own camera, unaffected by GameScene zoom.
 // Communicates via this.game.events; this.gs = GameScene reference for state and method calls.
-// Manages toolbar (hidden during habitat zoom), habitat/animal panels (with close X and back bar),
+// Manages toolbar (hidden during habitat zoom), habitat/animal panels (with close X, back bar,
+// and navigation arrows to cycle animals), settings/pause menu (gear icon, replaces SAVE button),
 // rescue popup with time-pause, build popup, and management panels (vertically centered).
-// hasOpenPanel() lets GameScene suppress world clicks while a management panel is visible.
+// hasOpenPanel() lets GameScene suppress world clicks while a management panel or settings is visible.
 import { W, H, HABITATS, SPECIES, RARITY_COLOR, CLR, SEASONS, UPGRADES, STAFF_TYPES,
     TRAITS, ILLNESSES, ENRICHMENTS, MISSIONS, VISITOR_TYPES, ACHIEVEMENTS,
     RESEARCH, RESEARCH_BRANCHES } from '../GameData.js';
@@ -40,7 +41,7 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== TOP BAR ========== */
 
-    // Day, season, clock, speed controls (tortoise/hare), reputation star, research icon, coins, save button.
+    // Day, season, clock, speed controls (tortoise/hare), reputation star, research icon, coins, settings gear.
     // All elements are vertically centered at midY=21 using setOrigin(_, 0.5).
     createTopBar() {
         const bar = this.add.graphics();
@@ -66,10 +67,10 @@ export default class HUDScene extends Phaser.Scene {
         this.add.image(W - 140, midY, 'icon_coin').setScale(1.4);
         this.coinTxt = this.txt(W - 124, midY, '', 10, CLR.gold).setOrigin(0, 0.5);
 
-        const saveBtn = this.txt(W - 50, midY, 'SAVE', 7, '#88AA88').setOrigin(0, 0.5).setInteractive({ useHandCursor: true });
-        saveBtn.on('pointerdown', () => { this.gs.saveGame(); this.notify('Game saved!'); });
-        saveBtn.on('pointerover', function () { this.setColor('#AAFFAA'); });
-        saveBtn.on('pointerout', function () { this.setColor('#88AA88'); });
+        const settingsBtn = this.txt(W - 28, midY - 3, '\u2699', 18, '#AAAAAA').setOrigin(0.5, 0.5).setInteractive({ useHandCursor: true });
+        settingsBtn.on('pointerdown', () => this.toggleSettingsMenu());
+        settingsBtn.on('pointerover', () => settingsBtn.setColor('#FFFFFF'));
+        settingsBtn.on('pointerout', () => settingsBtn.setColor('#AAAAAA'));
     }
 
     _setTimeSpeed(mode) {
@@ -90,6 +91,79 @@ export default class HUDScene extends Phaser.Scene {
         const btn = mode === 'slow' ? this.tortoiseBtn : this.hareBtn;
         this._speedGlow = btn.preFX.addGlow(0xffffff, 2, 0, false, 0.15, 10);
         this._speedGlowTarget = btn;
+    }
+
+    /* ========== SETTINGS MENU ========== */
+
+    toggleSettingsMenu() {
+        if (this.settingsPanel) { this.closeSettingsMenu(); return; }
+        this.gs.state.settingsPaused = true;
+
+        const pw = 260, ph = 220;
+        const px = W / 2 - pw / 2, py = this.centerPanelY(ph);
+        const ct = this.add.container(px, py).setDepth(310);
+
+        const overlay = this.add.rectangle(W / 2 - px, H / 2 - py, W, H, 0x000000, 0.45).setInteractive();
+        ct.add(overlay);
+
+        const bg = this.add.graphics();
+        bg.fillStyle(0x1a0e04, 0.97); bg.fillRoundedRect(0, 0, pw, ph, 8);
+        bg.lineStyle(2, CLR.uiBorder); bg.strokeRoundedRect(0, 0, pw, ph, 8);
+        ct.add(bg);
+
+        ct.add(this.txt(pw / 2, 20, 'Settings', 12, CLR.gold).setOrigin(0.5));
+
+        const btnW = 180, btnH = 34;
+        const bx = pw / 2 - btnW / 2;
+
+        // Save button
+        const saveBg = this.add.graphics();
+        saveBg.fillStyle(0x44AA44, 0.6); saveBg.fillRoundedRect(bx, 60, btnW, btnH, 5);
+        ct.add(saveBg);
+        const saveHit = this.add.rectangle(pw / 2, 60 + btnH / 2, btnW, btnH, 0, 0).setInteractive({ useHandCursor: true });
+        ct.add(saveHit);
+        ct.add(this.txt(pw / 2, 60 + btnH / 2, 'Save Game', 9, '#FFFFFF').setOrigin(0.5));
+        saveHit.on('pointerover', () => { saveBg.clear(); saveBg.fillStyle(0x55CC55, 0.7); saveBg.fillRoundedRect(bx, 60, btnW, btnH, 5); });
+        saveHit.on('pointerout', () => { saveBg.clear(); saveBg.fillStyle(0x44AA44, 0.6); saveBg.fillRoundedRect(bx, 60, btnW, btnH, 5); });
+        saveHit.on('pointerdown', () => {
+            this.gs.saveGame();
+            this.notify('Game saved!');
+            this.closeSettingsMenu();
+        });
+
+        // Exit to Menu button
+        const exitBg = this.add.graphics();
+        exitBg.fillStyle(0xAA4444, 0.6); exitBg.fillRoundedRect(bx, 110, btnW, btnH, 5);
+        ct.add(exitBg);
+        const exitHit = this.add.rectangle(pw / 2, 110 + btnH / 2, btnW, btnH, 0, 0).setInteractive({ useHandCursor: true });
+        ct.add(exitHit);
+        ct.add(this.txt(pw / 2, 110 + btnH / 2, 'Exit to Menu', 9, '#FFFFFF').setOrigin(0.5));
+        exitHit.on('pointerover', () => { exitBg.clear(); exitBg.fillStyle(0xCC5555, 0.7); exitBg.fillRoundedRect(bx, 110, btnW, btnH, 5); });
+        exitHit.on('pointerout', () => { exitBg.clear(); exitBg.fillStyle(0xAA4444, 0.6); exitBg.fillRoundedRect(bx, 110, btnW, btnH, 5); });
+        exitHit.on('pointerdown', () => {
+            this.gs.saveGame();
+            this.closeSettingsMenu();
+            this.scene.stop('HUDScene');
+            this.gs.scene.start('MenuScene');
+        });
+
+        // Resume button
+        const resBg = this.add.graphics();
+        resBg.fillStyle(0x555566, 0.6); resBg.fillRoundedRect(bx, 160, btnW, btnH, 5);
+        ct.add(resBg);
+        const resHit = this.add.rectangle(pw / 2, 160 + btnH / 2, btnW, btnH, 0, 0).setInteractive({ useHandCursor: true });
+        ct.add(resHit);
+        ct.add(this.txt(pw / 2, 160 + btnH / 2, 'Resume', 9, '#FFFFFF').setOrigin(0.5));
+        resHit.on('pointerover', () => { resBg.clear(); resBg.fillStyle(0x666688, 0.7); resBg.fillRoundedRect(bx, 160, btnW, btnH, 5); });
+        resHit.on('pointerout', () => { resBg.clear(); resBg.fillStyle(0x555566, 0.6); resBg.fillRoundedRect(bx, 160, btnW, btnH, 5); });
+        resHit.on('pointerdown', () => this.closeSettingsMenu());
+
+        this.settingsPanel = ct;
+    }
+
+    closeSettingsMenu() {
+        if (this.settingsPanel) { this.settingsPanel.destroy(); this.settingsPanel = null; }
+        this.gs.state.settingsPaused = false;
     }
 
     /* ========== TOOLBAR ========== */
@@ -358,7 +432,8 @@ export default class HUDScene extends Phaser.Scene {
         bg.lineStyle(2, rc); bg.strokeRoundedRect(-pw / 2, -ph / 2, pw, ph, 8);
         ct.add(bg);
         ct.add(this.txt(0, -ph / 2 + 18, 'RESCUE EVENT!', 12, CLR.gold).setOrigin(0.5));
-        ct.add(this.add.image(0, -22, `animal_${ev.speciesId}`).setScale(1.5));
+        const rescueTex = ev.variantIdx != null ? `animal_${ev.speciesId}_${ev.variantIdx}` : `animal_${ev.speciesId}`;
+        ct.add(this.add.image(0, -22, rescueTex).setScale(1.5));
         ct.add(this.txt(0, 16, `${ev.name} the ${sp.name}`, 9).setOrigin(0.5));
         const rClr = '#' + rc.toString(16).padStart(6, '0');
         ct.add(this.txt(0, 34, sp.rarity.toUpperCase(), 7, rClr).setOrigin(0.5));
@@ -445,8 +520,9 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== ANIMAL INFO PANEL ========== */
 
-    // Selected animal: stats, trait, illness, breed status, bonds, actions (Feed, Pet, Treat, Heal, Breed).
+    // Selected animal: stats, trait, illness, pregnancy/cooldown status, bonds, actions (Feed, Pet, Treat, Heal).
     // Only shown when zoomed into a habitat. Tracks _viewedAnimal for auto-refresh via animalUpdate event.
+    // Navigation arrows below the panel cycle through habitat animals, transferring the glow highlight.
     showAnimal(animal) {
         if (this.animalPanel) this.animalPanel.destroy();
         if (this.rescuePopup) return;
@@ -455,7 +531,6 @@ export default class HUDScene extends Phaser.Scene {
         const sp = SPECIES[animal.speciesId], rc = RARITY_COLOR[sp.rarity];
         const pw = 230, px = W - pw - 6, py = 48;
         const hasHeal = this.gs.state.upgrades.has('medical_kit') && animal.illness;
-        const canBreed = this.gs.canBreed(animal);
 
         const ct = this.add.container(px, py).setDepth(250);
 
@@ -465,7 +540,8 @@ export default class HUDScene extends Phaser.Scene {
         ct.add(this.add.image(pw / 2 + nameTxt.width / 2 + 10, 14, genderKey).setScale(1.2));
         const rClr = '#' + rc.toString(16).padStart(6, '0');
         ct.add(this.txt(pw / 2, 28, `${sp.name} (${sp.rarity})`, 6, rClr).setOrigin(0.5));
-        ct.add(this.add.image(pw / 2, 56, `animal_${animal.speciesId}`).setScale(1.2));
+        const animalTex = animal.variantIdx != null ? `animal_${animal.speciesId}_${animal.variantIdx}` : `animal_${animal.speciesId}`;
+        ct.add(this.add.image(pw / 2, 56, animalTex).setScale(1.2));
 
         let yy = 76;
         const tr = TRAITS[animal.trait];
@@ -506,10 +582,7 @@ export default class HUDScene extends Phaser.Scene {
             yy += 30;
         }
 
-        if (canBreed) {
-            this.panelBtn(ct, 8, yy, 120, 'Breed', 0xCC66AA, () => { this.gs.startBreeding(animal.id); this.showAnimal(animal); });
-            yy += 30;
-        } else if (animal.isPregnant) {
+        if (animal.isPregnant) {
             const pctLeft = Math.max(0, Math.round(animal.pregnancyTimer / 720));
             ct.add(this.txt(8, yy + 4, `Due in ~${pctLeft} days`, 6, '#FF88CC'));
             yy += 22;
@@ -554,6 +627,38 @@ export default class HUDScene extends Phaser.Scene {
         const closeBtn = this.txt(pw - 8, 4, 'X', 8, '#FF6666').setOrigin(0.5, 0).setInteractive({ useHandCursor: true });
         closeBtn.on('pointerdown', () => { ct.destroy(); this.animalPanel = null; this._viewedAnimal = null; this.gs.clearSelectedAnimal(); });
         ct.add(closeBtn);
+
+        // Navigation arrows to cycle through habitat animals
+        const habId = animal.habitatId;
+        const habAnimals = this.gs.state.animals.filter(a => a.habitatId === habId);
+        if (habAnimals.length > 1) {
+            const curIdx = habAnimals.findIndex(a => a.id === animal.id);
+            const navY = ph + 6;
+            const navBg = this.add.graphics();
+            navBg.fillStyle(0x1a0e04, 0.9); navBg.fillRoundedRect(pw / 2 - 50, navY, 100, 24, 4);
+            navBg.lineStyle(1, CLR.uiBorder, 0.5); navBg.strokeRoundedRect(pw / 2 - 50, navY, 100, 24, 4);
+            ct.add(navBg);
+
+            const prevBtn = this.txt(pw / 2 - 36, navY + 12, '<', 10, '#AAAAAA').setOrigin(0.5).setInteractive({ useHandCursor: true });
+            prevBtn.on('pointerover', () => prevBtn.setColor('#FFFFFF'));
+            prevBtn.on('pointerout', () => prevBtn.setColor('#AAAAAA'));
+            prevBtn.on('pointerdown', () => {
+                const ni = (curIdx - 1 + habAnimals.length) % habAnimals.length;
+                this.gs.selectAnimal(habAnimals[ni]);
+            });
+            ct.add(prevBtn);
+
+            ct.add(this.txt(pw / 2, navY + 12, `${curIdx + 1} / ${habAnimals.length}`, 6, '#888888').setOrigin(0.5));
+
+            const nextBtn = this.txt(pw / 2 + 36, navY + 12, '>', 10, '#AAAAAA').setOrigin(0.5).setInteractive({ useHandCursor: true });
+            nextBtn.on('pointerover', () => nextBtn.setColor('#FFFFFF'));
+            nextBtn.on('pointerout', () => nextBtn.setColor('#AAAAAA'));
+            nextBtn.on('pointerdown', () => {
+                const ni = (curIdx + 1) % habAnimals.length;
+                this.gs.selectAnimal(habAnimals[ni]);
+            });
+            ct.add(nextBtn);
+        }
 
         this.animalPanel = ct;
     }
@@ -1014,8 +1119,12 @@ export default class HUDScene extends Phaser.Scene {
         this.journalPanel = ct;
     }
 
-    // Grid of discovered/undiscovered species.
+    // Two-level bestiary: top-level species grid, clickable to open variant sub-page.
     renderBestiary(ct, x, y, w, h) {
+        if (this._bestiarySpecies) {
+            this.renderBestiaryVariants(ct, x, y, w, h, this._bestiarySpecies);
+            return;
+        }
         const speciesList = Object.values(SPECIES);
         const cols = 5, cellW = w / cols, cellH = 72;
         const discovered = this.gs.state.discoveries;
@@ -1027,7 +1136,10 @@ export default class HUDScene extends Phaser.Scene {
             const isFound = discovered.has(sp.id);
 
             if (isFound) {
-                ct.add(this.add.image(cx, cy, `animal_${sp.id}`).setScale(0.8));
+                const img = this.add.image(cx, cy, `animal_${sp.id}`).setScale(0.8)
+                    .setInteractive({ useHandCursor: true });
+                img.on('pointerdown', () => { this._bestiarySpecies = sp.id; this.showJournalPanel(); });
+                ct.add(img);
                 ct.add(this.txt(cx, cy + 18, sp.name, 5).setOrigin(0.5));
                 const rClr = '#' + RARITY_COLOR[sp.rarity].toString(16).padStart(6, '0');
                 ct.add(this.txt(cx, cy + 28, sp.rarity, 4, rClr).setOrigin(0.5));
@@ -1041,6 +1153,93 @@ export default class HUDScene extends Phaser.Scene {
 
         ct.add(this.txt(x, y + Math.ceil(speciesList.length / cols) * cellH + 10,
             `Discovered: ${discovered.size}/${speciesList.length}`, 6, '#AAAAAA'));
+    }
+
+    // Variant sub-page: shows all variants for a species with seen/rescued/unknown states.
+    // Breed-only variants are marked with a star and show a "Breed Only" hint when undiscovered.
+    renderBestiaryVariants(ct, x, y, w, h, speciesId) {
+        const sp = SPECIES[speciesId];
+        const seen = this.gs.state.seenVariants;
+        const rescued = this.gs.state.rescuedVariants;
+
+        const backBtn = this.txt(x + 4, y + 2, '\u2190 Back', 7, '#AAAAAA')
+            .setInteractive({ useHandCursor: true });
+        backBtn.on('pointerover', () => backBtn.setColor('#FFFFFF'));
+        backBtn.on('pointerout', () => backBtn.setColor('#AAAAAA'));
+        backBtn.on('pointerdown', () => { this._bestiarySpecies = null; this.showJournalPanel(); });
+        ct.add(backBtn);
+
+        const rClr = '#' + RARITY_COLOR[sp.rarity].toString(16).padStart(6, '0');
+        ct.add(this.txt(w / 2 + x, y + 4, sp.name, 10, rClr).setOrigin(0.5, 0));
+
+        const normalVars = sp.variants.filter(v => !v.breedOnly);
+        const breedVars = sp.variants.map((v, i) => v.breedOnly ? i : -1).filter(i => i >= 0);
+        const cols = 4, cellW = w / cols, cellH = 80;
+        const startY = y + 28;
+
+        // Render normal variants first
+        normalVars.forEach((v, ni) => {
+            const i = sp.variants.indexOf(v);
+            const col = ni % cols, row = Math.floor(ni / cols);
+            const cx = x + col * cellW + cellW / 2;
+            const cy = startY + row * cellH + 30;
+            const key = `${speciesId}_${i}`;
+            const isRescued = rescued.has(key);
+            const isSeen = seen.has(key);
+
+            if (isRescued) {
+                ct.add(this.add.image(cx, cy, `animal_${speciesId}_${i}`).setScale(0.9));
+                ct.add(this.txt(cx, cy + 20, v.name, 5).setOrigin(0.5));
+                const gClr = v.gender === 'm' ? '#5599FF' : '#FF66AA';
+                ct.add(this.txt(cx, cy + 30, v.gender === 'm' ? '\u2642' : '\u2640', 6, gClr).setOrigin(0.5));
+            } else if (isSeen) {
+                ct.add(this.add.image(cx, cy, `animal_${speciesId}_${i}`).setScale(0.9).setAlpha(0.5));
+                ct.add(this.txt(cx, cy + 20, '???', 5, '#888888').setOrigin(0.5));
+            } else {
+                const shadow = this.add.graphics();
+                shadow.fillStyle(0x222222, 0.8); shadow.fillCircle(cx, cy, 12);
+                ct.add(shadow);
+                ct.add(this.txt(cx, cy + 20, '???', 5, '#555555').setOrigin(0.5));
+            }
+        });
+
+        // Breed-only section header
+        const normalRows = Math.ceil(normalVars.length / cols);
+        const breedStartY = startY + normalRows * cellH + 15;
+        ct.add(this.txt(x + 4, breedStartY - 10, '\u2605 Breed-Only Variants', 6, '#DDAA44'));
+
+        breedVars.forEach((i, bi) => {
+            const v = sp.variants[i];
+            const col = bi % cols, row = Math.floor(bi / cols);
+            const cx = x + col * cellW + cellW / 2;
+            const cy = breedStartY + row * cellH + 30;
+            const key = `${speciesId}_${i}`;
+            const isRescued = rescued.has(key);
+
+            if (isRescued) {
+                ct.add(this.add.image(cx, cy, `animal_${speciesId}_${i}`).setScale(0.9));
+                ct.add(this.txt(cx, cy - 18, '\u2605', 5, '#DDAA44').setOrigin(0.5));
+                ct.add(this.txt(cx, cy + 20, v.name, 5).setOrigin(0.5));
+                const gClr = v.gender === 'm' ? '#5599FF' : '#FF66AA';
+                ct.add(this.txt(cx, cy + 30, v.gender === 'm' ? '\u2642' : '\u2640', 6, gClr).setOrigin(0.5));
+                // Show parent combo hint
+                const pNames = v.parents.map(pi => sp.variants[pi].name);
+                ct.add(this.txt(cx, cy + 39, `${pNames[0]} + ${pNames[1]}`, 4, '#887744').setOrigin(0.5));
+            } else {
+                const shadow = this.add.graphics();
+                shadow.fillStyle(0x332200, 0.6); shadow.fillCircle(cx, cy, 12);
+                ct.add(shadow);
+                ct.add(this.txt(cx, cy - 18, '\u2605', 5, '#665522').setOrigin(0.5));
+                ct.add(this.txt(cx, cy + 20, '???', 5, '#665522').setOrigin(0.5));
+                ct.add(this.txt(cx, cy + 30, 'Breed Only', 4, '#554411').setOrigin(0.5));
+            }
+        });
+
+        const total = sp.variants.length;
+        const found = sp.variants.filter((_, i) => rescued.has(`${speciesId}_${i}`)).length;
+        const breedRows = Math.ceil(breedVars.length / cols);
+        ct.add(this.txt(x, breedStartY + breedRows * cellH + 10,
+            `Collected: ${found}/${total}`, 6, '#AAAAAA'));
     }
 
     // List of achievements with earned state.
@@ -1121,8 +1320,8 @@ export default class HUDScene extends Phaser.Scene {
     // Returns a y position that vertically centers a panel of given height between the top and bottom bars.
     centerPanelY(ph) { return Math.max(46, 42 + (H - 104 - ph) / 2); }
 
-    // True if any management panel (upgrades, staff, missions, research, journal) is open.
-    hasOpenPanel() { return !!(this.upgradePanel || this.staffPanel || this.missionPanel || this.journalPanel || this.researchPanel); }
+    // True if any management panel (upgrades, staff, missions, research, journal) or settings menu is open.
+    hasOpenPanel() { return !!(this.upgradePanel || this.staffPanel || this.missionPanel || this.journalPanel || this.researchPanel || this.settingsPanel); }
 
     // Destroys all open panels and mission refresh timer. keepZoom=true preserves the
     // camera zoom and back bar (used by rescue events so they don't interrupt the zoomed view).
