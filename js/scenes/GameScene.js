@@ -418,6 +418,13 @@ export default class GameScene extends Phaser.Scene {
         this._destroyBuildPreview();
         this._showNPCs();
         this.game.events.emit('buildModeChanged', null);
+        const hud = this.scene.get('HUDScene');
+        if (hud && hud._pendingRescue) {
+            const ev = hud._pendingRescue;
+            hud._pendingRescue = null;
+            ev.habitat = this.findCompatibleHabitat(SPECIES[ev.speciesId]);
+            hud.showRescue(ev);
+        }
     }
 
     _createBuildPreview(type) {
@@ -459,9 +466,24 @@ export default class GameScene extends Phaser.Scene {
     _nudgeNPCsFromHabitat(gx, gy, w, h) {
         const left = gx * TILE, right = (gx + w) * TILE;
         const top = MAP_Y + gy * TILE, bottom = MAP_Y + (gy + h) * TILE;
+        const nearest = (ox, oy) => {
+            let best = null, bestDist = Infinity;
+            for (let dy = -1; dy <= h; dy++) {
+                for (let dx = -1; dx <= w; dx++) {
+                    if (dx >= 0 && dx < w && dy >= 0 && dy < h) continue;
+                    const nx = gx + dx, ny = gy + dy;
+                    if (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) continue;
+                    if (this.grid[ny][nx] !== null) continue;
+                    const px = nx * TILE + TILE / 2, py = MAP_Y + ny * TILE + TILE / 2;
+                    const d = (px - ox) * (px - ox) + (py - oy) * (py - oy);
+                    if (d < bestDist) { bestDist = d; best = { x: px, y: py }; }
+                }
+            }
+            return best || this.randomOpenTile();
+        };
         const nudge = (obj) => {
             if (obj.x >= left && obj.x < right && obj.y >= top && obj.y < bottom) {
-                const dest = this.randomOpenTile();
+                const dest = nearest(obj.x, obj.y);
                 obj.x = dest.x; obj.y = dest.y;
                 return dest;
             }
@@ -1167,6 +1189,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     trySpawnVisitor() {
+        if (this.state.buildMode) return;
         const t = this.state.time;
         if (t < 480 || t > 1080) return;
         if (this.state.habitats.length === 0) return;
