@@ -81,14 +81,20 @@ export default class GameScene extends Phaser.Scene {
     // with reserved path tiles in front, and grass variants.
 
     createMap() {
-        for (let y = 0; y < ROWS; y++) {
-            this.grid[y] = [];
-            for (let x = 0; x < COLS; x++) {
+        const pad = 8;
+        for (let y = -pad; y < ROWS + pad; y++) {
+            if (y >= 0 && y < ROWS) this.grid[y] = [];
+            for (let x = -pad; x < COLS + pad; x++) {
+                const inGrid = y >= 0 && y < ROWS && x >= 0 && x < COLS;
+                const px = x * TILE + TILE / 2, py = MAP_Y + y * TILE + TILE / 2;
+                if (!inGrid) {
+                    this.add.image(px, py, `grass_${((Math.abs(x) * 7 + Math.abs(y) * 13) % 4) + 1}`).setDepth(0);
+                    continue;
+                }
                 const isBorder = y === 0 || y === ROWS - 1 || x === 0 || x === COLS - 1;
                 const isEntrance = y === ROWS - 1 && x >= 13 && x <= 16;
                 const isEntrancePath = y === ROWS - 2 && x >= 13 && x <= 16;
                 this.grid[y][x] = (isEntrance || isEntrancePath) ? 'entrance' : isBorder ? 'fence' : null;
-                const px = x * TILE + TILE / 2, py = MAP_Y + y * TILE + TILE / 2;
                 if (isEntrance) {
                     this.add.image(px, py, `grass_${((x * 7 + y * 13) % 4) + 1}`).setDepth(0);
                 } else if (isBorder) {
@@ -234,6 +240,7 @@ export default class GameScene extends Phaser.Scene {
     zoomOut() {
         if (!this.state.viewingHabitat && this.cameras.main.zoom === 1) return;
         this.state.viewingHabitat = null;
+        this._selectedAnimal = null;
         for (const a of this.state.animals) {
             if (a.sprite._hoverGlow) { a.sprite.preFX.remove(a.sprite._hoverGlow); a.sprite._hoverGlow = null; }
         }
@@ -247,6 +254,14 @@ export default class GameScene extends Phaser.Scene {
                 cam.scrollY = 0;
             }
         });
+    }
+
+    clearSelectedAnimal() {
+        if (this._selectedAnimal && this._selectedAnimal.sprite._hoverGlow) {
+            this._selectedAnimal.sprite.preFX.remove(this._selectedAnimal.sprite._hoverGlow);
+            this._selectedAnimal.sprite._hoverGlow = null;
+        }
+        this._selectedAnimal = null;
     }
 
     /* ========== BUILD ========== */
@@ -419,7 +434,7 @@ export default class GameScene extends Phaser.Scene {
             hunger: opts.hunger ?? 75, happiness: opts.happiness ?? 60, health: opts.health ?? 100,
             sprite, tx: ax, ty: ay,
             wTimer: 0, wInterval: Phaser.Math.Between(2000, 6000),
-            bobOffset: Math.random() * Math.PI * 2, baseY: ay, sleeping: false,
+            bobOffset: Math.random() * Math.PI * 2, baseX: ax, baseY: ay, sleeping: false,
             trait,
             illness: opts.illness || null,
             bonds: opts.bonds || [],
@@ -436,14 +451,20 @@ export default class GameScene extends Phaser.Scene {
             if (!this.state.viewingHabitat) return;
             this._skipPointerDown = true;
             this.sfx.click();
+            this.clearSelectedAnimal();
+            this._selectedAnimal = animal;
+            if (!sprite._hoverGlow && sprite.preFX) {
+                sprite._hoverGlow = sprite.preFX.addGlow(0xffffff, 2, 0, false, 0.15, 10);
+            }
             this.game.events.emit('showAnimalInfo', animal);
         });
         sprite.on('pointerover', () => {
             if (!this.state.viewingHabitat) return;
             if (!sprite.preFX) return;
-            sprite._hoverGlow = sprite.preFX.addGlow(0xffffff, 2, 0, false, 0.15, 10);
+            if (!sprite._hoverGlow) sprite._hoverGlow = sprite.preFX.addGlow(0xffffff, 2, 0, false, 0.15, 10);
         });
         sprite.on('pointerout', () => {
+            if (this._selectedAnimal === animal) return;
             if (sprite._hoverGlow) { sprite.preFX.remove(sprite._hoverGlow); sprite._hoverGlow = null; }
         });
 
@@ -525,7 +546,6 @@ export default class GameScene extends Phaser.Scene {
                 }
             } else {
                 a.sprite.setAlpha(1);
-                a.sprite.y = a.baseY + Math.sin((time * 0.002) + a.bobOffset) * 1.5;
                 a.wTimer += delta;
                 if (a.wTimer >= a.wInterval) {
                     a.wTimer = 0;
@@ -535,14 +555,17 @@ export default class GameScene extends Phaser.Scene {
                         a.ty = MAP_Y + (hab.gy + 0.5 + Math.random() * (hab.h - 1)) * TILE;
                     }
                 }
-                const dx = a.tx - a.sprite.x, dy = a.ty - a.baseY;
+                const dx = a.tx - a.baseX, dy = a.ty - a.baseY;
                 const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist > 2) {
-                    const spd = 18 * delta / 1000;
-                    a.sprite.x += (dx / dist) * spd;
+                if (dist > 1) {
+                    const spd = Math.min(18 * delta / 1000, dist);
+                    a.baseX += (dx / dist) * spd;
                     a.baseY += (dy / dist) * spd;
                     a.sprite.setFlipX(dx < 0);
                 }
+                const bob = Math.sin((time * 0.002) + a.bobOffset) * 1.5;
+                a.sprite.x = Math.round(a.baseX);
+                a.sprite.y = Math.round(a.baseY + bob);
             }
 
             // Hungry icon

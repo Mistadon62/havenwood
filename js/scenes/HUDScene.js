@@ -457,7 +457,7 @@ export default class HUDScene extends Phaser.Scene {
         ct.addAt(bg, 0);
 
         const closeBtn = this.txt(pw - 8, 4, 'X', 8, '#FF6666').setOrigin(0.5, 0).setInteractive({ useHandCursor: true });
-        closeBtn.on('pointerdown', () => { ct.destroy(); this.animalPanel = null; this._viewedAnimal = null; });
+        closeBtn.on('pointerdown', () => { ct.destroy(); this.animalPanel = null; this._viewedAnimal = null; this.gs.clearSelectedAnimal(); });
         ct.add(closeBtn);
 
         this.animalPanel = ct;
