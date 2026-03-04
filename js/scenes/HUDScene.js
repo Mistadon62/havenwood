@@ -373,7 +373,7 @@ export default class HUDScene extends Phaser.Scene {
 
         const sp = SPECIES[animal.speciesId], rc = RARITY_COLOR[sp.rarity];
         const pw = 230, px = W - pw - 6, py = 48;
-        const hasHeal = this.gs.state.upgrades.has('medical_kit') || animal.illness;
+        const hasHeal = this.gs.state.upgrades.has('medical_kit') && animal.illness;
         const canBreed = this.gs.canBreed(animal);
 
         const ct = this.add.container(px, py).setDepth(250);
@@ -535,20 +535,31 @@ export default class HUDScene extends Phaser.Scene {
                 ct.add(rowBg);
                 ct.add(this.txt(10, yy + 4, en.name, 5));
                 ct.add(this.txt(10, yy + 16, `+${en.happyBonus} happy`, 5, '#88CC88'));
-                ct.add(this.txt(pw - 50, yy + 4, `${eCost}g`, 5, canAfford ? CLR.gold : '#884444').setOrigin(1, 0));
+                ct.add(this.txt(pw - 50, yy + 14, `${eCost}g`, 5, canAfford ? CLR.gold : '#884444').setOrigin(1, 0.5));
                 if (canAfford) {
-                    const buyBtn = this.txt(pw - 10, yy + 9, 'ADD', 5, '#44CC44').setOrigin(1, 0).setInteractive({ useHandCursor: true });
+                    const buyBtn = this.txt(pw - 10, yy + 14, 'ADD', 5, '#44CC44').setOrigin(1, 0.5).setInteractive({ useHandCursor: true });
                     buyBtn.on('pointerdown', () => { this.gs.addEnrichment(hab.id, en.id); this.showHabitatPanel(hab); });
                     buyBtn.on('pointerover', () => buyBtn.setColor('#88FF88'));
                     buyBtn.on('pointerout', () => buyBtn.setColor('#44CC44'));
                     ct.add(buyBtn);
                 }
-                yy += 30;
+                yy += 33;
             }
         } else {
             ct.add(this.txt(8, yy, `Enrichment full (${maxEnrich}/${maxEnrich})`, 5, '#888888'));
             yy += 18;
         }
+
+        yy += 4;
+        const moveBg = this.add.graphics();
+        moveBg.fillStyle(0x335577, 0.5); moveBg.fillRoundedRect(6, yy, pw - 12, 24, 3);
+        ct.add(moveBg);
+        const moveBtn = this.txt(pw / 2, yy + 12, 'Move Habitat', 5, '#88BBDD').setOrigin(0.5).setInteractive({ useHandCursor: true });
+        moveBtn.on('pointerdown', () => { this.gs.enterMoveMode(hab); });
+        moveBtn.on('pointerover', () => moveBtn.setColor('#AADDFF'));
+        moveBtn.on('pointerout', () => moveBtn.setColor('#88BBDD'));
+        ct.add(moveBtn);
+        yy += 30;
 
         const ph = yy + 8;
         const bg = this.add.graphics();
@@ -759,7 +770,7 @@ export default class HUDScene extends Phaser.Scene {
         if (!this._researchTab) this._researchTab = 'wildlife';
 
         const branches = Object.keys(RESEARCH_BRANCHES);
-        const pw = 420, ph = 430;
+        const pw = 560, ph = 430;
         const px = W / 2 - pw / 2, py = this.centerPanelY(ph);
         const ct = this.add.container(px, py).setDepth(290);
         const bg = this.add.graphics();
@@ -774,12 +785,13 @@ export default class HUDScene extends Phaser.Scene {
         closeBtn.on('pointerdown', () => { ct.destroy(); this.researchPanel = null; });
         ct.add(closeBtn);
 
-        const tabW = 90;
-        const tabStartX = pw / 2 - (branches.length * (tabW + 6)) / 2;
+        const tabW = 126;
+        const tabGap = 6;
+        const tabStartX = pw / 2 - (branches.length * (tabW + tabGap)) / 2;
         branches.forEach((bId, i) => {
             const branch = RESEARCH_BRANCHES[bId];
             const bClr = '#' + branch.color.toString(16).padStart(6, '0');
-            const tx = tabStartX + i * (tabW + 6), ty = 46;
+            const tx = tabStartX + i * (tabW + tabGap), ty = 46;
             const isActive = this._researchTab === bId;
             const tbg = this.add.graphics();
             tbg.fillStyle(branch.color, isActive ? 0.4 : 0.12);

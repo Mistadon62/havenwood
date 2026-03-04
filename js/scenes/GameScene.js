@@ -156,8 +156,10 @@ export default class GameScene extends Phaser.Scene {
             if (this.state.buildMode) {
                 this.hoverOutline.setVisible(false);
                 const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
-                const ht = HABITATS[this.state.buildMode];
-                const ok = this.canPlace(this.state.buildMode, gx, gy);
+                const isMove = this.state.buildMode.startsWith('_move_');
+                const habType = isMove ? this.state.buildMode.replace('_move_', '') : this.state.buildMode;
+                const ht = HABITATS[habType];
+                const ok = isMove ? this.canPlaceMove(habType, gx, gy) : this.canPlace(this.state.buildMode, gx, gy);
                 const c = ok ? 0x00ff00 : 0xff0000;
                 this.preview.clear().setVisible(true);
                 this.preview.fillStyle(c, 0.25);
@@ -190,14 +192,19 @@ export default class GameScene extends Phaser.Scene {
         });
 
         this.input.on('pointerdown', ptr => {
-            if (ptr.rightButtonDown()) { this.exitBuild(); return; }
+            if (ptr.rightButtonDown()) { if (this._movingHabitat) { this.cancelMove(); } else { this.exitBuild(); } return; }
             if (this._skipPointerDown) { this._skipPointerDown = false; return; }
             if (this.state.viewingHabitat) return;
             const hud = this.scene.get('HUDScene');
             if (hud && hud.hasOpenPanel()) return;
             if (this.state.buildMode) {
                 const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
-                if (this.canPlace(this.state.buildMode, gx, gy)) { this.placeHabitat(this.state.buildMode, gx, gy); this.exitBuild(); }
+                if (this._movingHabitat) {
+                    const habType = this.state.buildMode.replace('_move_', '');
+                    if (this.canPlaceMove(habType, gx, gy)) this.finishMove(gx, gy);
+                } else {
+                    if (this.canPlace(this.state.buildMode, gx, gy)) { this.placeHabitat(this.state.buildMode, gx, gy); this.exitBuild(); }
+                }
             } else {
                 const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
                 if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
@@ -211,6 +218,9 @@ export default class GameScene extends Phaser.Scene {
         });
 
         this.input.keyboard.on('keydown-ESC', () => {
+            if (this._movingHabitat) { this.cancelMove(); return; }
+            const hud = this.scene.get('HUDScene');
+            if (hud && hud.hasOpenPanel()) { hud.closeAllPanels(); return; }
             if (this.state.viewingHabitat || this.cameras.main.zoom > 1) this.zoomOut();
             else this.exitBuild();
         });
@@ -262,6 +272,92 @@ export default class GameScene extends Phaser.Scene {
             this._selectedAnimal.sprite._hoverGlow = null;
         }
         this._selectedAnimal = null;
+    }
+
+    /* ========== MOVE HABITAT ========== */
+    // Zoom out, temporarily remove habitat from grid, enter a build-like preview mode.
+    // Click to place at new location; ESC or right-click cancels and returns it to the original spot.
+
+    enterMoveMode(hab) {
+        this._movingHabitat = hab;
+        this._moveOrigin = { gx: hab.gx, gy: hab.gy };
+
+        this.state.viewingHabitat = null;
+        this._selectedAnimal = null;
+        for (const a of this.state.animals) {
+            if (a.sprite._hoverGlow) { a.sprite.preFX.remove(a.sprite._hoverGlow); a.sprite._hoverGlow = null; }
+        }
+        this.game.events.emit('habitatViewClosed');
+
+        const cam = this.cameras.main;
+        cam.pan(W / 2, H / 2, 350, 'Quad.easeInOut', true);
+        cam.zoomTo(1, 350, 'Quad.easeInOut', true, (_cam, progress) => {
+            if (progress === 1) {
+                cam.scrollX = 0;
+                cam.scrollY = 0;
+
+                const ht = HABITATS[hab.type];
+                for (let dy = 0; dy < ht.h; dy++)
+                    for (let dx = 0; dx < ht.w; dx++)
+                        this.grid[hab.gy + dy][hab.gx + dx] = null;
+                if (hab.gfx) hab.gfx.setVisible(false);
+                if (hab.decor) hab.decor.forEach(d => d.setVisible(false));
+                this.enrichmentSprites.filter(e => e.habitatId === hab.id).forEach(e => e.sprite.setVisible(false));
+                this.state.animals.filter(a => a.habitatId === hab.id).forEach(a => a.sprite.setVisible(false));
+
+                this.state.buildMode = `_move_${hab.type}`;
+                this.game.events.emit('buildModeChanged', this.state.buildMode);
+            }
+        });
+    }
+
+    canPlaceMove(type, gx, gy) {
+        const h = HABITATS[type];
+        if (gx < 1 || gy < 1 || gx + h.w > COLS - 1 || gy + h.h > ROWS - 1) return false;
+        for (let dy = 0; dy < h.h; dy++)
+            for (let dx = 0; dx < h.w; dx++)
+                if (this.grid[gy + dy][gx + dx] !== null) return false;
+        return true;
+    }
+
+    finishMove(gx, gy) {
+        const hab = this._movingHabitat;
+        if (!hab) return;
+        const ht = HABITATS[hab.type];
+
+        hab.gx = gx; hab.gy = gy;
+        for (let dy = 0; dy < ht.h; dy++)
+            for (let dx = 0; dx < ht.w; dx++)
+                this.grid[gy + dy][gx + dx] = hab.id;
+
+        const px = gx * TILE, py = MAP_Y + gy * TILE, pw = ht.w * TILE, ph = ht.h * TILE;
+        if (hab.gfx) { hab.gfx.clear().setVisible(true); hab.gfx.fillStyle(ht.fill, 0.4); hab.gfx.fillRect(px, py, pw, ph); hab.gfx.lineStyle(2, ht.stroke, 0.9); hab.gfx.strokeRect(px + 1, py + 1, pw - 2, ph - 2); }
+        if (hab.decor) hab.decor.forEach(d => d.destroy());
+        hab.decor = this.addHabitatDecor(hab.type, gx, gy, ht);
+
+        this.enrichmentSprites.filter(e => e.habitatId === hab.id).forEach(e => {
+            e.sprite.x = (gx + 0.3 + Math.random() * (ht.w - 0.6)) * TILE;
+            e.sprite.y = MAP_Y + (gy + 0.4 + Math.random() * (ht.h - 0.8)) * TILE;
+            e.sprite.setVisible(true);
+        });
+        this.state.animals.filter(a => a.habitatId === hab.id).forEach(a => {
+            const ax = (gx + 0.5 + Math.random() * (ht.w - 1)) * TILE;
+            const ay = MAP_Y + (gy + 0.5 + Math.random() * (ht.h - 1)) * TILE;
+            a.baseX = ax; a.baseY = ay; a.tx = ax; a.ty = ay;
+            a.sprite.x = Math.round(ax); a.sprite.y = Math.round(ay);
+            a.sprite.setVisible(true);
+        });
+
+        this._movingHabitat = null; this._moveOrigin = null;
+        this.state.buildMode = null; this.preview.setVisible(false);
+        this.game.events.emit('buildModeChanged', null);
+        this.sfx.build();
+    }
+
+    cancelMove() {
+        if (!this._movingHabitat) return;
+        const o = this._moveOrigin;
+        this.finishMove(o.gx, o.gy);
     }
 
     /* ========== BUILD ========== */
@@ -599,12 +695,11 @@ export default class GameScene extends Phaser.Scene {
     feedAnimal(id) {
         const a = this.state.animals.find(x => x.id === id);
         if (!a) return;
-        let feedAmt = 30, happyBonus = 5;
-        if (this.state.upgrades.has('premium_food')) { feedAmt = 60; happyBonus = 15; }
-        else if (this.state.upgrades.has('better_feed')) { feedAmt = 45; }
-        if (this.hasResearch('feed_boost')) { feedAmt = Math.round(feedAmt * 1.2); happyBonus = Math.round(happyBonus * 1.2); }
+        let feedAmt = 35;
+        if (this.state.upgrades.has('premium_food')) feedAmt = 60;
+        else if (this.state.upgrades.has('better_feed')) feedAmt = 45;
+        if (this.hasResearch('feed_boost')) feedAmt = Math.round(feedAmt * 1.2);
         a.hunger = Math.min(100, a.hunger + feedAmt);
-        a.happiness = Math.min(100, a.happiness + happyBonus);
         this.heartEffect(a.sprite.x, a.sprite.y);
         this.sfx.feed();
         this.tweens.add({
@@ -618,7 +713,7 @@ export default class GameScene extends Phaser.Scene {
         const a = this.state.animals.find(x => x.id === id);
         if (!a) return;
         const tr = TRAITS[a.trait] || {};
-        const bonus = 15 * (tr.petBonus || 1);
+        const bonus = 20 * (tr.petBonus || 1);
         a.happiness = Math.min(100, a.happiness + bonus);
         this.heartEffect(a.sprite.x, a.sprite.y);
         this.sfx.pet();
@@ -629,9 +724,9 @@ export default class GameScene extends Phaser.Scene {
         const a = this.state.animals.find(x => x.id === id);
         if (!a || this.state.coins < 20) return;
         this.spendCoins(20);
-        a.hunger = Math.min(100, a.hunger + 15);
-        a.happiness = Math.min(100, a.happiness + 25);
-        a.health = Math.min(100, a.health + 10);
+        a.health = Math.min(100, a.health + 25);
+        a.hunger = Math.min(100, a.hunger + 10);
+        a.happiness = Math.min(100, a.happiness + 10);
         this.heartEffect(a.sprite.x, a.sprite.y);
         this.starEffect(a.sprite.x, a.sprite.y);
         this.sfx.treat();
@@ -971,7 +1066,8 @@ export default class GameScene extends Phaser.Scene {
         if (this.visitors.length >= maxVisitors) return;
 
         const vType = this.pickVisitorType();
-        const sprite = this.add.image(15 * TILE, MAP_Y + (ROWS - 1) * TILE, `visitor_${vType.spriteIdx}`).setDepth(30).setAlpha(0.85);
+        const entX = Phaser.Math.Between(13, 16) * TILE + TILE / 2;
+        const sprite = this.add.image(entX, MAP_Y + (ROWS - 1) * TILE, `visitor_${vType.spriteIdx}`).setDepth(30).setAlpha(0.85);
 
         const dest = this.randomOpenTile();
         this.visitors.push({
@@ -1008,7 +1104,7 @@ export default class GameScene extends Phaser.Scene {
                 const t1 = this.randomOpenTile(); v.tx = t1.x; v.ty = t1.y;
             } else if (v.phase === 'wandering') {
                 if (v.timer >= v.maxTime) {
-                    v.phase = 'leaving'; v.tx = 15 * TILE; v.ty = MAP_Y + (ROWS - 1) * TILE;
+                    v.phase = 'leaving'; v.tx = Phaser.Math.Between(13, 16) * TILE + TILE / 2; v.ty = MAP_Y + (ROWS - 1) * TILE;
                 } else {
                     const t2 = this.randomOpenTile(); v.tx = t2.x; v.ty = t2.y;
                 }
