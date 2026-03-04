@@ -161,6 +161,23 @@ export default class GameScene extends Phaser.Scene {
                 const ht = HABITATS[habType];
                 const ok = isMove ? this.canPlaceMove(habType, gx, gy) : this.canPlace(this.state.buildMode, gx, gy);
                 const c = ok ? 0x00ff00 : 0xff0000;
+
+                if (isMove && this._moveTracked) {
+                    const dx = (gx - this._moveOrigin.gx) * TILE;
+                    const dy = (gy - this._moveOrigin.gy) * TILE;
+                    for (const t of this._moveTracked) {
+                        if (t.isGfx) t.obj.setPosition(dx, dy);
+                        else { t.obj.x = t.origX + dx; t.obj.y = t.origY + dy; }
+                    }
+                } else if (!isMove && this._buildPreview) {
+                    const dx = gx * TILE, dy = gy * TILE;
+                    for (const t of this._buildPreview.tracked) {
+                        t.obj.setVisible(true);
+                        if (t.isGfx) t.obj.setPosition(dx, dy);
+                        else { t.obj.x = t.origX + dx; t.obj.y = t.origY + dy; }
+                    }
+                }
+
                 this.preview.clear().setVisible(true);
                 this.preview.fillStyle(c, 0.25);
                 this.preview.fillRect(gx * TILE, MAP_Y + gy * TILE, ht.w * TILE, ht.h * TILE);
@@ -276,6 +293,8 @@ export default class GameScene extends Phaser.Scene {
 
     /* ========== MOVE HABITAT ========== */
     // Zoom out, temporarily remove habitat from grid, enter a build-like preview mode.
+    // All habitat elements (gfx, decor, enrichments, animals) stay visible and follow the
+    // cursor as a live preview with a green/red overlay. Time and movement are paused.
     // Click to place at new location; ESC or right-click cancels and returns it to the original spot.
 
     enterMoveMode(hab) {
@@ -300,11 +319,27 @@ export default class GameScene extends Phaser.Scene {
                 for (let dy = 0; dy < ht.h; dy++)
                     for (let dx = 0; dx < ht.w; dx++)
                         this.grid[hab.gy + dy][hab.gx + dx] = null;
-                if (hab.gfx) hab.gfx.setVisible(false);
-                if (hab.decor) hab.decor.forEach(d => d.setVisible(false));
-                this.enrichmentSprites.filter(e => e.habitatId === hab.id).forEach(e => e.sprite.setVisible(false));
-                this.state.animals.filter(a => a.habitatId === hab.id).forEach(a => a.sprite.setVisible(false));
 
+                const moveEnrich = this.enrichmentSprites.filter(e => e.habitatId === hab.id);
+                const moveAnimals = this.state.animals.filter(a => a.habitatId === hab.id);
+
+                if (hab.gfx) hab.gfx.setDepth(55);
+                if (hab.decor) hab.decor.forEach(d => d.setDepth(56));
+                moveEnrich.forEach(e => e.sprite.setDepth(57));
+                moveAnimals.forEach(a => a.sprite.setDepth(58));
+
+                const tracked = [];
+                if (hab.gfx) tracked.push({ obj: hab.gfx, origX: 0, origY: 0, isGfx: true });
+                if (hab.decor) {
+                    for (const d of hab.decor)
+                        tracked.push({ obj: d, origX: d.x || 0, origY: d.y || 0, isGfx: d.type === 'Graphics' });
+                }
+                for (const e of moveEnrich)
+                    tracked.push({ obj: e.sprite, origX: e.sprite.x, origY: e.sprite.y, isGfx: false });
+                for (const a of moveAnimals)
+                    tracked.push({ obj: a.sprite, origX: a.sprite.x, origY: a.sprite.y, isGfx: false });
+
+                this._moveTracked = tracked;
                 this.state.buildMode = `_move_${hab.type}`;
                 this.game.events.emit('buildModeChanged', this.state.buildMode);
             }
@@ -330,25 +365,26 @@ export default class GameScene extends Phaser.Scene {
             for (let dx = 0; dx < ht.w; dx++)
                 this.grid[gy + dy][gx + dx] = hab.id;
 
+        if (hab.gfx) hab.gfx.setPosition(0, 0).setDepth(10);
         const px = gx * TILE, py = MAP_Y + gy * TILE, pw = ht.w * TILE, ph = ht.h * TILE;
-        if (hab.gfx) { hab.gfx.clear().setVisible(true); hab.gfx.fillStyle(ht.fill, 0.4); hab.gfx.fillRect(px, py, pw, ph); hab.gfx.lineStyle(2, ht.stroke, 0.9); hab.gfx.strokeRect(px + 1, py + 1, pw - 2, ph - 2); }
+        if (hab.gfx) { hab.gfx.clear(); hab.gfx.fillStyle(ht.fill, 0.4); hab.gfx.fillRect(px, py, pw, ph); hab.gfx.lineStyle(2, ht.stroke, 0.9); hab.gfx.strokeRect(px + 1, py + 1, pw - 2, ph - 2); }
         if (hab.decor) hab.decor.forEach(d => d.destroy());
         hab.decor = this.addHabitatDecor(hab.type, gx, gy, ht);
 
         this.enrichmentSprites.filter(e => e.habitatId === hab.id).forEach(e => {
             e.sprite.x = (gx + 0.3 + Math.random() * (ht.w - 0.6)) * TILE;
             e.sprite.y = MAP_Y + (gy + 0.4 + Math.random() * (ht.h - 0.8)) * TILE;
-            e.sprite.setVisible(true);
+            e.sprite.setDepth(11);
         });
         this.state.animals.filter(a => a.habitatId === hab.id).forEach(a => {
             const ax = (gx + 0.5 + Math.random() * (ht.w - 1)) * TILE;
             const ay = MAP_Y + (gy + 0.5 + Math.random() * (ht.h - 1)) * TILE;
             a.baseX = ax; a.baseY = ay; a.tx = ax; a.ty = ay;
             a.sprite.x = Math.round(ax); a.sprite.y = Math.round(ay);
-            a.sprite.setVisible(true);
+            a.sprite.setDepth(40);
         });
 
-        this._movingHabitat = null; this._moveOrigin = null;
+        this._movingHabitat = null; this._moveOrigin = null; this._moveTracked = null;
         this.state.buildMode = null; this.preview.setVisible(false);
         this.game.events.emit('buildModeChanged', null);
         this.sfx.build();
@@ -361,10 +397,47 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== BUILD ========== */
-    // Habitat placement with preview overlay, validation, and seasonal cost discounts.
+    // Habitat placement with live preview (gfx + decor at 70% opacity) that follows the cursor,
+    // overlaid with a green/red tint for placement validation. Seasonal cost discounts apply.
 
-    enterBuild(type) { this.state.buildMode = type; this.game.events.emit('buildModeChanged', type); }
-    exitBuild() { this.state.buildMode = null; this.preview.setVisible(false); this.game.events.emit('buildModeChanged', null); }
+    enterBuild(type) {
+        this.state.buildMode = type;
+        this._createBuildPreview(type);
+        this.game.events.emit('buildModeChanged', type);
+    }
+
+    exitBuild() {
+        this.state.buildMode = null;
+        this.preview.setVisible(false);
+        this._destroyBuildPreview();
+        this.game.events.emit('buildModeChanged', null);
+    }
+
+    _createBuildPreview(type) {
+        this._destroyBuildPreview();
+        const ht = HABITATS[type];
+        const gfx = this.add.graphics().setDepth(55).setAlpha(0.7);
+        gfx.fillStyle(ht.fill, 0.4); gfx.fillRect(0, MAP_Y, ht.w * TILE, ht.h * TILE);
+        gfx.lineStyle(2, ht.stroke, 0.9); gfx.strokeRect(1, MAP_Y + 1, ht.w * TILE - 2, ht.h * TILE - 2);
+
+        const decor = this.addHabitatDecor(type, 0, 0, ht);
+        decor.forEach(d => { d.setDepth(56); d.setAlpha(0.7); });
+
+        const tracked = [{ obj: gfx, origX: 0, origY: 0, isGfx: true }];
+        for (const d of decor)
+            tracked.push({ obj: d, origX: d.x || 0, origY: d.y || 0, isGfx: d.type === 'Graphics' });
+
+        this._buildPreview = { gfx, decor, tracked };
+        gfx.setVisible(false);
+        decor.forEach(d => d.setVisible(false));
+    }
+
+    _destroyBuildPreview() {
+        if (!this._buildPreview) return;
+        this._buildPreview.gfx.destroy();
+        this._buildPreview.decor.forEach(d => d.destroy());
+        this._buildPreview = null;
+    }
 
     getHabitatCost(type) {
         let cost = HABITATS[type].cost;
@@ -1336,7 +1409,7 @@ export default class GameScene extends Phaser.Scene {
     // If zoomed into a habitat, panels stay open; accepting re-emits showHabitatInfo to refresh.
 
     triggerRescue(forceSpecies) {
-        if (this.state.rescuePaused) return;
+        if (this.state.rescuePaused || this.state.buildMode) return;
         const sp = forceSpecies ? SPECIES[forceSpecies] : this.pickSpecies();
         const name = Phaser.Utils.Array.GetRandom(sp.names);
         const hab = this.findCompatibleHabitat(sp);
@@ -1562,7 +1635,7 @@ export default class GameScene extends Phaser.Scene {
     // Skipped entirely while rescuePaused is set (rescue popup freezes all simulation).
 
     update(time, delta) {
-        if (this.state.rescuePaused) return;
+        if (this.state.rescuePaused || this._movingHabitat) return;
         this.updateTime(delta);
         this.updateAnimals(delta, time);
         this.updateVisitors(delta);
