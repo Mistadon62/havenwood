@@ -1,7 +1,7 @@
 /**
  * GameScene - Core gameplay scene for Havenwood, a Phaser 3 animal sanctuary management game.
  * Handles map, building, habitat zoom view, animals, visitors, staff, missions, research, time,
- * seasons, rescue events (with time-pause), and save/load.
+ * seasons, rescue events (with time-pause), animal relocation, and save/load.
  */
 import { TILE, COLS, ROWS, W, H, MAP_Y, TIME_SCALE, START_COINS, HABITATS, SPECIES, RARITY_WEIGHT, RESCUE_MSG, CLR,
     SEASONS, SEASON_ORDER, SEASON_LENGTH, SEASON_CYCLE, UPGRADES, STAFF_TYPES,
@@ -187,11 +187,11 @@ export default class GameScene extends Phaser.Scene {
                 return;
             }
             this.preview.setVisible(false);
-            if (this._rescueSelectEvent) {
+            if (this._habSelectMode) {
                 const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
                 if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
                     const cell = this.grid[gy]?.[gx];
-                    if (cell && typeof cell === 'string' && cell.startsWith('hab_') && this._rescueCompatIds?.has(cell)) {
+                    if (cell && typeof cell === 'string' && cell.startsWith('hab_') && this._habSelectMode.compatIds?.has(cell)) {
                         const hab = this.state.habitats.find(h => h.id === cell);
                         if (hab) {
                             const ht = HABITATS[hab.type];
@@ -230,26 +230,22 @@ export default class GameScene extends Phaser.Scene {
         });
 
         this.input.on('pointerdown', ptr => {
-            if (this._rescueSelectEvent) {
-                const hud = this.scene.get('HUDScene');
+            if (this._habSelectMode) {
                 if (ptr.rightButtonDown()) {
-                    const ev = this._rescueSelectEvent;
-                    this.exitRescueSelect();
-                    if (hud) { hud._pendingRescue = null; hud.showRescue(ev); }
+                    const cancel = this._habSelectMode.onCancel;
+                    this._exitHabitatSelect();
+                    if (cancel) cancel();
                     return;
                 }
                 const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
                 if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
                     const cell = this.grid[gy]?.[gx];
-                    if (cell && typeof cell === 'string' && cell.startsWith('hab_') && this._rescueCompatIds?.has(cell)) {
+                    if (cell && typeof cell === 'string' && cell.startsWith('hab_') && this._habSelectMode.compatIds?.has(cell)) {
                         const hab = this.state.habitats.find(h => h.id === cell);
                         if (hab) {
-                            const ev = this._rescueSelectEvent;
-                            this.exitRescueSelect();
-                            if (hud) hud._pendingRescue = null;
-                            this.state.rescuePaused = false;
-                            if (this.rescueTimer) this.rescueTimer.paused = false;
-                            this.acceptRescueInto(ev, hab);
+                            const select = this._habSelectMode.onSelect;
+                            this._exitHabitatSelect();
+                            if (select) select(hab);
                         }
                     }
                 }
@@ -281,11 +277,10 @@ export default class GameScene extends Phaser.Scene {
         });
 
         this.input.keyboard.on('keydown-ESC', () => {
-            if (this._rescueSelectEvent) {
-                const ev = this._rescueSelectEvent;
-                this.exitRescueSelect();
-                const hud = this.scene.get('HUDScene');
-                if (hud) { hud._pendingRescue = null; hud.showRescue(ev); }
+            if (this._habSelectMode) {
+                const cancel = this._habSelectMode.onCancel;
+                this._exitHabitatSelect();
+                if (cancel) cancel();
                 return;
             }
             if (this._movingHabitat) { this.cancelMove(); return; }
@@ -1528,7 +1523,7 @@ export default class GameScene extends Phaser.Scene {
     // If zoomed into a habitat, panels stay open; accepting re-emits showHabitatInfo to refresh.
 
     triggerRescue(forceSpecies) {
-        if (this.state.rescuePaused || this.state.buildMode) return;
+        if (this.state.rescuePaused || this.state.buildMode || this._habSelectMode) return;
         const sp = forceSpecies ? SPECIES[forceSpecies] : this.pickSpecies();
         const name = Phaser.Utils.Array.GetRandom(sp.names);
         const hab = this.findCompatibleHabitat(sp);
@@ -1589,38 +1584,93 @@ export default class GameScene extends Phaser.Scene {
         }
     }
 
-    /* ========== RESCUE HABITAT SELECTION ========== */
-    // When multiple compatible habitats exist, the player picks one from the zoomed-out view.
-    // Compatible habitats get a pulsing highlight; clicking one places the animal there.
+    /* ========== HABITAT SELECTION MODE ========== */
+    // Generic mode for picking a highlighted habitat from the zoomed-out sanctuary view.
+    // Used by rescue (multiple compatible habitats) and relocate (move animal to another habitat).
+    // Compatible habitats get a green highlight; clicking one invokes onSelect, ESC/right-click invokes onCancel.
 
-    enterRescueSelect(ev) {
-        this._rescueSelectEvent = ev;
-        const sp = SPECIES[ev.speciesId];
-        this._rescueCompatIds = new Set(this.findAllCompatibleHabitats(sp).map(h => h.id));
+    _enterHabitatSelect(compatIds, labelText, onSelect, onCancel) {
+        this._habSelectMode = { compatIds, onSelect, onCancel };
         this._hideNPCs();
 
-        this._rescueHighlights = this.add.graphics().setDepth(61);
+        this._selectHighlights = this.add.graphics().setDepth(61);
         for (const hab of this.state.habitats) {
-            if (!this._rescueCompatIds.has(hab.id)) continue;
+            if (!compatIds.has(hab.id)) continue;
             const ht = HABITATS[hab.type];
-            this._rescueHighlights.fillStyle(0x00ff88, 0.15);
-            this._rescueHighlights.fillRect(hab.gx * TILE, MAP_Y + hab.gy * TILE, ht.w * TILE, ht.h * TILE);
-            this._rescueHighlights.lineStyle(2, 0x00ff88, 0.7);
-            this._rescueHighlights.strokeRect(hab.gx * TILE, MAP_Y + hab.gy * TILE, ht.w * TILE, ht.h * TILE);
+            this._selectHighlights.fillStyle(0x00ff88, 0.15);
+            this._selectHighlights.fillRect(hab.gx * TILE, MAP_Y + hab.gy * TILE, ht.w * TILE, ht.h * TILE);
+            this._selectHighlights.lineStyle(2, 0x00ff88, 0.7);
+            this._selectHighlights.strokeRect(hab.gx * TILE, MAP_Y + hab.gy * TILE, ht.w * TILE, ht.h * TILE);
         }
 
-        this._rescueLabel = this.add.text(W / 2, MAP_Y - 6, `Click a habitat to place ${ev.name}`, {
+        this._selectLabel = this.add.text(W / 2, MAP_Y - 6, labelText, {
             fontFamily: '"Press Start 2P"', fontSize: '9px', color: '#88FFAA', align: 'center'
         }).setOrigin(0.5, 1).setDepth(62);
     }
 
-    exitRescueSelect() {
-        if (this._rescueHighlights) { this._rescueHighlights.destroy(); this._rescueHighlights = null; }
-        if (this._rescueLabel) { this._rescueLabel.destroy(); this._rescueLabel = null; }
-        this._rescueSelectEvent = null;
-        this._rescueCompatIds = null;
+    _exitHabitatSelect() {
+        if (this._selectHighlights) { this._selectHighlights.destroy(); this._selectHighlights = null; }
+        if (this._selectLabel) { this._selectLabel.destroy(); this._selectLabel = null; }
+        this._habSelectMode = null;
         this.hoverOutline.setVisible(false);
         this._showNPCs();
+    }
+
+    enterRescueSelect(ev) {
+        const sp = SPECIES[ev.speciesId];
+        const compatIds = new Set(this.findAllCompatibleHabitats(sp).map(h => h.id));
+        const hud = this.scene.get('HUDScene');
+        this._enterHabitatSelect(compatIds, `Click a habitat to place ${ev.name}`, hab => {
+            if (hud) hud._pendingRescue = null;
+            this.state.rescuePaused = false;
+            if (this.rescueTimer) this.rescueTimer.paused = false;
+            this.acceptRescueInto(ev, hab);
+        }, () => {
+            if (hud) { hud._pendingRescue = null; hud.showRescue(ev); }
+        });
+    }
+
+    exitRescueSelect() { this._exitHabitatSelect(); }
+
+    enterRelocateSelect(animal) {
+        const sp = SPECIES[animal.speciesId];
+        const compatIds = new Set(
+            this.findAllCompatibleHabitats(sp)
+                .filter(h => h.id !== animal.habitatId)
+                .map(h => h.id)
+        );
+        this._enterHabitatSelect(compatIds, `Click a habitat to relocate ${animal.name}`, hab => {
+            this.relocateAnimal(animal, hab);
+        }, () => {
+            const srcHab = this.state.habitats.find(h => h.id === animal.habitatId);
+            if (srcHab) {
+                this.zoomToHabitat(srcHab);
+                this.game.events.emit('showHabitatInfo', srcHab);
+            }
+        });
+    }
+
+    relocateAnimal(animal, targetHab) {
+        const srcHab = this.state.habitats.find(h => h.id === animal.habitatId);
+        if (srcHab) {
+            srcHab.animals = srcHab.animals.filter(id => id !== animal.id);
+        }
+
+        animal.habitatId = targetHab.id;
+        targetHab.animals.push(animal.id);
+
+        const tx = (targetHab.gx + 0.5 + Math.random() * (targetHab.w - 1)) * TILE;
+        const ty = MAP_Y + (targetHab.gy + 0.5 + Math.random() * (targetHab.h - 1)) * TILE;
+        animal.baseX = tx; animal.baseY = ty;
+        animal.tx = tx; animal.ty = ty;
+        animal.sprite.x = Math.round(tx);
+        animal.sprite.y = Math.round(ty);
+
+        this.game.events.emit('notification', `${animal.name} relocated!`);
+        this.sfx.click();
+
+        this.zoomToHabitat(targetHab);
+        this.game.events.emit('showHabitatInfo', targetHab);
     }
 
     /* ========== ACHIEVEMENTS ========== */
@@ -1797,7 +1847,7 @@ export default class GameScene extends Phaser.Scene {
     // Skipped entirely while rescuePaused is set (rescue popup freezes all simulation).
 
     update(time, delta) {
-        if (this.state.rescuePaused || this._movingHabitat) return;
+        if (this.state.rescuePaused || this._movingHabitat || this._habSelectMode) return;
         this.updateTime(delta);
         this.updateAnimals(delta, time);
         this.updateVisitors(delta);

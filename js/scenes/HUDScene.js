@@ -527,6 +527,17 @@ export default class HUDScene extends Phaser.Scene {
             yy += bondTxt.height + 4;
         }
 
+        const relocateHabs = this.gs.findAllCompatibleHabitats(sp).filter(h => h.id !== animal.habitatId);
+        if (relocateHabs.length > 0) {
+            this.panelBtn(ct, 8, yy, 120, 'Relocate', 0x6688BB, () => {
+                ct.destroy(); this.animalPanel = null; this._viewedAnimal = null;
+                this.gs.clearSelectedAnimal();
+                this.gs.zoomOut();
+                this.time.delayedCall(400, () => this.gs.enterRelocateSelect(animal));
+            });
+            yy += 30;
+        }
+
         yy += 6;
         ct.add(this.txt(pw / 2, yy, `Appeal: ${sp.appeal}`, 6, '#AAAAAA').setOrigin(0.5, 0));
         yy += 18;

@@ -114,7 +114,7 @@ The habitat info panel includes a "Move Habitat" button. Clicking it zooms back 
 - **Bonds**: friendships with habitat-mates that form over time
 - **Illness**: random chance of getting sick; can be cured by vets or manual healing
 
-Animals wander within their habitat, bob up and down, sleep at night (with "zzz" particles), and display status icons when hungry or sick. Animals are only clickable from the zoomed-in habitat view. The animal info panel auto-refreshes every 2 seconds and immediately on illness changes so stats and actions stay current.
+Animals wander within their habitat, bob up and down, sleep at night (with "zzz" particles), and display status icons when hungry or sick. Animals are only clickable from the zoomed-in habitat view. The animal info panel auto-refreshes every 2 seconds and immediately on illness changes so stats and actions stay current. If another compatible habitat with room exists, a "Relocate" button appears in the animal panel — clicking it zooms out and lets the player pick a destination habitat from the highlighted options.
 
 ### Rescue Events
 
