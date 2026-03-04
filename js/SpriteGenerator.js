@@ -603,21 +603,34 @@ export class SpriteGenerator {
             g.fillCircle(5, 4, 2);
         });
         tex(scene, 'icon_food', 16, 16, g => {
-            g.fillStyle(0xDEB887);
-            g.fillTriangle(8, 2, 2, 12, 14, 12);
-            g.fillStyle(0xC8A070);
-            g.fillTriangle(8, 4, 4, 11, 12, 11);
-            g.fillStyle(0x8B4513);
-            g.fillRect(7, 12, 2, 3);
+            // Fork (left) and knife (right) in hunger-bar orange
+            g.fillStyle(0xFF9944);
+            // Fork: 3 tines + handle
+            g.fillRect(2, 2, 1, 5);
+            g.fillRect(4, 2, 1, 5);
+            g.fillRect(6, 2, 1, 5);
+            g.fillRect(2, 7, 5, 1);
+            g.fillRect(4, 8, 1, 6);
+            // Knife: blade + handle
+            g.fillStyle(0xDD7722);
+            g.fillRect(10, 2, 3, 1);
+            g.fillRect(9, 3, 4, 5);
+            g.fillStyle(0xFF9944);
+            g.fillRect(10, 8, 2, 6);
         });
 
         tex(scene, 'icon_research', 16, 16, g => {
-            g.fillStyle(0x44DDAA);
-            g.fillRect(6, 2, 4, 8);
-            g.fillRect(2, 4, 12, 4);
+            // Book icon
             g.fillStyle(0x33BB88);
-            g.fillCircle(8, 12, 3);
-            g.fillRect(7, 9, 2, 3);
+            g.fillRoundedRect(2, 2, 12, 12, 1);
+            g.fillStyle(0x44DDAA);
+            g.fillRect(4, 3, 9, 10);
+            g.fillStyle(0x33BB88);
+            g.fillRect(4, 3, 2, 10);
+            g.fillStyle(0x228866);
+            g.fillRect(7, 5, 5, 1);
+            g.fillRect(7, 7, 4, 1);
+            g.fillRect(7, 9, 5, 1);
         });
 
         tex(scene, 'icon_tortoise', 14, 14, g => {

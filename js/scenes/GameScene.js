@@ -1,9 +1,10 @@
 /**
  * GameScene - Core gameplay scene for Havenwood, a Phaser 3 animal sanctuary management game.
  * Handles map, building, habitat zoom view (with auto-select and animal cycling), animals,
- * visitors, staff, automatic breeding, missions, research, time, seasons, rescue events
- * (with time-pause), settings/pause menu, animal relocation, food system, bond XP/levels,
- * and save/load.
+ * visitors (with reputation speech bubbles), staff, automatic breeding, missions, research,
+ * time, seasons, rescue events (with time-pause), settings/pause menu, animal relocation,
+ * food system, bond XP/levels, friendship happiness buffs, loneliness debuffs, reputation
+ * gain/loss tied to visitor presence and animal welfare, and save/load.
  */
 import { TILE, COLS, ROWS, W, H, MAP_Y, TIME_SCALE, START_COINS, HABITATS, SPECIES, RARITY_WEIGHT, RESCUE_MSG, CLR,
     SEASONS, SEASON_ORDER, SEASON_LENGTH, SEASON_CYCLE, UPGRADES, STAFF_TYPES,
@@ -79,6 +80,7 @@ export default class GameScene extends Phaser.Scene {
         this.time.addEvent({ delay: 8000, callback: () => this.updateBonds(), loop: true });
         this.time.addEvent({ delay: 15000, callback: () => this.checkAutoBreed(), loop: true });
         this.time.addEvent({ delay: 5000, callback: () => this.checkAchievements(), loop: true });
+        this.time.addEvent({ delay: 15000, callback: () => this.checkReputation(), loop: true });
 
         this.game.events.on('rescueAccepted', this.acceptRescue, this);
     }
@@ -760,9 +762,10 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== ANIMALS ========== */
-    // Spawn, wander, bob, hunger/happiness decay, traits, illness, player bond, friendships, death.
+    // Spawn, wander, bob, hunger/happiness decay, traits, illness, bond XP/levels, friendships, death.
     // Health stays at 100 unless ill (drains during illness, recovers after healing).
     // Neglect: 0 hunger or happiness for >1 game-hour causes health drain. Health 0 = death.
+    // Friends in the same habitat grant a happiness buff; relocating away triggers a temporary loneliness debuff.
     // Animals are only clickable while zoomed into their habitat (viewingHabitat guard).
     // Hovering over an animal while zoomed in adds a preFX glow that follows the sprite shape.
     // selectAnimal() centralizes selection: clears previous glow, applies new glow, emits showAnimalInfo.
@@ -802,6 +805,7 @@ export default class GameScene extends Phaser.Scene {
             bondLevel: opts.bondLevel || 0,
             bondXP: opts.bondXP || 0,
             neglectTimer: opts.neglectTimer || 0,
+            lonelyTimer: opts.lonelyTimer || 0,
             isBaby: opts.isBaby || false,
             growthTimer: opts.growthTimer || 0,
             breedCooldown: opts.breedCooldown || 0,
@@ -856,9 +860,21 @@ export default class GameScene extends Phaser.Scene {
             a.happiness = Math.max(0, Math.min(100, a.happiness - happyDecay * sDelta / 1000 + enrichHappy * enrichMod * sDelta / 1000));
             if (a.health < 50) a.happiness = Math.max(0, a.happiness - 0.2 * sDelta / 1000);
 
-            // Bond happiness boost
+            // Bond happiness boost: only friends in the same habitat count
             if (a.bonds.length > 0) {
-                a.happiness = Math.min(100, a.happiness + 0.005 * a.bonds.length * sDelta / 1000);
+                const nearbyFriends = a.bonds.filter(bid => {
+                    const f = this.state.animals.find(x => x.id === bid);
+                    return f && f.habitatId === a.habitatId;
+                }).length;
+                if (nearbyFriends > 0) {
+                    a.happiness = Math.min(100, a.happiness + 0.008 * nearbyFriends * sDelta / 1000);
+                }
+            }
+
+            // Loneliness debuff: temporary sadness after being separated from friends
+            if (a.lonelyTimer > 0) {
+                a.happiness = Math.max(0, a.happiness - 0.04 * sDelta / 1000);
+                a.lonelyTimer = Math.max(0, a.lonelyTimer - sDelta);
             }
 
             // Natural bond XP growth (slow passive gain while well cared for)
@@ -1336,7 +1352,7 @@ export default class GameScene extends Phaser.Scene {
         if (this.state.time >= 1440) {
             this.state.time -= 1440;
             this.state.day++;
-            this.state.rep += 2;
+            if (this.state.stats.visitors > 0) this.state.rep += 2;
             this.earnResearchPoints(1);
             this.paySalaries();
             this.updateSeason();
@@ -1371,6 +1387,8 @@ export default class GameScene extends Phaser.Scene {
 
     /* ========== VISITORS ========== */
     // Enter (flat admission fee), wander open tiles avoiding habitats, leave (satisfaction-based donation).
+    // On exit, visitors grant +1 reputation only if no animals are mistreated; a heart speech bubble appears.
+    // Reputation also drains periodically (checkReputation) when visitors witness poor animal welfare.
 
     pickVisitorType() {
         const vipThreshold = this.hasResearch('vip_easier') ? 50 : null;
@@ -1508,7 +1526,26 @@ export default class GameScene extends Phaser.Scene {
             this.tweens.add({ targets: txt, y: txt.y - 20, alpha: 0, duration: 800, onComplete: () => txt.destroy() });
         }
         this.state.stats.visitors++;
-        this.state.rep++;
+
+        const mistreated = this.state.animals.some(a => a.hunger < 20 || a.happiness < 20 || a.health < 40 || a.illness);
+        if (!mistreated) {
+            this.state.rep++;
+            this.showVisitorBubble(v.sprite.x, v.sprite.y);
+        }
+    }
+
+    showVisitorBubble(x, y) {
+        const bx = x + 8, by = y - 20;
+        const bubble = this.add.graphics().setDepth(56);
+        bubble.fillStyle(0xFFFFFF, 0.9);
+        bubble.fillRoundedRect(bx - 10, by - 10, 20, 18, 4);
+        bubble.fillStyle(0xFFFFFF, 0.9);
+        bubble.fillTriangle(bx - 3, by + 8, bx + 3, by + 8, bx, by + 13);
+        const heart = this.add.image(bx, by - 1, 'particle_heart').setDepth(57).setScale(0.8);
+        this.tweens.add({
+            targets: [bubble, heart], y: '-=12', alpha: 0, duration: 1000, delay: 400,
+            ease: 'Quad.easeIn', onComplete: () => { bubble.destroy(); heart.destroy(); }
+        });
     }
 
     /* ========== STAFF ========== */
@@ -1615,6 +1652,20 @@ export default class GameScene extends Phaser.Scene {
             if (total > 0 && this.state.coins >= total) this.spendCoins(total);
             this.game.events.emit('staffUpdate', this.state.staff);
         }
+    }
+
+    checkReputation() {
+        if (this.state.animals.length === 0 || this.visitors.length === 0) return;
+        let mistreated = 0;
+        for (const a of this.state.animals) {
+            if (a.hunger < 20) mistreated++;
+            if (a.happiness < 20) mistreated++;
+            if (a.health < 40) mistreated++;
+            if (a.illness) mistreated++;
+        }
+        if (mistreated === 0) return;
+        const loss = Math.min(mistreated, 3);
+        this.state.rep = Math.max(0, this.state.rep - loss);
     }
 
     /* ========== UPGRADES ========== */
@@ -1817,11 +1868,20 @@ export default class GameScene extends Phaser.Scene {
 
     relocateAnimal(animal, targetHab) {
         const srcHab = this.state.habitats.find(h => h.id === animal.habitatId);
+        const leftFriends = animal.bonds.filter(bid => {
+            const f = this.state.animals.find(x => x.id === bid);
+            return f && f.habitatId === animal.habitatId;
+        }).length;
         if (srcHab) {
             srcHab.animals = srcHab.animals.filter(id => id !== animal.id);
         }
 
         animal.habitatId = targetHab.id;
+
+        if (leftFriends > 0) {
+            animal.lonelyTimer = 60000 * leftFriends;
+            this.game.events.emit('notification', `${animal.name} misses their friends...`);
+        }
         targetHab.animals.push(animal.id);
 
         const tx = (targetHab.gx + 0.5 + Math.random() * (targetHab.w - 1)) * TILE;
@@ -1917,7 +1977,7 @@ export default class GameScene extends Phaser.Scene {
                 hunger: a.hunger, happiness: a.happiness, health: a.health,
                 trait: a.trait, illness: a.illness, bonds: a.bonds,
                 bondLevel: a.bondLevel, bondXP: a.bondXP,
-                neglectTimer: a.neglectTimer,
+                neglectTimer: a.neglectTimer, lonelyTimer: a.lonelyTimer,
                 isBaby: a.isBaby, growthTimer: a.growthTimer,
                 breedCooldown: a.breedCooldown, isPregnant: a.isPregnant,
                 pregnancyTimer: a.pregnancyTimer, mateVariantIdx: a.mateVariantIdx,
@@ -1978,7 +2038,7 @@ export default class GameScene extends Phaser.Scene {
                     hunger: a.hunger, happiness: a.happiness, health: a.health,
                     trait: a.trait, illness: a.illness, bonds: a.bonds || [],
                     bondLevel: a.bondLevel || 0, bondXP: a.bondXP || 0,
-                    neglectTimer: a.neglectTimer || 0,
+                    neglectTimer: a.neglectTimer || 0, lonelyTimer: a.lonelyTimer || 0,
                     isBaby: a.isBaby, growthTimer: a.growthTimer,
                     breedCooldown: a.breedCooldown || 0, isPregnant: a.isPregnant,
                     pregnancyTimer: a.pregnancyTimer || 0, mateVariantIdx: a.mateVariantIdx,

@@ -44,9 +44,9 @@ havenwood/
 | File | Role |
 |---|---|
 | `GameData.js` | Central data registry. Every species, habitat, upgrade, research node, achievement, etc. is defined here. Species include `foodCost` (food consumed per feed), `bondTreatsBase` (bond XP per treat), and breed-only variants with parent recipes. Volunteers are free with a max count of 1. Change game balance by editing this file. |
-| `GameScene.js` | The game simulation. Manages the grid map, animal behavior, visitors, staff, time/seasons, automatic breeding, illness, missions, research, economy, achievements, and save/load. |
+| `GameScene.js` | The game simulation. Manages the grid map, animal behavior (bond XP/levels, friendship buffs, loneliness debuffs), visitors (reputation speech bubbles, welfare-gated rep gain/loss), staff, food system, time/seasons, automatic breeding, illness, missions, research, economy, achievements, and save/load. |
 | `HUDScene.js` | All UI. Runs as a parallel Phaser scene on top of GameScene. Toolbar with Build popup menu for habitat placement, vertically centered management panels (Rescue, Upgrades, Staff, Research, Journal — all closeable with ESC), settings/pause menu, and notifications. Exposes `hasOpenPanel()` and `closeAllPanels()` so GameScene can suppress world clicks and close panels via keyboard. Communicates via `this.game.events` (Phaser's global event emitter). |
-| `SpriteGenerator.js` | Draws every texture at boot using Phaser's Graphics API — animals, terrain, UI icons, particles, enrichment items, staff, visitors. Zero external image files. |
+| `SpriteGenerator.js` | Draws every texture at boot using Phaser's Graphics API — animals, terrain, UI icons (fork+knife for food, book for research), particles, enrichment items, staff, visitors. Zero external image files. |
 | `SoundManager.js` | Generates all sound effects procedurally using the Web Audio API — oscillators and filtered noise. Zero audio files. |
 
 ---
@@ -114,7 +114,7 @@ The habitat info panel includes a "Move Habitat" button. Clicking it zooms back 
 - **Neglect & Death**: if hunger or happiness reaches 0 for more than 1 game-hour, the animal's health begins to drain. If health drops to 0, the animal dies and is permanently removed.
 - **Trait**: randomly assigned personality (playful, shy, grumpy, social, curious, lazy) that modifies stat rates
 - **Player Bond**: a leveling relationship with the player. Bond XP increases by giving treats (costs 20g, grants XP based on species' `bondTreatsBase`). Bond also grows passively over time while the animal is well cared for. Each level requires more XP than the last (level 1→2 = 50 XP, 2→3 = 75 XP, etc.). Shown in the animal panel as a level + XP progress bar with heart indicators.
-- **Friendships**: bonds with habitat-mates that form naturally over time
+- **Friendships**: bonds with habitat-mates that form naturally over time. Friends in the same habitat grant a passive happiness boost. Relocating an animal away from friends triggers a temporary loneliness debuff that fades over time.
 - **Illness**: random chance of getting sick; can be cured by vets or manual healing
 
 Animals wander within their habitat, bob up and down, sleep at night (with "zzz" particles), and display status icons when hungry, unhappy, low health, or sick. Animals are only clickable from the zoomed-in habitat view. The animal info panel auto-refreshes every 2 seconds and immediately on illness changes so stats and actions stay current. Navigation arrows below the panel let the player cycle through all animals in the habitat. If another compatible habitat with room exists, a "Relocate" button appears in the animal panel — clicking it zooms out and lets the player pick a destination habitat from the highlighted options.
@@ -125,7 +125,7 @@ The sanctuary starts with 1000 food. Each time you feed an animal, it consumes f
 
 ### Rescue Events
 
-Random rescue events pop up periodically (every ~50 seconds, 30% faster with Conservation upgrade). A grey tint dims the game and time pauses while the popup is shown. The player can accept (if a compatible habitat has room) or pass. Rescue events do not interrupt the current view — if zoomed into a habitat, the habitat and animal panels remain open behind the popup. If the rescued animal enters the currently viewed habitat, the panel refreshes to show the updated count. Rescue events are suppressed during build mode and habitat move mode to avoid interrupting placement.
+Random rescue events pop up periodically (every ~50 seconds, 30% faster with Conservation upgrade). A grey tint dims the game and time pauses while the popup is shown. The player can accept (if a compatible habitat has room) or pass. If no compatible habitat exists or all are full, the popup shows a "Build [Type] (Xg)" button naming the specific habitat needed and its cost. Rescue events do not interrupt the current view — if zoomed into a habitat, the habitat and animal panels remain open behind the popup. If the rescued animal enters the currently viewed habitat, the panel refreshes to show the updated count. Rescue events are suppressed during build mode and habitat move mode to avoid interrupting placement.
 
 ### Breeding
 
@@ -141,6 +141,17 @@ Visitors spawn during business hours (8 AM - 6 PM), walk in through a randomized
 - **Donation** (on exit): satisfaction-based tip calculated from average animal happiness, total animal count, enrichment happiness bonuses, season bonuses, gift shop upgrade, and tour guide staff multipliers
 
 Visitor types: Family, Tourist, Photographer, School, VIP — each with different income multipliers and stay durations.
+
+### Reputation
+
+Reputation unlocks VIP visitors (at 100 rep, or 50 with `vip_easier` research) and reflects the sanctuary's public image. It is tied to visitor presence:
+
+- **+1 per visitor leaving**: only if no animals are currently mistreated (hungry <20, unhappy <20, low health <40, or sick). A heart speech bubble appears above the visitor.
+- **+2 per day**: only if at least one visitor has been served.
+- **+10 per rescue**: always granted.
+- **Reputation drain**: every 15 seconds, if visitors are present and any animals are suffering, reputation is docked (up to -3 per check). No notification is shown — the player must watch their rep counter.
+
+Reputation cannot drop below 0.
 
 ### Staff
 

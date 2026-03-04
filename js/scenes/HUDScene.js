@@ -62,14 +62,14 @@ export default class HUDScene extends Phaser.Scene {
         this.hareBtn.on('pointerdown', () => this._setTimeSpeed('fast'));
         this.timeTxt.on('pointerdown', () => this._setTimeSpeed('normal'));
 
-        this.add.image(W - 370, midY, 'icon_research').setScale(1.2);
-        this.rpTxt = this.txt(W - 358, midY, '0', 8, '#44DDAA').setOrigin(0, 0.5);
-        this.repLabel = this.txt(W - 318, midY - 2, '\u2605', 9, CLR.gold).setOrigin(0, 0.5);
-        this.repTxt = this.txt(W - 303, midY, '0', 8, CLR.gold).setOrigin(0, 0.5);
-        this.add.image(W - 250, midY, 'icon_food').setScale(1.3);
-        this.foodTxt = this.txt(W - 236, midY, '1000', 8, '#DEB887').setOrigin(0, 0.5);
-        this.add.image(W - 180, midY, 'icon_coin').setScale(1.3);
-        this.coinTxt = this.txt(W - 166, midY, '', 8, CLR.gold).setOrigin(0, 0.5);
+        this.add.image(W - 340, midY, 'icon_research').setScale(1.2);
+        this.rpTxt = this.txt(W - 328, midY, '0', 9, '#44DDAA').setOrigin(0, 0.5);
+        this.repLabel = this.txt(W - 288, midY - 2, '\u2605', 10, CLR.gold).setOrigin(0, 0.5);
+        this.repTxt = this.txt(W - 272, midY, '0', 9, CLR.gold).setOrigin(0, 0.5);
+        this.add.image(W - 210, midY, 'icon_food').setScale(1.3);
+        this.foodTxt = this.txt(W - 196, midY, '1000', 9, '#FF9944').setOrigin(0, 0.5);
+        this.add.image(W - 120, midY, 'icon_coin').setScale(1.3);
+        this.coinTxt = this.txt(W - 106, midY, '', 9, CLR.gold).setOrigin(0, 0.5);
 
         const settingsBtn = this.txt(W - 28, midY - 3, '\u2699', 18, '#AAAAAA').setOrigin(0.5, 0.5).setInteractive({ useHandCursor: true });
         settingsBtn.on('pointerdown', () => this.toggleSettingsMenu());
@@ -422,7 +422,8 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== RESCUE POPUP ========== */
 
-    // Modal with rescued animal details; Accept/Pass buttons. Pauses game time (rescuePaused),
+    // Modal with rescued animal details. Buttons adapt: Rescue!/Pass if compatible habitats exist,
+    // or "Build [Type] (Xg)"/Pass if none available. Pauses game time (rescuePaused),
     // dims the screen with a grey tint, and preserves any open habitat/animal panels.
     showRescue(ev) {
         if (this.rescuePopup) this.rescuePopup.destroy();
@@ -491,14 +492,15 @@ export default class HUDScene extends Phaser.Scene {
             const compatType = Object.values(HABITATS).find(h => h.types.includes(sp.type));
             const buildCost = compatType ? this.gs.getHabitatCost(compatType.id) : 0;
             const canBuild = compatType && this.gs.state.coins >= buildCost;
-            const totalW = 2 * btnW + btnGap;
+            const bldW = 160, passW = 80;
+            const totalW = bldW + btnGap + passW;
             const btnLeft = -totalW / 2;
 
             const bldBg = this.add.graphics();
-            bldBg.fillStyle(canBuild ? 0x1a6090 : 0x555555, 0.85); bldBg.fillRoundedRect(btnLeft, 88, btnW, 30, 4);
+            bldBg.fillStyle(canBuild ? 0x1a6090 : 0x555555, 0.85); bldBg.fillRoundedRect(btnLeft, 88, bldW, 30, 4);
             ct.add(bldBg);
-            const bldLabel = compatType ? `Build (${buildCost}g)` : 'No Habitat';
-            const bldBtn = this.txt(btnLeft + btnW / 2, 103, bldLabel, 7).setOrigin(0.5);
+            const bldLabel = compatType ? `Build ${compatType.name} (${buildCost}g)` : 'No Habitat';
+            const bldBtn = this.txt(btnLeft + bldW / 2, 103, bldLabel, 7).setOrigin(0.5);
             if (canBuild) {
                 bldBtn.setInteractive({ useHandCursor: true });
                 bldBtn.on('pointerdown', () => {
@@ -514,9 +516,9 @@ export default class HUDScene extends Phaser.Scene {
             ct.add(bldBtn);
 
             const decBg = this.add.graphics();
-            decBg.fillStyle(0x8B2222, 0.85); decBg.fillRoundedRect(btnLeft + btnW + btnGap, 88, btnW, 30, 4);
+            decBg.fillStyle(0x8B2222, 0.85); decBg.fillRoundedRect(btnLeft + bldW + btnGap, 88, passW, 30, 4);
             ct.add(decBg);
-            const decBtn = this.txt(btnLeft + btnW + btnGap + btnW / 2, 103, 'Pass', 8).setOrigin(0.5).setInteractive({ useHandCursor: true });
+            const decBtn = this.txt(btnLeft + bldW + btnGap + passW / 2, 103, 'Pass', 8).setOrigin(0.5).setInteractive({ useHandCursor: true });
             decBtn.on('pointerdown', () => { dismissRescue(); });
             decBtn.on('pointerover', () => decBtn.setColor('#FF8888'));
             decBtn.on('pointerout', () => decBtn.setColor(CLR.uiText));
