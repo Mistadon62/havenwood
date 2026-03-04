@@ -375,7 +375,10 @@ export default class GameScene extends Phaser.Scene {
                 if (hab.gfx) hab.gfx.setDepth(55);
                 if (hab.decor) hab.decor.forEach(d => d.setDepth(56));
                 moveEnrich.forEach(e => e.sprite.setDepth(57));
-                moveAnimals.forEach(a => a.sprite.setDepth(58));
+                moveAnimals.forEach(a => {
+                    a.sprite.setDepth(58);
+                    if (a.alertIcon) a.alertIcon.setDepth(59);
+                });
 
                 const tracked = [];
                 if (hab.gfx) tracked.push({ obj: hab.gfx, origX: hab.gfx.x || 0, origY: hab.gfx.y || 0, isGfx: true });
@@ -385,8 +388,10 @@ export default class GameScene extends Phaser.Scene {
                 }
                 for (const e of moveEnrich)
                     tracked.push({ obj: e.sprite, origX: e.sprite.x, origY: e.sprite.y, isGfx: false });
-                for (const a of moveAnimals)
+                for (const a of moveAnimals) {
                     tracked.push({ obj: a.sprite, origX: a.sprite.x, origY: a.sprite.y, isGfx: false });
+                    if (a.alertIcon) tracked.push({ obj: a.alertIcon, origX: a.alertIcon.x, origY: a.alertIcon.y, isGfx: false });
+                }
 
                 this._moveTracked = tracked;
                 this.state.buildMode = `_move_${hab.type}`;
@@ -439,6 +444,7 @@ export default class GameScene extends Phaser.Scene {
             a.sprite.x = Math.round(a.baseX);
             a.sprite.y = Math.round(a.baseY);
             a.sprite.setDepth(40);
+            if (a.alertIcon) a.alertIcon.setDepth(55);
         });
 
         this._nudgeNPCsFromHabitat(gx, gy, ht.w, ht.h);
@@ -892,25 +898,17 @@ export default class GameScene extends Phaser.Scene {
                 a.sprite.y = Math.round(a.baseY + bob);
             }
 
-            // Hungry icon
-            if (a.hunger < 15 && !a.hungryIcon) {
-                a.hungryIcon = this.add.text(0, 0, '!', {
+            // Alert icon: any problem (low hunger, low happiness, low health, illness)
+            const needsAlert = a.hunger < 15 || a.happiness < 15 || a.health < 40 || a.illness;
+            if (needsAlert && !a.alertIcon) {
+                a.alertIcon = this.add.text(0, 0, '!', {
                     fontFamily: '"Press Start 2P", monospace', fontSize: '10px', color: '#FF4444',
                     stroke: '#000', strokeThickness: 2
                 }).setDepth(55);
             }
-            if (a.hungryIcon) {
-                if (a.hunger >= 15) { a.hungryIcon.destroy(); a.hungryIcon = null; }
-                else a.hungryIcon.setPosition(a.sprite.x + 12, a.sprite.y - 16);
-            }
-
-            // Sick icon
-            if (a.illness && !a.sickIcon) {
-                a.sickIcon = this.add.image(0, 0, 'icon_sick').setDepth(56).setScale(0.7);
-            }
-            if (a.sickIcon) {
-                if (!a.illness) { a.sickIcon.destroy(); a.sickIcon = null; }
-                else a.sickIcon.setPosition(a.sprite.x - 12, a.sprite.y - 16);
+            if (a.alertIcon) {
+                if (!needsAlert) { a.alertIcon.destroy(); a.alertIcon = null; }
+                else a.alertIcon.setPosition(a.sprite.x + 12, a.sprite.y - 16);
             }
         }
         this._animalRefreshTimer = (this._animalRefreshTimer || 0) + delta;
@@ -970,7 +968,6 @@ export default class GameScene extends Phaser.Scene {
             if (this.state.coins < cost) { this.sfx.error(); return; }
             this.spendCoins(cost);
             a.illness = null;
-            if (a.sickIcon) { a.sickIcon.destroy(); a.sickIcon = null; }
             a.health = Math.min(100, a.health + 25);
             this.state.stats.healed++;
             this.game.events.emit('notification', `${a.name} has been cured!`);
@@ -1063,7 +1060,6 @@ export default class GameScene extends Phaser.Scene {
                 const vetChance = this.hasResearch('super_vet') ? 1.0 : 0.3;
                 if (hasVet && Math.random() < vetChance) {
                     a.illness = null;
-                    if (a.sickIcon) { a.sickIcon.destroy(); a.sickIcon = null; }
                     a.health = Math.min(100, a.health + 15);
                     this.game.events.emit('notification', `Vet cured ${a.name}!`);
                     changed = true;
