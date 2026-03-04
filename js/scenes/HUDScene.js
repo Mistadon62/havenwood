@@ -459,7 +459,10 @@ export default class HUDScene extends Phaser.Scene {
 
         const ct = this.add.container(px, py).setDepth(250);
 
-        ct.add(this.txt(pw / 2, 12, animal.name, 10, CLR.gold).setOrigin(0.5));
+        const nameTxt = this.txt(pw / 2, 12, animal.name, 10, CLR.gold).setOrigin(0.5);
+        ct.add(nameTxt);
+        const genderKey = animal.gender === 'female' ? 'icon_female' : 'icon_male';
+        ct.add(this.add.image(pw / 2 + nameTxt.width / 2 + 10, 14, genderKey).setScale(1.2));
         const rClr = '#' + rc.toString(16).padStart(6, '0');
         ct.add(this.txt(pw / 2, 28, `${sp.name} (${sp.rarity})`, 6, rClr).setOrigin(0.5));
         ct.add(this.add.image(pw / 2, 56, `animal_${animal.speciesId}`).setScale(1.2));
@@ -702,7 +705,7 @@ export default class HUDScene extends Phaser.Scene {
         ct.add(bg);
         ct.add(this.txt(pw / 2, 14, 'UPGRADES', 12, CLR.gold).setOrigin(0.5));
         const closeBtn = this.txt(pw - 10, 6, 'X', 8, '#FF6666').setOrigin(0.5, 0).setInteractive({ useHandCursor: true });
-        closeBtn.on('pointerdown', () => { ct.destroy(); this.upgradePanel = null; });
+        closeBtn.on('pointerdown', () => { ct.destroy(); this.upgradePanel = null; this._activePanel = null; this._refreshToolBtns(); });
         ct.add(closeBtn);
         const owned = this.gs.state.upgrades;
         let yy = 42;
@@ -746,7 +749,7 @@ export default class HUDScene extends Phaser.Scene {
         ct.add(bg);
         ct.add(this.txt(pw / 2, 14, 'STAFF', 12, CLR.gold).setOrigin(0.5));
         const closeBtn = this.txt(pw - 10, 6, 'X', 8, '#FF6666').setOrigin(0.5, 0).setInteractive({ useHandCursor: true });
-        closeBtn.on('pointerdown', () => { ct.destroy(); this.staffPanel = null; });
+        closeBtn.on('pointerdown', () => { ct.destroy(); this.staffPanel = null; this._activePanel = null; this._refreshToolBtns(); });
         ct.add(closeBtn);
         ct.add(this.txt(10, 38, 'HIRE:', 7, '#AAAAAA'));
         let yy = 54;
@@ -802,7 +805,7 @@ export default class HUDScene extends Phaser.Scene {
         ct.add(bg);
         ct.add(this.txt(pw / 2, 14, 'RESCUE MISSIONS', 11, CLR.gold).setOrigin(0.5));
         const closeBtn = this.txt(pw - 10, 6, 'X', 8, '#FF6666').setOrigin(0.5, 0).setInteractive({ useHandCursor: true });
-        closeBtn.on('pointerdown', () => { ct.destroy(); this.missionPanel = null; });
+        closeBtn.on('pointerdown', () => { ct.destroy(); this.missionPanel = null; this._activePanel = null; this._refreshToolBtns(); });
         ct.add(closeBtn);
         ct.add(this.txt(10, 36, `Active: ${active.length}/2`, 6, active.length >= 2 ? '#CC8844' : '#88CC88'));
 
@@ -874,7 +877,7 @@ export default class HUDScene extends Phaser.Scene {
         ct.add(this.txt(pw / 2, 30, `Research Points: ${this.gs.state.researchPoints}`, 7, '#44DDAA').setOrigin(0.5));
 
         const closeBtn = this.txt(pw - 10, 6, 'X', 8, '#FF6666').setOrigin(0.5, 0).setInteractive({ useHandCursor: true });
-        closeBtn.on('pointerdown', () => { ct.destroy(); this.researchPanel = null; });
+        closeBtn.on('pointerdown', () => { ct.destroy(); this.researchPanel = null; this._activePanel = null; this._refreshToolBtns(); });
         ct.add(closeBtn);
 
         const tabW = 126;
@@ -979,7 +982,7 @@ export default class HUDScene extends Phaser.Scene {
 
         ct.add(this.txt(pw / 2, 12, 'JOURNAL', 12, CLR.gold).setOrigin(0.5));
         const closeBtn = this.txt(pw - 10, 6, 'X', 8, '#FF6666').setOrigin(0.5, 0).setInteractive({ useHandCursor: true });
-        closeBtn.on('pointerdown', () => { ct.destroy(); this.journalPanel = null; });
+        closeBtn.on('pointerdown', () => { ct.destroy(); this.journalPanel = null; this._activePanel = null; this._refreshToolBtns(); });
         ct.add(closeBtn);
 
         if (!this._journalTab) this._journalTab = 'bestiary';

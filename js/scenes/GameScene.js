@@ -167,14 +167,14 @@ export default class GameScene extends Phaser.Scene {
                     const dx = (gx - this._moveOrigin.gx) * TILE;
                     const dy = (gy - this._moveOrigin.gy) * TILE;
                     for (const t of this._moveTracked) {
-                        if (t.isGfx) t.obj.setPosition(dx, dy);
+                        if (t.isGfx) t.obj.setPosition(t.origX + dx, t.origY + dy);
                         else { t.obj.x = t.origX + dx; t.obj.y = t.origY + dy; }
                     }
                 } else if (!isMove && this._buildPreview) {
                     const dx = gx * TILE, dy = gy * TILE;
                     for (const t of this._buildPreview.tracked) {
                         t.obj.setVisible(true);
-                        if (t.isGfx) t.obj.setPosition(dx, dy);
+                        if (t.isGfx) t.obj.setPosition(t.origX + dx, t.origY + dy);
                         else { t.obj.x = t.origX + dx; t.obj.y = t.origY + dy; }
                     }
                 }
@@ -378,7 +378,7 @@ export default class GameScene extends Phaser.Scene {
                 moveAnimals.forEach(a => a.sprite.setDepth(58));
 
                 const tracked = [];
-                if (hab.gfx) tracked.push({ obj: hab.gfx, origX: 0, origY: 0, isGfx: true });
+                if (hab.gfx) tracked.push({ obj: hab.gfx, origX: hab.gfx.x || 0, origY: hab.gfx.y || 0, isGfx: true });
                 if (hab.decor) {
                     for (const d of hab.decor)
                         tracked.push({ obj: d, origX: d.x || 0, origY: d.y || 0, isGfx: d.type === 'Graphics' });
@@ -417,15 +417,22 @@ export default class GameScene extends Phaser.Scene {
             for (let dx = 0; dx < ht.w; dx++)
                 this.grid[gy + dy][gx + dx] = hab.id;
 
-        if (hab.gfx) hab.gfx.setPosition(0, 0).setDepth(10);
-        const px = gx * TILE, py = MAP_Y + gy * TILE, pw = ht.w * TILE, ph = ht.h * TILE;
-        if (hab.gfx) { hab.gfx.clear(); hab.gfx.fillStyle(ht.fill, 0.4); hab.gfx.fillRect(px, py, pw, ph); hab.gfx.lineStyle(2, ht.stroke, 0.9); hab.gfx.strokeRect(px + 1, py + 1, pw - 2, ph - 2); }
-        if (hab.decor) hab.decor.forEach(d => d.destroy());
-        hab.decor = this.addHabitatDecor(hab.type, gx, gy, ht);
-
-        this.enrichmentSprites.filter(e => e.habitatId === hab.id).forEach(e => {
-            e.sprite.setDepth(11);
-        });
+        if (hab.gfx) {
+            hab.gfx.setPosition(0, 0).setDepth(10);
+            const px = gx * TILE, py = MAP_Y + gy * TILE, pw = ht.w * TILE, ph = ht.h * TILE;
+            hab.gfx.clear(); hab.gfx.fillStyle(ht.fill, 0.4); hab.gfx.fillRect(px, py, pw, ph);
+            hab.gfx.lineStyle(2, ht.stroke, 0.9); hab.gfx.strokeRect(px + 1, py + 1, pw - 2, ph - 2);
+        }
+        if (this._moveTracked) {
+            for (const t of this._moveTracked) {
+                if (t.obj === hab.gfx) continue;
+                const fx = t.origX + offsetX, fy = t.origY + offsetY;
+                if (t.isGfx) t.obj.setPosition(fx, fy);
+                else { t.obj.x = fx; t.obj.y = fy; }
+            }
+        }
+        if (hab.decor) hab.decor.forEach(d => d.setDepth(12));
+        this.enrichmentSprites.filter(e => e.habitatId === hab.id).forEach(e => e.sprite.setDepth(11));
         this.state.animals.filter(a => a.habitatId === hab.id).forEach(a => {
             a.baseX += offsetX; a.baseY += offsetY;
             a.tx = a.baseX; a.ty = a.baseY;
@@ -459,6 +466,9 @@ export default class GameScene extends Phaser.Scene {
             hud.closeAllPanels(true);
         } else {
             this._preBuildPanel = null;
+        }
+        if (this.state.viewingHabitat || this.cameras.main.zoom > 1) {
+            this.zoomOut();
         }
         this.state.buildMode = type;
         this._createBuildPreview(type);
@@ -511,8 +521,10 @@ export default class GameScene extends Phaser.Scene {
 
     _destroyBuildPreview() {
         if (!this._buildPreview) return;
-        this._buildPreview.gfx.destroy();
-        this._buildPreview.decor.forEach(d => d.destroy());
+        if (!this._buildPreview.adopted) {
+            this._buildPreview.gfx.destroy();
+            this._buildPreview.decor.forEach(d => d.destroy());
+        }
         this._buildPreview = null;
     }
 
@@ -593,12 +605,29 @@ export default class GameScene extends Phaser.Scene {
             for (let dx = 0; dx < ht.w; dx++)
                 this.grid[gy + dy][gx + dx] = id;
 
-        const gfx = this.add.graphics().setDepth(10);
-        const px = gx * TILE, py = MAP_Y + gy * TILE, pw = ht.w * TILE, ph = ht.h * TILE;
-        gfx.fillStyle(ht.fill, 0.4); gfx.fillRect(px, py, pw, ph);
-        gfx.lineStyle(2, ht.stroke, 0.9); gfx.strokeRect(px + 1, py + 1, pw - 2, ph - 2);
-
-        const decor = this.addHabitatDecor(type, gx, gy, ht);
+        let gfx, decor;
+        if (this._buildPreview) {
+            gfx = this._buildPreview.gfx;
+            decor = this._buildPreview.decor;
+            gfx.setPosition(0, 0).setDepth(10).setAlpha(1);
+            const px = gx * TILE, py = MAP_Y + gy * TILE, pw = ht.w * TILE, ph = ht.h * TILE;
+            gfx.clear(); gfx.fillStyle(ht.fill, 0.4); gfx.fillRect(px, py, pw, ph);
+            gfx.lineStyle(2, ht.stroke, 0.9); gfx.strokeRect(px + 1, py + 1, pw - 2, ph - 2);
+            const dx = gx * TILE, dy = gy * TILE;
+            for (const t of this._buildPreview.tracked) {
+                if (t.obj === gfx) continue;
+                if (t.isGfx) t.obj.setPosition(t.origX + dx, t.origY + dy);
+                else { t.obj.x = t.origX + dx; t.obj.y = t.origY + dy; }
+            }
+            decor.forEach(d => { d.setDepth(12); d.setAlpha(1); });
+            this._buildPreview.adopted = true;
+        } else {
+            gfx = this.add.graphics().setDepth(10);
+            const px = gx * TILE, py = MAP_Y + gy * TILE, pw = ht.w * TILE, ph = ht.h * TILE;
+            gfx.fillStyle(ht.fill, 0.4); gfx.fillRect(px, py, pw, ph);
+            gfx.lineStyle(2, ht.stroke, 0.9); gfx.strokeRect(px + 1, py + 1, pw - 2, ph - 2);
+            decor = this.addHabitatDecor(type, gx, gy, ht);
+        }
 
         const hab = { id, type, gx, gy, w: ht.w, h: ht.h, animals: [], gfx, decor, enrichments: [] };
         this.state.habitats.push(hab);
@@ -724,6 +753,7 @@ export default class GameScene extends Phaser.Scene {
 
         const animal = {
             id: opts.id || genId('a'), speciesId, name, habitatId,
+            gender: opts.gender || (Math.random() < 0.5 ? 'male' : 'female'),
             hunger: opts.hunger ?? 75, happiness: opts.happiness ?? 60, health: opts.health ?? 100,
             sprite, tx: ax, ty: ay,
             wTimer: 0, wInterval: Phaser.Math.Between(2000, 6000),
@@ -1761,6 +1791,7 @@ export default class GameScene extends Phaser.Scene {
             })),
             animals: this.state.animals.map(a => ({
                 id: a.id, speciesId: a.speciesId, name: a.name, habitatId: a.habitatId,
+                gender: a.gender,
                 hunger: a.hunger, happiness: a.happiness, health: a.health,
                 trait: a.trait, illness: a.illness, bonds: a.bonds,
                 isBaby: a.isBaby, growthTimer: a.growthTimer,
@@ -1814,7 +1845,8 @@ export default class GameScene extends Phaser.Scene {
                 const hab = this.state.habitats.find(h => h.id === a.habitatId);
                 if (!hab) continue;
                 const animal = this.addAnimal(a.speciesId, a.name, hab.id, {
-                    id: a.id, hunger: a.hunger, happiness: a.happiness, health: a.health,
+                    id: a.id, gender: a.gender,
+                    hunger: a.hunger, happiness: a.happiness, health: a.health,
                     trait: a.trait, illness: a.illness, bonds: a.bonds || [],
                     isBaby: a.isBaby, growthTimer: a.growthTimer,
                     breedCooldown: a.breedCooldown || 0, isPregnant: a.isPregnant,
