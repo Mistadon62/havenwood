@@ -602,6 +602,15 @@ export class SpriteGenerator {
             g.fillStyle(0xFFAADD);
             g.fillCircle(5, 4, 2);
         });
+        tex(scene, 'icon_food', 16, 16, g => {
+            g.fillStyle(0xDEB887);
+            g.fillTriangle(8, 2, 2, 12, 14, 12);
+            g.fillStyle(0xC8A070);
+            g.fillTriangle(8, 4, 4, 11, 12, 11);
+            g.fillStyle(0x8B4513);
+            g.fillRect(7, 12, 2, 3);
+        });
+
         tex(scene, 'icon_research', 16, 16, g => {
             g.fillStyle(0x44DDAA);
             g.fillRect(6, 2, 4, 8);

@@ -43,7 +43,7 @@ havenwood/
 
 | File | Role |
 |---|---|
-| `GameData.js` | Central data registry. Every species, habitat, upgrade, research node, achievement, etc. is defined here. Species variants include breed-only entries with parent recipes. Change game balance by editing this file. |
+| `GameData.js` | Central data registry. Every species, habitat, upgrade, research node, achievement, etc. is defined here. Species include `foodCost` (food consumed per feed), `bondTreatsBase` (bond XP per treat), and breed-only variants with parent recipes. Volunteers are free with a max count of 1. Change game balance by editing this file. |
 | `GameScene.js` | The game simulation. Manages the grid map, animal behavior, visitors, staff, time/seasons, automatic breeding, illness, missions, research, economy, achievements, and save/load. |
 | `HUDScene.js` | All UI. Runs as a parallel Phaser scene on top of GameScene. Toolbar with Build popup menu for habitat placement, vertically centered management panels (Rescue, Upgrades, Staff, Research, Journal — all closeable with ESC), settings/pause menu, and notifications. Exposes `hasOpenPanel()` and `closeAllPanels()` so GameScene can suppress world clicks and close panels via keyboard. Communicates via `this.game.events` (Phaser's global event emitter). |
 | `SpriteGenerator.js` | Draws every texture at boot using Phaser's Graphics API — animals, terrain, UI icons, particles, enrichment items, staff, visitors. Zero external image files. |
@@ -68,7 +68,7 @@ BootScene  →  MenuScene  →  GameScene (+ HUDScene launched in parallel)
 
 GameScene and HUDScene communicate via Phaser's global event system (`this.game.events`):
 
-- **GameScene emits**: `timeUpdate`, `coinsUpdate`, `rescueEvent`, `showAnimalInfo`, `showHabitatInfo`, `notification`, `buildModeChanged`, `seasonChanged`, `upgradesUpdate`, `staffUpdate`, `missionsUpdate`, `achievementEarned`, `researchUpdate`, `animalUpdate`, `habitatViewClosed`
+- **GameScene emits**: `timeUpdate`, `coinsUpdate`, `foodUpdate`, `rescueEvent`, `showAnimalInfo`, `showHabitatInfo`, `notification`, `buildModeChanged`, `seasonChanged`, `upgradesUpdate`, `staffUpdate`, `missionsUpdate`, `achievementEarned`, `researchUpdate`, `animalUpdate`, `habitatViewClosed`
 - **HUDScene emits**: `rescueAccepted` (when player accepts a rescue)
 - **HUDScene reads**: `this.gs.state` for current game data, calls `this.gs.methodName()` for player actions (including `zoomOut()` from the Back button)
 
@@ -110,11 +110,18 @@ The habitat info panel includes a "Move Habitat" button. Clicking it zooms back 
 14 species across 4 rarity tiers (common, uncommon, rare, legendary). Some are seasonal-only. Each species has multiple color variants with unique names; each individual animal has a gender (male/female, shown with a colored icon in the panel). Each animal has:
 
 - **Stats**: hunger, happiness, health (all 0-100)
+- **Health**: stays at 100 until the animal contracts an illness, then deteriorates. Restores gradually once the condition is healed.
+- **Neglect & Death**: if hunger or happiness reaches 0 for more than 1 game-hour, the animal's health begins to drain. If health drops to 0, the animal dies and is permanently removed.
 - **Trait**: randomly assigned personality (playful, shy, grumpy, social, curious, lazy) that modifies stat rates
-- **Bonds**: friendships with habitat-mates that form over time
+- **Player Bond**: a leveling relationship with the player. Bond XP increases by giving treats (costs 20g, grants XP based on species' `bondTreatsBase`). Bond also grows passively over time while the animal is well cared for. Each level requires more XP than the last (level 1→2 = 50 XP, 2→3 = 75 XP, etc.). Shown in the animal panel as a level + XP progress bar with heart indicators.
+- **Friendships**: bonds with habitat-mates that form naturally over time
 - **Illness**: random chance of getting sick; can be cured by vets or manual healing
 
-Animals wander within their habitat, bob up and down, sleep at night (with "zzz" particles), and display status icons when hungry or sick. Animals are only clickable from the zoomed-in habitat view. The animal info panel auto-refreshes every 2 seconds and immediately on illness changes so stats and actions stay current. Navigation arrows below the panel let the player cycle through all animals in the habitat. If another compatible habitat with room exists, a "Relocate" button appears in the animal panel — clicking it zooms out and lets the player pick a destination habitat from the highlighted options.
+Animals wander within their habitat, bob up and down, sleep at night (with "zzz" particles), and display status icons when hungry, unhappy, low health, or sick. Animals are only clickable from the zoomed-in habitat view. The animal info panel auto-refreshes every 2 seconds and immediately on illness changes so stats and actions stay current. Navigation arrows below the panel let the player cycle through all animals in the habitat. If another compatible habitat with room exists, a "Relocate" button appears in the animal panel — clicking it zooms out and lets the player pick a destination habitat from the highlighted options.
+
+### Food
+
+The sanctuary starts with 1000 food. Each time you feed an animal, it consumes food based on the species' `foodCost` (e.g., rabbits cost 4, bear cubs cost 15). The current food count is displayed in the top bar next to the gold icon. If you run out of food, you can't feed animals. Staff auto-feeding (volunteers, caretakers) does not consume food.
 
 ### Rescue Events
 
@@ -131,22 +138,22 @@ Each species has 2 special **breed-only variants** that can only be obtained by 
 Visitors spawn during business hours (8 AM - 6 PM), walk in through a randomized entrance tile (any of the 4 entrance tiles), wander open tiles (avoiding habitats), then leave via a random entrance tile. Income comes in two parts:
 
 - **Admission fee** (on entry): flat 5g base, scaled by visitor type multiplier and income upgrades/research
-- **Donation** (on exit): satisfaction-based tip calculated from average animal happiness, total animal appeal (modified by visitor type preferences), enrichment appeal bonuses, season bonuses, gift shop upgrade, and tour guide staff multipliers
+- **Donation** (on exit): satisfaction-based tip calculated from average animal happiness, total animal count, enrichment happiness bonuses, season bonuses, gift shop upgrade, and tour guide staff multipliers
 
-Visitor types: Family, Tourist, Photographer, School, VIP — each with different income multipliers, species/rarity preferences, and stay durations.
+Visitor types: Family, Tourist, Photographer, School, VIP — each with different income multipliers and stay durations.
 
 ### Staff
 
 4 hirable roles with daily salaries:
 
-| Role | Hire Cost | Salary | Effect |
-|---|---|---|---|
-| Volunteer | 50g | 10g/day | Auto-feeds one random habitat |
-| Caretaker | 150g | 30g/day | Auto-feeds all animals |
-| Veterinarian | 200g | 40g/day | Heals animals, auto-cures illness |
-| Tour Guide | 100g | 25g/day | +25% visitor income |
+| Role | Hire Cost | Salary | Limit | Effect |
+|---|---|---|---|---|
+| Volunteer | FREE | FREE | 1 | Auto-feeds one random habitat |
+| Caretaker | 150g | 30g/day | — | Auto-feeds all animals |
+| Veterinarian | 200g | 40g/day | — | Heals animals, auto-cures illness |
+| Tour Guide | 100g | 25g/day | — | +25% visitor income |
 
-Volunteers, caretakers, and vets can walk freely into habitats. Tour guides avoid habitats the same way visitors do.
+Volunteers are free to hire and have no daily salary, but you can only have one at a time. Caretakers, vets, and guides can walk freely into habitats. Tour guides avoid habitats the same way visitors do.
 
 If you can't afford salaries at the start of a day, staff leave automatically.
 
@@ -156,7 +163,7 @@ Send expeditions to 5 biomes (Urban, Coastline, Wetlands, Deep Forest, Mountains
 
 ### Enrichments
 
-Place items in habitats to boost animal happiness and visitor appeal:
+Place items in habitats to boost animal happiness:
 
 - Scratching Post (barn), Bird Bath (meadow/pond), Log Pile (forest), Rock Garden (pond), Toy Ball (any), Cozy Bed (any)
 - Default max 3 per habitat (4 with Ecology research)
@@ -198,7 +205,7 @@ Place items in habitats to boost animal happiness and visitor appeal:
 - **Manual save**: via the settings menu (gear icon in top bar)
 - **Export**: download save as JSON file
 - **Exit to Menu**: saves and returns to the title screen via the settings menu
-- Save format version is tracked (`v: 4`) for migration compatibility
+- Save format version is tracked (`v: 5`) for migration compatibility
 - `Set` objects (upgrades, discoveries, achievements, research) are serialized as arrays
 
 ---

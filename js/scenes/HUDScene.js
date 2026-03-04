@@ -3,6 +3,7 @@
 // Manages toolbar (hidden during habitat zoom), habitat/animal panels (with close X, back bar,
 // and navigation arrows to cycle animals), settings/pause menu (gear icon, replaces SAVE button),
 // rescue popup with time-pause, build popup, and management panels (vertically centered).
+// Top bar shows day/season, clock with speed controls, research points, reputation, food count, and coins.
 // hasOpenPanel() lets GameScene suppress world clicks while a management panel or settings is visible.
 import { W, H, HABITATS, SPECIES, RARITY_COLOR, CLR, SEASONS, UPGRADES, STAFF_TYPES,
     TRAITS, ILLNESSES, ENRICHMENTS, MISSIONS, VISITOR_TYPES, ACHIEVEMENTS,
@@ -35,13 +36,14 @@ export default class HUDScene extends Phaser.Scene {
     syncState() {
         const s = this.gs.state;
         this.updateCoins(s.coins);
+        this.updateFood(s.food);
         this.updateTime({ time: s.time, day: s.day, season: s.season, rep: s.rep });
         this.rpTxt.setText(s.researchPoints.toString());
     }
 
     /* ========== TOP BAR ========== */
 
-    // Day, season, clock, speed controls (tortoise/hare), reputation star, research icon, coins, settings gear.
+    // Day, season, clock, speed controls (tortoise/hare), research points, reputation star, food count, coins, settings gear.
     // All elements are vertically centered at midY=21 using setOrigin(_, 0.5).
     createTopBar() {
         const bar = this.add.graphics();
@@ -60,12 +62,14 @@ export default class HUDScene extends Phaser.Scene {
         this.hareBtn.on('pointerdown', () => this._setTimeSpeed('fast'));
         this.timeTxt.on('pointerdown', () => this._setTimeSpeed('normal'));
 
-        this.add.image(W - 280, midY, 'icon_research').setScale(1.2);
-        this.rpTxt = this.txt(W - 268, midY, '0', 9, '#44DDAA').setOrigin(0, 0.5);
-        this.repLabel = this.txt(W - 228, midY - 3, '\u2605', 10, CLR.gold).setOrigin(0, 0.5);
-        this.repTxt = this.txt(W - 210, midY, '0', 9, CLR.gold).setOrigin(0, 0.5);
-        this.add.image(W - 140, midY, 'icon_coin').setScale(1.4);
-        this.coinTxt = this.txt(W - 124, midY, '', 10, CLR.gold).setOrigin(0, 0.5);
+        this.add.image(W - 370, midY, 'icon_research').setScale(1.2);
+        this.rpTxt = this.txt(W - 358, midY, '0', 8, '#44DDAA').setOrigin(0, 0.5);
+        this.repLabel = this.txt(W - 318, midY - 2, '\u2605', 9, CLR.gold).setOrigin(0, 0.5);
+        this.repTxt = this.txt(W - 303, midY, '0', 8, CLR.gold).setOrigin(0, 0.5);
+        this.add.image(W - 250, midY, 'icon_food').setScale(1.3);
+        this.foodTxt = this.txt(W - 236, midY, '1000', 8, '#DEB887').setOrigin(0, 0.5);
+        this.add.image(W - 180, midY, 'icon_coin').setScale(1.3);
+        this.coinTxt = this.txt(W - 166, midY, '', 8, CLR.gold).setOrigin(0, 0.5);
 
         const settingsBtn = this.txt(W - 28, midY - 3, '\u2699', 18, '#AAAAAA').setOrigin(0.5, 0.5).setInteractive({ useHandCursor: true });
         settingsBtn.on('pointerdown', () => this.toggleSettingsMenu());
@@ -319,12 +323,13 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== EVENTS ========== */
 
-    // Subscribes to game events: timeUpdate, coinsUpdate, rescueEvent, showAnimalInfo, showHabitatInfo,
+    // Subscribes to game events: timeUpdate, coinsUpdate, foodUpdate, rescueEvent, showAnimalInfo, showHabitatInfo,
     // animalUpdate (auto-refreshes animal panel), habitatViewClosed (cleanup on zoom-out), etc.
     listenEvents() {
         const ev = this.game.events;
         ev.on('timeUpdate', this.updateTime, this);
         ev.on('coinsUpdate', this.updateCoins, this);
+        ev.on('foodUpdate', this.updateFood, this);
         ev.on('rescueEvent', this.showRescue, this);
         ev.on('showAnimalInfo', this.showAnimal, this);
         ev.on('showHabitatInfo', this.showHabitatPanel, this);
@@ -379,6 +384,11 @@ export default class HUDScene extends Phaser.Scene {
     updateCoins(c) {
         this.coinTxt.setText(c.toString());
         this.tweens.add({ targets: this.coinTxt, scaleX: 1.3, scaleY: 1.3, yoyo: true, duration: 150 });
+    }
+
+    updateFood(f) {
+        this.foodTxt.setText(Math.floor(f).toString());
+        this.tweens.add({ targets: this.foodTxt, scaleX: 1.3, scaleY: 1.3, yoyo: true, duration: 150 });
     }
 
     /* ========== NOTIFICATIONS ========== */
@@ -520,7 +530,8 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== ANIMAL INFO PANEL ========== */
 
-    // Selected animal: stats, trait, illness, pregnancy/cooldown status, bonds, actions (Feed, Pet, Treat, Heal).
+    // Selected animal: stats, trait, illness, pregnancy/cooldown status, bond level/XP bar, friendships, actions (Feed, Pet, Treat, Heal).
+    // Feed consumes food (species foodCost). Bond is level-based with increasing XP thresholds.
     // Only shown when zoomed into a habitat. Tracks _viewedAnimal for auto-refresh via animalUpdate event.
     // Navigation arrows below the panel cycle through habitat animals, transferring the glow highlight.
     showAnimal(animal) {
@@ -592,15 +603,27 @@ export default class HUDScene extends Phaser.Scene {
             yy += 22;
         }
 
+        // Player bond level (XP-based leveling with increasing thresholds)
+        yy += 4;
+        const bLvl = animal.bondLevel;
+        const bXP = animal.bondXP;
+        const bNeeded = this.gs.getBondXPForLevel(bLvl);
+        const bPct = bNeeded > 0 ? (bXP / bNeeded) * 100 : 0;
+        const hearts = bLvl >= 8 ? '\u2665\u2665\u2665' : bLvl >= 5 ? '\u2665\u2665' : bLvl >= 2 ? '\u2665' : '';
+        const bondClr = bLvl >= 8 ? '#FFAA44' : bLvl >= 5 ? '#66BBFF' : bLvl >= 2 ? '#88CC88' : '#AAAAAA';
+        this.statBar(ct, 10, yy, pw - 20, `Bond Lv${bLvl}`, bPct, 0xDD8866);
+        if (hearts) ct.add(this.txt(pw - 6, yy + 1, hearts, 5, bondClr).setOrigin(1, 0));
+        ct.add(this.txt(pw / 2, yy + 1, `${Math.floor(bXP)}/${bNeeded} XP`, 4, '#CCBBAA').setOrigin(0.5, 0));
+        yy += 18;
+
         if (animal.bonds.length > 0) {
-            yy += 6;
             const bondNames = animal.bonds.slice(0, 3).map(bid => {
                 const b = this.gs.state.animals.find(a => a.id === bid);
                 return b ? b.name : '?';
             }).join(', ');
-            const bondTxt = this.txt(8, yy, `Friends: ${bondNames}`, 5, '#66BBFF').setWordWrapWidth(pw - 16);
-            ct.add(bondTxt);
-            yy += bondTxt.height + 4;
+            const friendsTxt = this.txt(8, yy, `Friends: ${bondNames}`, 5, '#66BBFF').setWordWrapWidth(pw - 16);
+            ct.add(friendsTxt);
+            yy += friendsTxt.height + 4;
         }
 
         const relocateHabs = this.gs.findAllCompatibleHabitats(sp).filter(h => h.id !== animal.habitatId);
@@ -613,10 +636,6 @@ export default class HUDScene extends Phaser.Scene {
             });
             yy += 30;
         }
-
-        yy += 6;
-        ct.add(this.txt(pw / 2, yy, `Appeal: ${sp.appeal}`, 6, '#AAAAAA').setOrigin(0.5, 0));
-        yy += 18;
 
         const ph = yy + 8;
         const bg = this.add.graphics();
@@ -859,14 +878,21 @@ export default class HUDScene extends Phaser.Scene {
         ct.add(this.txt(10, 38, 'HIRE:', 7, '#AAAAAA'));
         let yy = 54;
         Object.values(STAFF_TYPES).forEach(st => {
-            const canAfford = this.gs.state.coins >= st.hireCost;
+            const currentCount = this.gs.state.staff.filter(s => s.type === st.id).length;
+            const atMax = st.maxCount && currentCount >= st.maxCount;
+            const canAfford = this.gs.state.coins >= st.hireCost && !atMax;
             const rowBg = this.add.graphics();
             rowBg.fillStyle(0x332211, 0.5); rowBg.fillRoundedRect(8, yy, pw - 16, 34, 3);
             ct.add(rowBg);
             ct.add(this.txt(14, yy + 4, st.name, 7));
-            ct.add(this.txt(14, yy + 20, `${st.desc} | ${st.salary}g/day`, 5, '#AAAAAA'));
-            ct.add(this.txt(pw - 60, yy + 4, `${st.hireCost}g`, 7, canAfford ? CLR.gold : '#884444').setOrigin(1, 0));
-            if (canAfford) {
+            const salaryTxt = st.salary === 0 ? 'FREE' : `${st.salary}g/day`;
+            const limitTxt = st.maxCount ? ` (${currentCount}/${st.maxCount})` : '';
+            ct.add(this.txt(14, yy + 20, `${st.desc} | ${salaryTxt}${limitTxt}`, 5, '#AAAAAA'));
+            const costLabel = st.hireCost === 0 ? 'FREE' : `${st.hireCost}g`;
+            ct.add(this.txt(pw - 60, yy + 4, costLabel, 7, atMax ? '#666666' : canAfford ? CLR.gold : '#884444').setOrigin(1, 0));
+            if (atMax) {
+                ct.add(this.txt(pw - 14, yy + 10, 'MAX', 6, '#666666').setOrigin(1, 0));
+            } else if (canAfford) {
                 const hireBtn = this.txt(pw - 14, yy + 10, 'HIRE', 6, '#44CC44').setOrigin(1, 0).setInteractive({ useHandCursor: true });
                 hireBtn.on('pointerdown', () => { this.gs.hireStaff(st.id); this.showStaffPanel(); });
                 hireBtn.on('pointerover', () => hireBtn.setColor('#88FF88'));

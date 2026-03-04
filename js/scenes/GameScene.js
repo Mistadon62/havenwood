@@ -2,7 +2,8 @@
  * GameScene - Core gameplay scene for Havenwood, a Phaser 3 animal sanctuary management game.
  * Handles map, building, habitat zoom view (with auto-select and animal cycling), animals,
  * visitors, staff, automatic breeding, missions, research, time, seasons, rescue events
- * (with time-pause), settings/pause menu, animal relocation, and save/load.
+ * (with time-pause), settings/pause menu, animal relocation, food system, bond XP/levels,
+ * and save/load.
  */
 import { TILE, COLS, ROWS, W, H, MAP_Y, TIME_SCALE, START_COINS, HABITATS, SPECIES, RARITY_WEIGHT, RESCUE_MSG, CLR,
     SEASONS, SEASON_ORDER, SEASON_LENGTH, SEASON_CYCLE, UPGRADES, STAFF_TYPES,
@@ -25,7 +26,7 @@ export default class GameScene extends Phaser.Scene {
         this.input.on('pointerdown', () => this.sfx.resume());
 
         this.state = {
-            day: 1, time: 360, coins: START_COINS, rep: 0,
+            day: 1, time: 360, coins: START_COINS, rep: 0, food: 1000,
             buildMode: null,
             habitats: [], animals: [], staff: [],
             discoveries: new Set(),
@@ -713,7 +714,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== ENRICHMENT ========== */
-    // Habitat items (toys, shelters) that boost animal happiness and visitor appeal.
+    // Habitat items (toys, shelters) that boost animal happiness.
 
     addEnrichment(habitatId, enrichId) {
         const hab = this.state.habitats.find(h => h.id === habitatId);
@@ -758,17 +759,10 @@ export default class GameScene extends Phaser.Scene {
         return bonus;
     }
 
-    getEnrichmentAppealBonus(hab) {
-        let bonus = 0;
-        for (const eId of (hab.enrichments || [])) {
-            const en = ENRICHMENTS[eId];
-            if (en) bonus += en.appealBonus;
-        }
-        return bonus;
-    }
-
     /* ========== ANIMALS ========== */
-    // Spawn, wander, bob, hunger/happiness/health decay, traits, illness, bonds.
+    // Spawn, wander, bob, hunger/happiness decay, traits, illness, player bond, friendships, death.
+    // Health stays at 100 unless ill (drains during illness, recovers after healing).
+    // Neglect: 0 hunger or happiness for >1 game-hour causes health drain. Health 0 = death.
     // Animals are only clickable while zoomed into their habitat (viewingHabitat guard).
     // Hovering over an animal while zoomed in adds a preFX glow that follows the sprite shape.
     // selectAnimal() centralizes selection: clears previous glow, applies new glow, emits showAnimalInfo.
@@ -805,6 +799,9 @@ export default class GameScene extends Phaser.Scene {
             trait,
             illness: opts.illness || null,
             bonds: opts.bonds || [],
+            bondLevel: opts.bondLevel || 0,
+            bondXP: opts.bondXP || 0,
+            neglectTimer: opts.neglectTimer || 0,
             isBaby: opts.isBaby || false,
             growthTimer: opts.growthTimer || 0,
             breedCooldown: opts.breedCooldown || 0,
@@ -864,13 +861,45 @@ export default class GameScene extends Phaser.Scene {
                 a.happiness = Math.min(100, a.happiness + 0.005 * a.bonds.length * sDelta / 1000);
             }
 
-            // Illness drain
+            // Natural bond XP growth (slow passive gain while well cared for)
+            if (a.hunger > 40 && a.happiness > 40 && !a.illness) {
+                a.bondXP += 0.015 * sDelta / 1000;
+                const needed = this.getBondXPForLevel(a.bondLevel);
+                if (a.bondXP >= needed) this.addBondXP(a, 0);
+            }
+
+            // Health: stays at 100 unless ill; restores slowly when healthy
             if (a.illness) {
                 const ill = ILLNESSES[a.illness.type];
                 if (ill) {
                     a.health = Math.max(0, a.health - ill.healthDrain * sDelta / 1000);
                     a.happiness = Math.max(0, a.happiness - ill.happyDrain * sDelta / 1000);
                 }
+            } else if (a.health < 100) {
+                a.health = Math.min(100, a.health + 0.08 * sDelta / 1000);
+            }
+
+            // Neglect: hunger or happiness at 0 for >1 game-hour drains health
+            if (a.hunger <= 0 || a.happiness <= 0) {
+                a.neglectTimer += sDelta / 1000;
+                if (a.neglectTimer >= 60) {
+                    a.health = Math.max(0, a.health - 0.5 * sDelta / 1000);
+                }
+            } else {
+                a.neglectTimer = 0;
+            }
+
+            // Death
+            if (a.health <= 0) {
+                this.game.events.emit('notification', `${a.name} the ${sp.name} has passed away...`);
+                if (a.alertIcon) a.alertIcon.destroy();
+                a.sprite.destroy();
+                const habObj = this.state.habitats.find(h => h.id === a.habitatId);
+                if (habObj) habObj.animals = habObj.animals.filter(id => id !== a.id);
+                this.state.animals = this.state.animals.filter(x => x.id !== a.id);
+                if (this._selectedAnimal === a) { this._selectedAnimal = null; }
+                this.game.events.emit('animalUpdate');
+                continue;
             }
 
             // Baby growth: 720 = minutes per in-game day
@@ -955,6 +984,14 @@ export default class GameScene extends Phaser.Scene {
     feedAnimal(id) {
         const a = this.state.animals.find(x => x.id === id);
         if (!a) return;
+        const sp = SPECIES[a.speciesId];
+        const cost = sp.foodCost || 5;
+        if (this.state.food < cost) {
+            this.game.events.emit('notification', 'Not enough food!');
+            this.sfx.error(); return;
+        }
+        this.state.food -= cost;
+        this.game.events.emit('foodUpdate', this.state.food);
         let feedAmt = 35;
         if (this.state.upgrades.has('premium_food')) feedAmt = 60;
         else if (this.state.upgrades.has('better_feed')) feedAmt = 45;
@@ -980,15 +1017,31 @@ export default class GameScene extends Phaser.Scene {
         this.tweens.add({ targets: a.sprite, y: a.sprite.y - 6, yoyo: true, duration: 180, ease: 'Quad.easeOut' });
     }
 
+    getBondXPForLevel(level) {
+        return 50 + level * 25;
+    }
+
+    addBondXP(animal, amount) {
+        animal.bondXP += amount;
+        let needed = this.getBondXPForLevel(animal.bondLevel);
+        while (animal.bondXP >= needed) {
+            animal.bondXP -= needed;
+            animal.bondLevel++;
+            needed = this.getBondXPForLevel(animal.bondLevel);
+            this.starEffect(animal.sprite.x, animal.sprite.y);
+            this.game.events.emit('notification', `Bond with ${animal.name} reached level ${animal.bondLevel}!`);
+        }
+    }
+
     treatAnimal(id) {
         const a = this.state.animals.find(x => x.id === id);
         if (!a || this.state.coins < 20) return;
         this.spendCoins(20);
-        a.health = Math.min(100, a.health + 25);
-        a.hunger = Math.min(100, a.hunger + 10);
-        a.happiness = Math.min(100, a.happiness + 10);
+        a.hunger = Math.min(100, a.hunger + 15);
+        a.happiness = Math.min(100, a.happiness + 15);
+        const sp = SPECIES[a.speciesId];
+        this.addBondXP(a, sp.bondTreatsBase * 2);
         this.heartEffect(a.sprite.x, a.sprite.y);
-        this.starEffect(a.sprite.x, a.sprite.y);
         this.sfx.treat();
     }
 
@@ -1430,15 +1483,10 @@ export default class GameScene extends Phaser.Scene {
             ? this.state.animals.reduce((s, a) => s + a.happiness, 0) / this.state.animals.length : 50;
         donation += avgHappy * 0.06;
 
-        for (const a of this.state.animals) {
-            let appeal = SPECIES[a.speciesId].appeal * 0.3;
-            if (vType.prefTypes?.length && vType.prefTypes.includes(SPECIES[a.speciesId].type)) appeal *= 1.5;
-            if (vType.prefRarity?.length && vType.prefRarity.includes(SPECIES[a.speciesId].rarity)) appeal *= 1.5;
-            donation += appeal;
-        }
+        donation += this.state.animals.length * 0.8;
 
         for (const hab of this.state.habitats) {
-            donation += this.getEnrichmentAppealBonus(hab) * 0.5;
+            donation += this.getEnrichmentHappyBonus(hab) * 0.3;
         }
 
         let typeMult = vType.incomeMult;
@@ -1469,6 +1517,13 @@ export default class GameScene extends Phaser.Scene {
 
     hireStaff(typeId) {
         const st = STAFF_TYPES[typeId];
+        if (st.maxCount) {
+            const count = this.state.staff.filter(s => s.type === typeId).length;
+            if (count >= st.maxCount) {
+                this.game.events.emit('notification', `Already at max ${st.name}s!`);
+                this.sfx.error(); return false;
+            }
+        }
         if (this.state.coins < st.hireCost) {
             this.game.events.emit('notification', 'Not enough coins!');
             this.sfx.error(); return false;
@@ -1848,9 +1903,10 @@ export default class GameScene extends Phaser.Scene {
 
     saveGame() {
         const data = {
-            v: 4,
+            v: 5,
             day: this.state.day, time: this.state.time,
             coins: this.state.coins, rep: this.state.rep,
+            food: this.state.food,
             habitats: this.state.habitats.map(h => ({
                 id: h.id, type: h.type, gx: h.gx, gy: h.gy,
                 enrichments: h.enrichments || []
@@ -1860,6 +1916,8 @@ export default class GameScene extends Phaser.Scene {
                 variantIdx: a.variantIdx, gender: a.gender,
                 hunger: a.hunger, happiness: a.happiness, health: a.health,
                 trait: a.trait, illness: a.illness, bonds: a.bonds,
+                bondLevel: a.bondLevel, bondXP: a.bondXP,
+                neglectTimer: a.neglectTimer,
                 isBaby: a.isBaby, growthTimer: a.growthTimer,
                 breedCooldown: a.breedCooldown, isPregnant: a.isPregnant,
                 pregnancyTimer: a.pregnancyTimer, mateVariantIdx: a.mateVariantIdx,
@@ -1888,6 +1946,7 @@ export default class GameScene extends Phaser.Scene {
             const d = JSON.parse(raw);
             this.state.day = d.day; this.state.time = d.time;
             this.state.coins = d.coins; this.state.rep = d.rep || 0;
+            this.state.food = d.food ?? 1000;
             this.state.discoveries = new Set(d.discoveries || []);
             this.state.seenVariants = new Set(d.seenVariants || []);
             this.state.rescuedVariants = new Set(d.rescuedVariants || []);
@@ -1918,6 +1977,8 @@ export default class GameScene extends Phaser.Scene {
                     id: a.id, variantIdx: a.variantIdx, gender: a.gender,
                     hunger: a.hunger, happiness: a.happiness, health: a.health,
                     trait: a.trait, illness: a.illness, bonds: a.bonds || [],
+                    bondLevel: a.bondLevel || 0, bondXP: a.bondXP || 0,
+                    neglectTimer: a.neglectTimer || 0,
                     isBaby: a.isBaby, growthTimer: a.growthTimer,
                     breedCooldown: a.breedCooldown || 0, isPregnant: a.isPregnant,
                     pregnancyTimer: a.pregnancyTimer || 0, mateVariantIdx: a.mateVariantIdx,

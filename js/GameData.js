@@ -1,5 +1,5 @@
-// Havenwood — central game data/config registry. All constants, species, habitats,
-// missions, upgrades, research, and UI palette used across the sanctuary management game.
+// Havenwood — central game data/config registry. All constants, species (with foodCost and bondTreatsBase),
+// habitats, missions, upgrades, staff (volunteer is free/limited), research, and UI palette.
 
 // Grid/layout constants — tile size, map dimensions, MAP_Y offset (top bar), canvas height includes UI bars, time scale, starting currency
 export const TILE = 32;
@@ -30,12 +30,14 @@ export const HABITATS = {
     barn:   { id: 'barn', name: 'Barn', cost: 250, w: 4, h: 4, capacity: 5, types: ['domestic'], fill: 0xCD853F, stroke: 0x8B5A2B, desc: 'A warm barn for domestic animals.' },
 };
 
-// Species — 14 animals with rarity, appeal, hunger rates; some are seasonal-only.
+// Species — 14 animals with rarity, hunger rates; some are seasonal-only.
 // Each species has variants: { name, gender ('m'/'f'), color } for unique appearances per individual.
 // Special breed-only variants have { breedOnly: true, parents: [idxA, idxB] } — obtainable
 // only by breeding the two specified parent variants together.
+// bondTreatsBase: base bond XP gained per treat (scaled by rarity; higher rarity = more XP per treat).
+// foodCost: amount of food consumed per feeding action.
 export const SPECIES = {
-    cat: { id: 'cat', name: 'Cat', type: 'domestic', rarity: 'common', appeal: 2, hungerRate: 0.3, color: 0xE8A64A, variants: [
+    cat: { id: 'cat', name: 'Cat', type: 'domestic', rarity: 'common', hungerRate: 0.3, bondTreatsBase: 3, foodCost: 5, color: 0xE8A64A, variants: [
         { name: 'Whiskers', gender: 'm', color: 0xE8A64A }, { name: 'Mittens',  gender: 'f', color: 0xCCCCCC },
         { name: 'Luna',     gender: 'f', color: 0x2A2A2A }, { name: 'Oliver',   gender: 'm', color: 0xE8983A },
         { name: 'Mochi',    gender: 'f', color: 0xF5F0E0 }, { name: 'Bella',    gender: 'f', color: 0xC08040 },
@@ -43,7 +45,7 @@ export const SPECIES = {
         { name: 'Marble',   gender: 'f', color: 0xB0A090, breedOnly: true, parents: [0, 2] },
         { name: 'Smokey',   gender: 'm', color: 0x777788, breedOnly: true, parents: [6, 1] },
     ]},
-    dog: { id: 'dog', name: 'Dog', type: 'domestic', rarity: 'common', appeal: 3, hungerRate: 0.4, color: 0xA0724A, variants: [
+    dog: { id: 'dog', name: 'Dog', type: 'domestic', rarity: 'common', hungerRate: 0.4, bondTreatsBase: 3, foodCost: 8, color: 0xA0724A, variants: [
         { name: 'Buddy',  gender: 'm', color: 0xC8A060 }, { name: 'Max',    gender: 'm', color: 0x8B6540 },
         { name: 'Daisy',  gender: 'f', color: 0xF0E0C0 }, { name: 'Rocky',  gender: 'm', color: 0x706050 },
         { name: 'Sadie',  gender: 'f', color: 0xB08050 }, { name: 'Bear',   gender: 'm', color: 0x3D2B1F },
@@ -51,84 +53,84 @@ export const SPECIES = {
         { name: 'Copper', gender: 'm', color: 0xD49060, breedOnly: true, parents: [0, 2] },
         { name: 'Ember',  gender: 'f', color: 0xAA4422, breedOnly: true, parents: [6, 7] },
     ]},
-    rabbit: { id: 'rabbit', name: 'Rabbit', type: 'mammal_small', rarity: 'common', appeal: 3, hungerRate: 0.35, color: 0xD4C4A8, variants: [
+    rabbit: { id: 'rabbit', name: 'Rabbit', type: 'mammal_small', rarity: 'common', hungerRate: 0.35, bondTreatsBase: 3, foodCost: 4, color: 0xD4C4A8, variants: [
         { name: 'Clover',   gender: 'f', color: 0xD4C4A8 }, { name: 'Thumper',  gender: 'm', color: 0xA08868 },
         { name: 'Biscuit',  gender: 'm', color: 0xDBC8A0 }, { name: 'Hazel',    gender: 'f', color: 0x9A7B5A },
         { name: 'Pepper',   gender: 'm', color: 0x555555 }, { name: 'Snowball', gender: 'f', color: 0xF0F0F0 },
         { name: 'Oreo',     gender: 'm', color: 0x888888, breedOnly: true, parents: [4, 5] },
         { name: 'Caramel',  gender: 'f', color: 0xC8A050, breedOnly: true, parents: [1, 0] },
     ]},
-    fox: { id: 'fox', name: 'Fox', type: 'mammal_small', rarity: 'uncommon', appeal: 5, hungerRate: 0.3, color: 0xD2691E, variants: [
+    fox: { id: 'fox', name: 'Fox', type: 'mammal_small', rarity: 'uncommon', hungerRate: 0.3, bondTreatsBase: 5, foodCost: 6, color: 0xD2691E, variants: [
         { name: 'Ember',  gender: 'f', color: 0xD2691E }, { name: 'Maple',  gender: 'f', color: 0xC05020 },
         { name: 'Scout',  gender: 'm', color: 0xBB6622 }, { name: 'Blaze',  gender: 'm', color: 0xE07020 },
         { name: 'Fern',   gender: 'f', color: 0xA05A28 }, { name: 'Copper', gender: 'm', color: 0xB87333 },
         { name: 'Russet', gender: 'm', color: 0x9A3010, breedOnly: true, parents: [3, 1] },
         { name: 'Amber',  gender: 'f', color: 0xDDA040, breedOnly: true, parents: [5, 0] },
     ]},
-    deer: { id: 'deer', name: 'Deer', type: 'mammal_large', rarity: 'common', appeal: 4, hungerRate: 0.25, color: 0xB8860B, variants: [
+    deer: { id: 'deer', name: 'Deer', type: 'mammal_large', rarity: 'common', hungerRate: 0.25, bondTreatsBase: 3, foodCost: 10, color: 0xB8860B, variants: [
         { name: 'Willow', gender: 'f', color: 0xC09840 }, { name: 'Bambi',  gender: 'm', color: 0xB8860B },
         { name: 'Cedar',  gender: 'm', color: 0x8B6914 }, { name: 'Fawn',   gender: 'f', color: 0xD4A855 },
         { name: 'Acorn',  gender: 'm', color: 0x7A5C22 }, { name: 'Birch',  gender: 'f', color: 0xC8B080 },
         { name: 'Aspen',  gender: 'f', color: 0xE0D0A0, breedOnly: true, parents: [1, 5] },
         { name: 'Elm',    gender: 'm', color: 0x6A5010, breedOnly: true, parents: [2, 0] },
     ]},
-    owl: { id: 'owl', name: 'Owl', type: 'bird', rarity: 'uncommon', appeal: 5, hungerRate: 0.2, color: 0x8B7355, variants: [
+    owl: { id: 'owl', name: 'Owl', type: 'bird', rarity: 'uncommon', hungerRate: 0.2, bondTreatsBase: 5, foodCost: 5, color: 0x8B7355, variants: [
         { name: 'Hoot',   gender: 'm', color: 0x8B7355 }, { name: 'Athena', gender: 'f', color: 0x9A8060 },
         { name: 'Dusk',   gender: 'm', color: 0x5C4A3A }, { name: 'Plume',  gender: 'f', color: 0xB09878 },
         { name: 'Strix',  gender: 'm', color: 0x6B5B4A }, { name: 'Talon',  gender: 'm', color: 0x7A6650 },
         { name: 'Eclipse',gender: 'f', color: 0x3A3040, breedOnly: true, parents: [2, 1] },
         { name: 'Sage',   gender: 'm', color: 0x8A9870, breedOnly: true, parents: [0, 3] },
     ]},
-    duck: { id: 'duck', name: 'Duck', type: 'aquatic', rarity: 'common', appeal: 2, hungerRate: 0.3, color: 0xE8D44A, variants: [
+    duck: { id: 'duck', name: 'Duck', type: 'aquatic', rarity: 'common', hungerRate: 0.3, bondTreatsBase: 3, foodCost: 4, color: 0xE8D44A, variants: [
         { name: 'Puddle',    gender: 'm', color: 0xE8D44A }, { name: 'Quackers',  gender: 'm', color: 0x3A7A3A },
         { name: 'Waddle',    gender: 'f', color: 0xC0A840 }, { name: 'Sunny',     gender: 'f', color: 0xF0E060 },
         { name: 'Splash',    gender: 'm', color: 0x4A6A3A }, { name: 'Buttercup', gender: 'f', color: 0xF5E550 },
         { name: 'Jade',      gender: 'f', color: 0x50AA60, breedOnly: true, parents: [1, 3] },
         { name: 'Goldie',    gender: 'm', color: 0xF0C020, breedOnly: true, parents: [0, 5] },
     ]},
-    turtle: { id: 'turtle', name: 'Turtle', type: 'amphibian', rarity: 'uncommon', appeal: 4, hungerRate: 0.15, color: 0x556B2F, variants: [
+    turtle: { id: 'turtle', name: 'Turtle', type: 'amphibian', rarity: 'uncommon', hungerRate: 0.15, bondTreatsBase: 5, foodCost: 3, color: 0x556B2F, variants: [
         { name: 'Sheldon', gender: 'm', color: 0x556B2F }, { name: 'Mossy',  gender: 'm', color: 0x4A6A28 },
         { name: 'Pebble',  gender: 'f', color: 0x7A8060 }, { name: 'Sage',   gender: 'f', color: 0x6B8B50 },
         { name: 'Tank',    gender: 'm', color: 0x3A4A20 }, { name: 'Jade',   gender: 'f', color: 0x448844 },
         { name: 'Emerald', gender: 'f', color: 0x30AA50, breedOnly: true, parents: [1, 5] },
         { name: 'Basalt',  gender: 'm', color: 0x3A3A3A, breedOnly: true, parents: [4, 2] },
     ]},
-    bear_cub: { id: 'bear_cub', name: 'Bear Cub', type: 'mammal_large', rarity: 'rare', appeal: 8, hungerRate: 0.5, color: 0x654321, variants: [
+    bear_cub: { id: 'bear_cub', name: 'Bear Cub', type: 'mammal_large', rarity: 'rare', hungerRate: 0.5, bondTreatsBase: 8, foodCost: 15, color: 0x654321, variants: [
         { name: 'Honey',   gender: 'f', color: 0x8B6C30 }, { name: 'Bruno',   gender: 'm', color: 0x654321 },
         { name: 'Kodiak',  gender: 'm', color: 0x4A3018 }, { name: 'Berry',   gender: 'f', color: 0x5A3828 },
         { name: 'Ursie',   gender: 'f', color: 0x7A5C40 }, { name: 'Grizzly', gender: 'm', color: 0x3A2A1A },
         { name: 'Cinnamon',gender: 'f', color: 0xA06030, breedOnly: true, parents: [1, 0] },
         { name: 'Midnight',gender: 'm', color: 0x1A1A20, breedOnly: true, parents: [5, 3] },
     ]},
-    phoenix_chick: { id: 'phoenix_chick', name: 'Phoenix Chick', type: 'bird', rarity: 'legendary', appeal: 20, hungerRate: 0.1, color: 0xFF4500, variants: [
+    phoenix_chick: { id: 'phoenix_chick', name: 'Phoenix Chick', type: 'bird', rarity: 'legendary', hungerRate: 0.1, bondTreatsBase: 12, foodCost: 3, color: 0xFF4500, variants: [
         { name: 'Ember',    gender: 'f', color: 0xFF4500 }, { name: 'Sol',      gender: 'm', color: 0xFFAA00 },
         { name: 'Ignis',    gender: 'm', color: 0xFF2200 }, { name: 'Pyralis',  gender: 'f', color: 0xFF6600 },
         { name: 'Solstice', gender: 'f', color: 0xFFCC00 }, { name: 'Blaze',    gender: 'm', color: 0xEE3300 },
         { name: 'Inferno',  gender: 'm', color: 0xFF0000, breedOnly: true, parents: [2, 0] },
         { name: 'Aurora',   gender: 'f', color: 0xFFDD88, breedOnly: true, parents: [1, 4] },
     ]},
-    butterfly: { id: 'butterfly', name: 'Butterfly', type: 'bird', rarity: 'uncommon', appeal: 3, hungerRate: 0.15, color: 0x9966FF, season: 'summer', variants: [
+    butterfly: { id: 'butterfly', name: 'Butterfly', type: 'bird', rarity: 'uncommon', hungerRate: 0.15, bondTreatsBase: 5, foodCost: 2, color: 0x9966FF, season: 'summer', variants: [
         { name: 'Flutter',  gender: 'f', color: 0x9966FF }, { name: 'Iris',     gender: 'f', color: 0x6644CC },
         { name: 'Petal',    gender: 'f', color: 0xFF88AA }, { name: 'Monarch',  gender: 'm', color: 0xEE8822 },
         { name: 'Azure',    gender: 'm', color: 0x4488DD }, { name: 'Papillon', gender: 'm', color: 0x44BB88 },
         { name: 'Prism',    gender: 'f', color: 0xEE44FF, breedOnly: true, parents: [3, 0] },
         { name: 'Galaxy',   gender: 'm', color: 0x2244AA, breedOnly: true, parents: [4, 1] },
     ]},
-    hedgehog: { id: 'hedgehog', name: 'Hedgehog', type: 'mammal_small', rarity: 'uncommon', appeal: 6, hungerRate: 0.2, color: 0x8B7355, season: 'autumn', variants: [
+    hedgehog: { id: 'hedgehog', name: 'Hedgehog', type: 'mammal_small', rarity: 'uncommon', hungerRate: 0.2, bondTreatsBase: 5, foodCost: 4, color: 0x8B7355, season: 'autumn', variants: [
         { name: 'Bramble',  gender: 'm', color: 0x8B7355 }, { name: 'Thistle',  gender: 'f', color: 0x9A8060 },
         { name: 'Hawthorn', gender: 'm', color: 0x6A5A44 }, { name: 'Conker',   gender: 'm', color: 0x6B3A1A },
         { name: 'Nutkin',   gender: 'f', color: 0xAA9068 }, { name: 'Spike',    gender: 'm', color: 0x554430 },
         { name: 'Truffle',  gender: 'f', color: 0x4A3020, breedOnly: true, parents: [3, 1] },
         { name: 'Acorn',    gender: 'm', color: 0x886644, breedOnly: true, parents: [0, 4] },
     ]},
-    snowy_owl: { id: 'snowy_owl', name: 'Snowy Owl', type: 'bird', rarity: 'rare', appeal: 9, hungerRate: 0.15, color: 0xE8E8F0, season: 'winter', variants: [
+    snowy_owl: { id: 'snowy_owl', name: 'Snowy Owl', type: 'bird', rarity: 'rare', hungerRate: 0.15, bondTreatsBase: 8, foodCost: 5, color: 0xE8E8F0, season: 'winter', variants: [
         { name: 'Frost',    gender: 'm', color: 0xE8E8F0 }, { name: 'Blizzard', gender: 'm', color: 0xD8D8E8 },
         { name: 'Ivory',    gender: 'f', color: 0xFFF8F0 }, { name: 'Glacier',  gender: 'm', color: 0xC8D0E0 },
         { name: 'Pearl',    gender: 'f', color: 0xF0E8E0 }, { name: 'Tundra',   gender: 'f', color: 0xD0D8E0 },
         { name: 'Opal',     gender: 'f', color: 0xE0E8FF, breedOnly: true, parents: [0, 2] },
         { name: 'Storm',    gender: 'm', color: 0xA0A8C0, breedOnly: true, parents: [1, 5] },
     ]},
-    arctic_fox: { id: 'arctic_fox', name: 'Arctic Fox', type: 'mammal_small', rarity: 'rare', appeal: 9, hungerRate: 0.25, color: 0xD8DEE8, season: 'winter', variants: [
+    arctic_fox: { id: 'arctic_fox', name: 'Arctic Fox', type: 'mammal_small', rarity: 'rare', hungerRate: 0.25, bondTreatsBase: 8, foodCost: 7, color: 0xD8DEE8, season: 'winter', variants: [
         { name: 'Snowdrift', gender: 'm', color: 0xE8E8F0 }, { name: 'Crystal', gender: 'f', color: 0xD8E0F0 },
         { name: 'Winter',    gender: 'f', color: 0xC8D0E0 }, { name: 'Flurry',  gender: 'f', color: 0xF0F0F8 },
         { name: 'Nimbus',    gender: 'm', color: 0xC0C8D8 }, { name: 'Ash',     gender: 'm', color: 0xA0A8B8 },
@@ -160,14 +162,14 @@ export const ILLNESSES = {
     fatigue:     { id: 'fatigue', name: 'Fatigue', healthDrain: 0.1, happyDrain: 0.4, treatCost: 20, days: 4 },
 };
 
-// Enrichments — habitat items that boost animal happiness and visitor appeal
+// Enrichments — habitat items that boost animal happiness
 export const ENRICHMENTS = {
-    scratching_post: { id: 'scratching_post', name: 'Scratching Post', cost: 50, habitats: ['barn'], happyBonus: 5, appealBonus: 1 },
-    bird_bath:       { id: 'bird_bath', name: 'Bird Bath', cost: 45, habitats: ['meadow','pond'], happyBonus: 5, appealBonus: 1 },
-    log_pile:        { id: 'log_pile', name: 'Log Pile', cost: 55, habitats: ['forest'], happyBonus: 4, appealBonus: 1 },
-    rock_garden:     { id: 'rock_garden', name: 'Rock Garden', cost: 40, habitats: ['pond'], happyBonus: 5, appealBonus: 1 },
-    toy_ball:        { id: 'toy_ball', name: 'Toy Ball', cost: 35, habitats: null, happyBonus: 3, appealBonus: 1 },
-    cozy_bed:        { id: 'cozy_bed', name: 'Cozy Bed', cost: 60, habitats: null, happyBonus: 4, appealBonus: 1 },
+    scratching_post: { id: 'scratching_post', name: 'Scratching Post', cost: 50, habitats: ['barn'], happyBonus: 5 },
+    bird_bath:       { id: 'bird_bath', name: 'Bird Bath', cost: 45, habitats: ['meadow','pond'], happyBonus: 5 },
+    log_pile:        { id: 'log_pile', name: 'Log Pile', cost: 55, habitats: ['forest'], happyBonus: 4 },
+    rock_garden:     { id: 'rock_garden', name: 'Rock Garden', cost: 40, habitats: ['pond'], happyBonus: 5 },
+    toy_ball:        { id: 'toy_ball', name: 'Toy Ball', cost: 35, habitats: null, happyBonus: 3 },
+    cozy_bed:        { id: 'cozy_bed', name: 'Cozy Bed', cost: 60, habitats: null, happyBonus: 4 },
 };
 
 // Missions — biome-based rescue missions with cost, duration, and possible species
@@ -179,13 +181,13 @@ export const MISSIONS = {
     mountain: { id: 'mountain', name: 'Mountains', cost: 150, duration: 260, species: ['bear_cub','snowy_owl','arctic_fox','phoenix_chick'], desc: 'Climb the high peaks' },
 };
 
-// Visitor types — spawn weights, income multipliers, preferences (species type/rarity)
+// Visitor types — spawn weights, income multipliers, stay duration multipliers
 export const VISITOR_TYPES = {
-    family:       { id: 'family', name: 'Family', weight: 40, incomeMult: 1.0, prefTypes: ['domestic'], stayMult: 1.0, spriteIdx: 0 },
-    tourist:      { id: 'tourist', name: 'Tourist', weight: 25, incomeMult: 1.2, prefTypes: [], stayMult: 1.0, spriteIdx: 2 },
-    photographer: { id: 'photographer', name: 'Photographer', weight: 15, incomeMult: 2.0, prefRarity: ['rare','legendary'], stayMult: 1.4, spriteIdx: 1 },
-    school:       { id: 'school', name: 'School Group', weight: 15, incomeMult: 0.7, prefTypes: [], stayMult: 0.7, spriteIdx: 2 },
-    vip:          { id: 'vip', name: 'VIP', weight: 5, incomeMult: 3.0, prefRarity: ['rare','legendary'], stayMult: 1.2, minRep: 100, spriteIdx: 3 },
+    family:       { id: 'family', name: 'Family', weight: 40, incomeMult: 1.0, stayMult: 1.0, spriteIdx: 0 },
+    tourist:      { id: 'tourist', name: 'Tourist', weight: 25, incomeMult: 1.2, stayMult: 1.0, spriteIdx: 2 },
+    photographer: { id: 'photographer', name: 'Photographer', weight: 15, incomeMult: 2.0, stayMult: 1.4, spriteIdx: 1 },
+    school:       { id: 'school', name: 'School Group', weight: 15, incomeMult: 0.7, stayMult: 0.7, spriteIdx: 2 },
+    vip:          { id: 'vip', name: 'VIP', weight: 5, incomeMult: 3.0, stayMult: 1.2, minRep: 100, spriteIdx: 3 },
 };
 
 // Achievements — 22 milestones for rescues, breeding, species, coins, upgrades, etc.
@@ -226,9 +228,10 @@ export const UPGRADES = {
     conservation:   { id: 'conservation', name: 'Conservation', cost: 800, desc: 'Rescues arrive 30% faster' },
 };
 
-// Staff types — 4 hirable roles (volunteer, caretaker, vet, guide) with costs and effects
+// Staff types — 4 hirable roles (volunteer, caretaker, vet, guide) with costs and effects.
+// Volunteers are free (0g hire, 0g salary) but limited to 1.
 export const STAFF_TYPES = {
-    volunteer:  { id: 'volunteer', name: 'Volunteer', hireCost: 50, salary: 10, desc: 'Auto-feeds one habitat', color: 0x55AA55 },
+    volunteer:  { id: 'volunteer', name: 'Volunteer', hireCost: 0, salary: 0, maxCount: 1, desc: 'Auto-feeds one habitat', color: 0x55AA55 },
     caretaker:  { id: 'caretaker', name: 'Caretaker', hireCost: 150, salary: 30, desc: 'Auto-feeds all animals', color: 0x5566AA },
     vet:        { id: 'vet', name: 'Veterinarian', hireCost: 200, salary: 40, desc: 'Keeps animals healthy', color: 0xAA5555 },
     guide:      { id: 'guide', name: 'Tour Guide', hireCost: 100, salary: 25, desc: '+25% visitor income', color: 0xAA8855 },
