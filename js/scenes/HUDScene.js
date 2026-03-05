@@ -7,7 +7,9 @@
 // and full modal blocking, two-level build menu (categories then items), and management panels
 // (vertically centered). Build menu: click Build → category buttons (Habitats, Decorations,
 // Facilities) appear; click a category → item sub-menu appears to the right.
-// Top bar shows day/season, reputation face, clock with speed controls, research points, food count, and coins.
+// Top bar shows day/season, reputation face, clock with speed controls (graphics-based highlight
+// behind active icon to avoid preFX pixel shifts), research points, food count, and coins.
+// animalDeselected event closes the animal panel when navigating to a habitat with no animals.
 // hasOpenPanel() lets GameScene suppress world clicks while a management panel or settings is visible.
 import { W, H, HABITATS, SPECIES, RARITY_COLOR, CLR, SEASONS, UPGRADES, STAFF_TYPES,
     TRAITS, ILLNESSES, ENRICHMENTS, MISSIONS, VISITOR_TYPES, ACHIEVEMENTS,
@@ -48,8 +50,9 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== TOP BAR ========== */
 
-    // Day, season, reputation face (dynamic expression based on rep 0–100), clock, speed controls (tortoise/hare), research points, food count, coins, settings gear.
-    // All elements are vertically centered at midY=21 using setOrigin(_, 0.5).
+    // Day, season, reputation face (dynamic expression based on rep 0–100), clock, speed controls
+    // (tortoise/hare with graphics-based highlight behind active icon), research points, food count,
+    // coins, settings gear. All elements are vertically centered at midY=21 using setOrigin(_, 0.5).
     createTopBar() {
         const bar = this.add.graphics();
         bar.fillStyle(CLR.uiBg, 0.9); bar.fillRect(0, 0, W, 42);
@@ -90,15 +93,16 @@ export default class HUDScene extends Phaser.Scene {
     }
 
     _updateSpeedGlow() {
-        if (this._speedGlow) {
-            this._speedGlowTarget.preFX.remove(this._speedGlow);
-            this._speedGlow = null; this._speedGlowTarget = null;
-        }
+        if (this._speedHighlight) { this._speedHighlight.destroy(); this._speedHighlight = null; }
         const mode = this._activeSpeed || 'normal';
         if (mode === 'normal') return;
         const btn = mode === 'slow' ? this.tortoiseBtn : this.hareBtn;
-        this._speedGlow = btn.preFX.addGlow(0xcccc88, 1.5, 0, false, 0.1, 6);
-        this._speedGlowTarget = btn;
+        const g = this.add.graphics().setDepth(btn.depth - 1);
+        g.fillStyle(0xffff33, 1);
+        g.fillRoundedRect(Math.round(btn.x) - 13, Math.round(btn.y) - 13, 26, 26, 6);
+        g.lineStyle(2, 0xffcc00, 1);
+        g.strokeRoundedRect(Math.round(btn.x) - 13, Math.round(btn.y) - 13, 26, 26, 6);
+        this._speedHighlight = g;
     }
 
     /* ========== SETTINGS MENU ========== */
@@ -446,7 +450,8 @@ export default class HUDScene extends Phaser.Scene {
 
     // Subscribes to game events: timeUpdate, coinsUpdate, foodUpdate, rescueEvent, showAnimalInfo,
     // showHabitatInfo, showFacilityView (triggers facility back bar), animalUpdate (auto-refreshes
-    // animal panel), habitatViewClosed (cleanup on zoom-out from habitat or facility), etc.
+    // animal panel), animalDeselected (closes animal panel when selection cleared, e.g. navigating
+    // to an empty habitat), habitatViewClosed (cleanup on zoom-out from habitat or facility), etc.
     listenEvents() {
         const ev = this.game.events;
         ev.on('timeUpdate', this.updateTime, this);
@@ -474,6 +479,9 @@ export default class HUDScene extends Phaser.Scene {
         ev.on('showFacilityView', fac => this.showFacilityBackBar(fac));
         ev.on('habitatSelectEnter', label => this.showSelectBar(label));
         ev.on('habitatSelectExit', () => this.hideSelectBar());
+        ev.on('animalDeselected', () => {
+            if (this.animalPanel) { this.animalPanel.destroy(); this.animalPanel = null; this._viewedAnimal = null; }
+        });
         ev.on('animalUpdate', () => {
             if (this.animalPanel && this._viewedAnimal) {
                 const fresh = this.gs.state.animals.find(a => a.id === this._viewedAnimal.id);

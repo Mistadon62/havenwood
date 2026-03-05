@@ -495,6 +495,8 @@ export class SpriteGenerator {
             g.fillRect(8, 8, 2, 2);
         });
 
+        // Reputation faces (0–10): color gradient red→orange→yellow→green matching expression frown→smile.
+        // Breakpoint at t=0.4 keeps frowning faces (t<0.5) solidly red/orange; green only at smiling range.
         for (let i = 0; i <= 10; i++) {
             tex(scene, `rep_face_${i}`, 20, 20, g => {
                 const t = i / 10;

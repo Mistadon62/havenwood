@@ -1,7 +1,8 @@
 /**
  * GameScene - Core gameplay scene for Havenwood, a Phaser 3 animal sanctuary management game.
  * Handles map, building (habitats, decorations, facilities), habitat zoom view (with
- * auto-select and animal cycling), facility zoom view (with clickable produce), animals,
+ * auto-select, animal cycling, and cross-habitat navigation by clicking other habitats
+ * or their animals while zoomed), facility zoom view (with clickable produce), animals,
  * goal-driven visitors (8-direction A* pathfinding, closest-side viewing preference, react
  * with speech bubbles, reputation per visit, paths recalculate on build changes), staff,
  * automatic breeding (trait inheritance, generation tracking, name inheritance from
@@ -14,7 +15,8 @@
  * gardens) that block walkability and occupy grid space but hold no animals. Gardens
  * contain 12 produce items (3 types × 4 each) that start unripe, grow over 8 in-game
  * hours, can be clicked to harvest for food, then regrow. Mini progress bars beneath
- * each item are visible only when zoomed in.
+ * each item are visible only when zoomed in. Timer-based callbacks (bonds, breeding,
+ * illness, staff, achievements) have independent pause guards matching the main update loop.
  */
 import { TILE, COLS, ROWS, W, H, MAP_Y, TIME_SCALE, START_COINS, HABITATS, SPECIES, RARITY_WEIGHT, RESCUE_MSG, CLR,
     SEASONS, SEASON_ORDER, SEASON_LENGTH, SEASON_CYCLE, UPGRADES, STAFF_TYPES,
@@ -171,8 +173,10 @@ export default class GameScene extends Phaser.Scene {
     // Pointerdown places buildable or zooms in; zooming into a habitat auto-selects a random animal,
     // zooming into a facility (garden) enables produce clicking. While zoomed into a facility,
     // hovering ripe produce shows pointer cursor and clicking harvests it.
-    // World clicks and hover outlines are suppressed while zoomed (viewingHabitat/viewingFacility)
-    // or while a HUD management panel is open (hasOpenPanel check prevents clicking through panels).
+    // While zoomed into a habitat, clicking/hovering on a *different* habitat shows a hover outline
+    // and navigates to it (panning camera, updating habitat/animal panels). Clicking an animal in
+    // another habitat also navigates. World clicks are otherwise suppressed while zoomed
+    // (viewingHabitat/viewingFacility) or while a HUD management panel is open.
     // Right-click or ESC exits build mode. ESC priority: close settings → open settings during
     // rescue → cancel habitat select → cancel move → close panels → zoom out → exit build → open settings.
     // Browser context menu is suppressed on the canvas.
@@ -283,7 +287,26 @@ export default class GameScene extends Phaser.Scene {
                 }
                 return;
             }
-            if (this.state.viewingHabitat) { this.hoverOutline.setVisible(false); return; }
+            if (this.state.viewingHabitat) {
+                const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
+                if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
+                    const cell = this.grid[gy]?.[gx];
+                    if (cell && typeof cell === 'string' && cell.startsWith('hab_') && cell !== this.state.viewingHabitat) {
+                        const hab = this.state.habitats.find(h => h.id === cell);
+                        if (hab) {
+                            const ht = HABITATS[hab.type];
+                            this.hoverOutline.clear().setVisible(true);
+                            this.hoverOutline.lineStyle(2, ht.stroke, 0.5);
+                            this.hoverOutline.strokeRect(hab.gx * TILE, MAP_Y + hab.gy * TILE, ht.w * TILE, ht.h * TILE);
+                            this.game.canvas.style.cursor = 'pointer';
+                            return;
+                        }
+                    }
+                }
+                this.hoverOutline.setVisible(false);
+                this.game.canvas.style.cursor = 'default';
+                return;
+            }
             const hud = this.scene.get('HUDScene');
             if (hud && hud.hasOpenPanel()) { this.hoverOutline.setVisible(false); this.game.canvas.style.cursor = 'default'; return; }
             const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
@@ -357,7 +380,27 @@ export default class GameScene extends Phaser.Scene {
                 }
                 return;
             }
-            if (this.state.viewingHabitat) return;
+            if (this.state.viewingHabitat) {
+                const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
+                if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
+                    const cell = this.grid[gy]?.[gx];
+                    if (cell && typeof cell === 'string' && cell.startsWith('hab_') && cell !== this.state.viewingHabitat) {
+                        const hab = this.state.habitats.find(h => h.id === cell);
+                        if (hab) {
+                            this.sfx.click();
+                            this.zoomToHabitat(hab);
+                            this.game.events.emit('showHabitatInfo', hab);
+                            const habAnimals = this.state.animals.filter(a => a.habitatId === hab.id);
+                            if (habAnimals.length > 0) {
+                                this.selectAnimal(Phaser.Utils.Array.GetRandom(habAnimals));
+                            } else {
+                                this.clearSelectedAnimal();
+                            }
+                        }
+                    }
+                }
+                return;
+            }
             const hud = this.scene.get('HUDScene');
             if (hud && hud.hasOpenPanel()) return;
             if (this.state.buildMode) {
@@ -487,6 +530,7 @@ export default class GameScene extends Phaser.Scene {
             this._selectedAnimal.sprite._hoverGlow = null;
         }
         this._selectedAnimal = null;
+        this.game.events.emit('animalDeselected');
     }
 
     selectAnimal(animal) {
@@ -1164,9 +1208,10 @@ export default class GameScene extends Phaser.Scene {
     // Health stays at 100 unless ill (drains during illness, recovers after healing).
     // Neglect: 0 hunger or happiness for >1 game-hour causes health drain. Health 0 = death.
     // Friends in the same habitat grant a happiness buff; relocating away triggers a temporary loneliness debuff.
-    // Animals are only clickable while zoomed into their habitat (viewingHabitat guard).
-    // Hovering over an animal while zoomed in adds a preFX glow that follows the sprite shape.
+    // Animals are clickable while zoomed into any habitat; clicking an animal in a different habitat
+    // navigates to that habitat (pans camera, updates panels). Hover glow follows sprite shape.
     // selectAnimal() centralizes selection: clears previous glow, applies new glow, emits showAnimalInfo.
+    // clearSelectedAnimal() emits animalDeselected so the HUD closes the animal panel.
     // updateAnimals emits animalUpdate every ~2s so the HUD animal panel auto-refreshes.
 
     addAnimal(speciesId, name, habitatId, opts = {}) {
@@ -1653,6 +1698,7 @@ export default class GameScene extends Phaser.Scene {
 
     /* ========== BONDS ========== */
     // Pairs in same habitat form friendships over time; social trait speeds this up.
+    // Guarded: skipped while rescuePaused, settingsPaused, or habSelectMode (runs on its own timer).
 
     updateBonds() {
         if (this.state.rescuePaused || this.state.settingsPaused || this._habSelectMode) return;
@@ -2816,7 +2862,9 @@ export default class GameScene extends Phaser.Scene {
 
     /* ========== UPDATE ========== */
     // Main loop: time, animals, visitors, staff, missions, ambient sound, rescue timing, auto-save.
-    // Skipped entirely while rescuePaused or settingsPaused is set (rescue/settings freezes all simulation).
+    // Skipped entirely while rescuePaused, settingsPaused, movingHabitat, or habSelectMode is set.
+    // Timer-based callbacks (updateBonds, checkAutoBreed, checkIllness, staffWork, checkAchievements)
+    // run on independent Phaser timers and have their own pause guards for the same conditions.
 
     update(time, delta) {
         if (this.state.rescuePaused || this.state.settingsPaused || this._movingHabitat || this._habSelectMode) return;
