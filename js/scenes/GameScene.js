@@ -1219,13 +1219,19 @@ export default class GameScene extends Phaser.Scene {
         if (animal.isBaby) sprite.setScale(0.6);
 
         sprite.on('pointerdown', () => {
-            if (!this.state.viewingHabitat || this.state.viewingHabitat !== animal.habitatId || this.state.rescuePaused) return;
+            if (!this.state.viewingHabitat || this.state.rescuePaused) return;
             this._skipPointerDown = true;
             this.sfx.click();
+            if (this.state.viewingHabitat !== animal.habitatId) {
+                const hab = this.state.habitats.find(h => h.id === animal.habitatId);
+                if (!hab) return;
+                this.zoomToHabitat(hab);
+                this.game.events.emit('showHabitatInfo', hab);
+            }
             this.selectAnimal(animal);
         });
         sprite.on('pointerover', () => {
-            if (!this.state.viewingHabitat || this.state.viewingHabitat !== animal.habitatId || this.state.rescuePaused) return;
+            if (!this.state.viewingHabitat || this.state.rescuePaused) return;
             if (!sprite.preFX) return;
             if (!sprite._hoverGlow) sprite._hoverGlow = sprite.preFX.addGlow(0xffffff, 2, 0, false, 0.15, 10);
         });
