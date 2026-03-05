@@ -805,6 +805,8 @@ export default class GameScene extends Phaser.Scene {
 
     initGardenProduce(fac, saved) {
         fac.produce = [];
+        fac._produceGfx = this.add.graphics().setDepth(13);
+        fac._miniBarGfx = this.add.graphics().setDepth(14).setVisible(false);
         const ft = FACILITIES[fac.type];
         const base = fac.gx * TILE, top = MAP_Y + fac.gy * TILE;
         const pw = ft.w * TILE, ph = ft.h * TILE;
@@ -820,91 +822,89 @@ export default class GameScene extends Phaser.Scene {
                 const sv = saved ? saved[idx] : null;
                 const regrowLeft = sv ? sv.regrowLeft : (saved ? 0 : GARDEN_REGROW_TIME);
                 const picked = regrowLeft > 0;
+                fac.produce.push({ row, col, type: pType.id, x: fx, y: fy, picked, regrowLeft });
+            }
+        }
+        this._redrawAllProduce(fac);
+        this._redrawAllMiniBars(fac);
+    }
 
-                const sprite = this._drawProduce(fx, fy, pType, picked);
-                const miniBar = this.add.graphics().setDepth(14).setVisible(false);
-                const slot = { row, col, type: pType.id, x: fx, y: fy, picked, regrowLeft, sprite, miniBar };
-                this._drawMiniBar(slot);
-                fac.produce.push(slot);
+    _redrawAllProduce(fac) {
+        const g = fac._produceGfx;
+        g.clear();
+        for (const slot of fac.produce) {
+            const pType = GARDEN_PRODUCE.find(p => p.id === slot.type);
+            const cy = slot.y + 3;
+            if (slot.picked) {
+                g.fillStyle(0x6B4226, 0.2);
+                g.fillCircle(slot.x, cy, 2);
+            } else {
+                g.fillStyle(pType.leafColor);
+                g.fillRect(slot.x - 1, cy + 1, 2, 4);
+                g.fillStyle(pType.leafColor, 0.7);
+                g.fillCircle(slot.x - 2, cy, 2);
+                g.fillCircle(slot.x + 2, cy, 2);
+                g.fillStyle(pType.color);
+                g.fillCircle(slot.x, cy - 1, 3);
             }
         }
     }
 
-    _drawProduce(x, y, pType, picked) {
-        const cy = y + 3;
-        const g = this.add.graphics().setDepth(13);
-        if (picked) {
-            g.fillStyle(0x6B4226, 0.2);
-            g.fillCircle(x, cy, 2);
-        } else {
-            g.fillStyle(pType.leafColor);
-            g.fillRect(x - 1, cy + 1, 2, 4);
-            g.fillStyle(pType.leafColor, 0.7);
-            g.fillCircle(x - 2, cy, 2);
-            g.fillCircle(x + 2, cy, 2);
-            g.fillStyle(pType.color);
-            g.fillCircle(x, cy - 1, 3);
-        }
-        return g;
-    }
-
-    _drawMiniBar(slot) {
-        const g = slot.miniBar;
+    _redrawAllMiniBars(fac) {
+        const g = fac._miniBarGfx;
         g.clear();
-        if (!slot.picked) return;
-        const bw = 10, bh = 2;
-        const bx = slot.x - bw / 2, by = slot.y + 9;
-        const pct = 1 - (slot.regrowLeft / GARDEN_REGROW_TIME);
-        g.fillStyle(0x333333, 0.6);
-        g.fillRect(bx, by, bw, bh);
-        if (pct > 0) {
-            g.fillStyle(0x66AA33, 0.9);
-            g.fillRect(bx, by, Math.round(bw * pct), bh);
+        for (const slot of fac.produce) {
+            if (!slot.picked) continue;
+            const bw = 10, bh = 2;
+            const bx = slot.x - bw / 2, by = slot.y + 9;
+            const pct = 1 - (slot.regrowLeft / GARDEN_REGROW_TIME);
+            g.fillStyle(0x333333, 0.6);
+            g.fillRect(bx, by, bw, bh);
+            if (pct > 0) {
+                g.fillStyle(0x66AA33, 0.9);
+                g.fillRect(bx, by, Math.round(bw * pct), bh);
+            }
         }
-    }
-
-    _refreshProduceSprite(slot) {
-        if (slot.sprite) slot.sprite.destroy();
-        const pType = GARDEN_PRODUCE.find(p => p.id === slot.type);
-        slot.sprite = this._drawProduce(slot.x, slot.y, pType, slot.picked);
-        this._drawMiniBar(slot);
     }
 
     showGardenMiniBars(fac) {
-        if (!fac.produce) return;
-        for (const slot of fac.produce) slot.miniBar.setVisible(true);
+        if (!fac._miniBarGfx) return;
+        this._redrawAllMiniBars(fac);
+        fac._miniBarGfx.setVisible(true);
     }
 
     hideGardenMiniBars(fac) {
-        if (!fac.produce) return;
-        for (const slot of fac.produce) slot.miniBar.setVisible(false);
+        if (!fac._miniBarGfx) return;
+        fac._miniBarGfx.setVisible(false);
     }
 
     pickProduce(fac, slot) {
         if (slot.picked) return;
         slot.picked = true;
         slot.regrowLeft = GARDEN_REGROW_TIME;
-        this._refreshProduceSprite(slot);
         const pType = GARDEN_PRODUCE.find(p => p.id === slot.type);
         this.addFood(pType.food);
         this.sfx.click();
+        this._redrawAllProduce(fac);
+        this._redrawAllMiniBars(fac);
     }
 
     updateGardens(delta) {
         const dt = TIME_SCALE * this.timeSpeedMult * delta / 1000;
         for (const fac of this.state.facilities) {
             if (fac.type !== 'garden' || !fac.produce) continue;
+            let changed = false;
             for (const slot of fac.produce) {
                 if (!slot.picked) continue;
                 slot.regrowLeft -= dt;
                 if (slot.regrowLeft <= 0) {
                     slot.regrowLeft = 0;
                     slot.picked = false;
-                    this._refreshProduceSprite(slot);
-                } else {
-                    this._drawMiniBar(slot);
+                    changed = true;
                 }
             }
+            if (changed) this._redrawAllProduce(fac);
+            if (this.state.viewingFacility === fac.id) this._redrawAllMiniBars(fac);
         }
     }
 
@@ -1219,13 +1219,13 @@ export default class GameScene extends Phaser.Scene {
         if (animal.isBaby) sprite.setScale(0.6);
 
         sprite.on('pointerdown', () => {
-            if (!this.state.viewingHabitat || this.state.rescuePaused) return;
+            if (!this.state.viewingHabitat || this.state.viewingHabitat !== animal.habitatId || this.state.rescuePaused) return;
             this._skipPointerDown = true;
             this.sfx.click();
             this.selectAnimal(animal);
         });
         sprite.on('pointerover', () => {
-            if (!this.state.viewingHabitat || this.state.rescuePaused) return;
+            if (!this.state.viewingHabitat || this.state.viewingHabitat !== animal.habitatId || this.state.rescuePaused) return;
             if (!sprite.preFX) return;
             if (!sprite._hoverGlow) sprite._hoverGlow = sprite.preFX.addGlow(0xffffff, 2, 0, false, 0.15, 10);
         });
@@ -1510,6 +1510,7 @@ export default class GameScene extends Phaser.Scene {
     // inherit the same-gender parent's name (girls from mother, boys from father).
 
     checkAutoBreed() {
+        if (this.state.rescuePaused || this.state.settingsPaused || this._habSelectMode) return;
         const checked = new Set();
         for (const a of this.state.animals) {
             if (a.isBaby || a.isPregnant || a.breedCooldown > 0 || a.illness) continue;
@@ -1614,6 +1615,7 @@ export default class GameScene extends Phaser.Scene {
     // Emits animalUpdate when illness state changes so the HUD panel refreshes immediately.
 
     checkIllness() {
+        if (this.state.rescuePaused || this.state.settingsPaused || this._habSelectMode) return;
         const hasVet = this.state.staff.some(s => s.type === 'vet');
         let changed = false;
         for (const a of this.state.animals) {
@@ -1647,6 +1649,7 @@ export default class GameScene extends Phaser.Scene {
     // Pairs in same habitat form friendships over time; social trait speeds this up.
 
     updateBonds() {
+        if (this.state.rescuePaused || this.state.settingsPaused || this._habSelectMode) return;
         for (const hab of this.state.habitats) {
             const habAnimals = this.state.animals.filter(a => a.habitatId === hab.id && !a.isBaby);
             if (habAnimals.length < 2) continue;
@@ -2280,6 +2283,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     staffWork() {
+        if (this.state.rescuePaused || this.state.settingsPaused || this._habSelectMode) return;
         for (const s of this.state.staff) {
             if (s.type === 'caretaker') {
                 this.state.animals.forEach(a => { a.hunger = Math.min(100, a.hunger + 8); });
@@ -2550,6 +2554,7 @@ export default class GameScene extends Phaser.Scene {
     // One-time unlocks; each has a check function; emits ★-prefixed notification and achievementEarned.
 
     checkAchievements() {
+        if (this.state.rescuePaused || this.state.settingsPaused || this._habSelectMode) return;
         const s = this.state;
         const checks = {
             first_rescue: () => s.stats.rescued >= 1,

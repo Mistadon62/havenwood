@@ -17,6 +17,7 @@ export default class HUDScene extends Phaser.Scene {
     constructor() { super('HUDScene'); }
 
     create() {
+        this.cameras.main.setRoundPixels(true);
         this.gs = this.scene.get('GameScene');
         this.animalPanel = null;
         this.rescuePopup = null;
@@ -314,18 +315,18 @@ export default class HUDScene extends Phaser.Scene {
             const cy = menuBottom - (categories.length - i) * (catH + catGap);
             const bg = this.add.graphics();
             const cc = catColor[cid];
-            bg.fillStyle(cc, isActive ? 0.5 : 0.22);
+            bg.fillStyle(cc, isActive ? 0.7 : 0.55);
             bg.fillRoundedRect(catX, cy, catW, catH, 4);
-            bg.lineStyle(isActive ? 2 : 1, cc, isActive ? 1 : 0.5);
+            bg.lineStyle(isActive ? 2 : 1, cc, isActive ? 1 : 0.85);
             bg.strokeRoundedRect(catX, cy, catW, catH, 4);
             ct.add(bg);
 
             const label = catLabels[cid] + (isActive ? '  \u25B6' : '');
-            ct.add(this.txt(catX + catW / 2, cy + catH / 2, label, 7, isActive ? CLR.uiText : '#AAAAAA').setOrigin(0.5));
+            ct.add(this.txt(catX + catW / 2, cy + catH / 2, label, 7, isActive ? CLR.uiText : '#DDDDDD').setOrigin(0.5));
 
             const hit = this.add.rectangle(catX + catW / 2, cy + catH / 2, catW, catH, 0, 0).setInteractive({ useHandCursor: true });
-            hit.on('pointerover', () => { if (cid !== this._buildCategory) { bg.clear(); bg.fillStyle(cc, 0.35); bg.fillRoundedRect(catX, cy, catW, catH, 4); bg.lineStyle(1, cc, 0.8); bg.strokeRoundedRect(catX, cy, catW, catH, 4); } });
-            hit.on('pointerout', () => { if (cid !== this._buildCategory) { bg.clear(); bg.fillStyle(cc, 0.22); bg.fillRoundedRect(catX, cy, catW, catH, 4); bg.lineStyle(1, cc, 0.5); bg.strokeRoundedRect(catX, cy, catW, catH, 4); } });
+            hit.on('pointerover', () => { if (cid !== this._buildCategory) { bg.clear(); bg.fillStyle(cc, 0.7); bg.fillRoundedRect(catX, cy, catW, catH, 4); bg.lineStyle(1, cc, 1); bg.strokeRoundedRect(catX, cy, catW, catH, 4); } });
+            hit.on('pointerout', () => { if (cid !== this._buildCategory) { bg.clear(); bg.fillStyle(cc, 0.55); bg.fillRoundedRect(catX, cy, catW, catH, 4); bg.lineStyle(1, cc, 0.85); bg.strokeRoundedRect(catX, cy, catW, catH, 4); } });
             hit.on('pointerdown', () => {
                 if (this._buildCategory === cid) {
                     this._buildCategory = null;
@@ -977,8 +978,8 @@ export default class HUDScene extends Phaser.Scene {
         bbBg.fillStyle(0x664422, 0.75); bbBg.fillRoundedRect(bbX, bbY, bbW, bbH, 6);
         bbBg.lineStyle(2, 0xAA8855); bbBg.strokeRoundedRect(bbX, bbY, bbW, bbH, 6);
 
-        const bbBtn = this.txt(W / 2, bbY + bbH / 2, '\u2190 Back', 9, '#FFCC88').setOrigin(0.5).setDepth(250).setInteractive({ useHandCursor: true });
-        bbBtn.on('pointerdown', () => { this.gs.zoomOut(); });
+        const bbBtn = this.txt(W / 2, bbY + bbH / 2, '< Back', 9, '#FFCC88').setOrigin(0.5).setDepth(250).setInteractive({ useHandCursor: true });
+        bbBtn.on('pointerdown', () => { if (!this.gs.state.rescuePaused) this.gs.zoomOut(); });
         bbBtn.on('pointerover', () => { bbBtn.setColor('#FFEECC'); bbBg.clear(); bbBg.fillStyle(0x886633, 0.85); bbBg.fillRoundedRect(bbX, bbY, bbW, bbH, 6); bbBg.lineStyle(2, 0xCCBB77); bbBg.strokeRoundedRect(bbX, bbY, bbW, bbH, 6); });
         bbBtn.on('pointerout', () => { bbBtn.setColor('#FFCC88'); bbBg.clear(); bbBg.fillStyle(0x664422, 0.75); bbBg.fillRoundedRect(bbX, bbY, bbW, bbH, 6); bbBg.lineStyle(2, 0xAA8855); bbBg.strokeRoundedRect(bbX, bbY, bbW, bbH, 6); });
 

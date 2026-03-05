@@ -498,9 +498,9 @@ export class SpriteGenerator {
         for (let i = 0; i <= 10; i++) {
             tex(scene, `rep_face_${i}`, 20, 20, g => {
                 const t = i / 10;
-                const rr = Math.round(t < 0.5 ? 200 + (1 - t * 2) * 55 : 200 - (t - 0.5) * 2 * 130);
-                const gg = Math.round(t < 0.5 ? 60 + t * 2 * 140 : 200 + (t - 0.5) * 2 * 55);
-                const bb = Math.round(t < 0.5 ? 40 : 40 + (t - 0.5) * 2 * 30);
+                const rr = Math.round(t < 0.4 ? 220 + (1 - t / 0.4) * 35 : 220 - ((t - 0.4) / 0.6) * 170);
+                const gg = Math.round(t < 0.4 ? 50 + (t / 0.4) * 80 : 130 + ((t - 0.4) / 0.6) * 125);
+                const bb = Math.round(40 + t * 25);
                 const faceColor = (rr << 16) | (gg << 8) | bb;
                 g.fillStyle(faceColor);
                 g.fillCircle(10, 10, 9);
