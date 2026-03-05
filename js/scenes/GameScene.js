@@ -1534,8 +1534,17 @@ export default class GameScene extends Phaser.Scene {
         const entX = Phaser.Math.Between(13, 16) * TILE + TILE / 2;
         const sprite = this.add.image(entX, MAP_Y + (ROWS - 1) * TILE, `visitor_${vType.spriteIdx}`).setDepth(30).setAlpha(0.85);
 
-        const entryTarget = { x: entX, y: MAP_Y + (ROWS - 3) * TILE };
-        this.visitors.push({
+        const entGx = Math.floor(entX / TILE);
+        let entryTarget = null;
+        for (let row = ROWS - 3; row >= 2; row--) {
+            if (this._isWalkable(entGx, row)) {
+                entryTarget = { x: entGx * TILE + TILE / 2, y: MAP_Y + row * TILE + TILE / 2 };
+                break;
+            }
+        }
+        if (!entryTarget) entryTarget = this.randomOpenTile();
+
+        const v = {
             sprite, visitorType: vType.id,
             tx: entryTarget.x, ty: entryTarget.y,
             speed: Phaser.Math.Between(25, 40),
@@ -1547,7 +1556,9 @@ export default class GameScene extends Phaser.Scene {
             habsToVisit: Math.min(this.state.habitats.length, Phaser.Math.Between(1, Math.max(1, this.state.habitats.length))),
             viewTimer: 0,
             satisfaction: 0,
-        });
+        };
+        this._setVisitorPath(v);
+        this.visitors.push(v);
     }
 
     _isWalkable(gx, gy) {
