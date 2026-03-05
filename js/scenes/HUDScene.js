@@ -1,15 +1,17 @@
 // UI overlay scene running parallel to GameScene. Has its own camera, unaffected by GameScene zoom.
 // Communicates via this.game.events; this.gs = GameScene reference for state and method calls.
-// Manages toolbar (hidden during habitat zoom, disabled during rescue), habitat/animal panels
-// (with close X, back bar, navigation arrows to cycle animals, generation display for bred animals),
-// settings/pause menu
-// (gear icon or ESC from sanctuary; includes auto-save toggle), rescue popup with time-pause
-// and full modal blocking, build popup, and management panels (vertically centered).
+// Manages toolbar (hidden during habitat/facility zoom, disabled during rescue), habitat/animal
+// panels (with close X, back bar, navigation arrows to cycle animals, generation display for bred
+// animals), facility back bar (shown when zoomed into a garden or other facility), settings/pause
+// menu (gear icon or ESC from sanctuary; includes auto-save toggle), rescue popup with time-pause
+// and full modal blocking, two-level build menu (categories then items), and management panels
+// (vertically centered). Build menu: click Build → category buttons (Habitats, Decorations,
+// Facilities) appear; click a category → item sub-menu appears to the right.
 // Top bar shows day/season, reputation face, clock with speed controls, research points, food count, and coins.
 // hasOpenPanel() lets GameScene suppress world clicks while a management panel or settings is visible.
 import { W, H, HABITATS, SPECIES, RARITY_COLOR, CLR, SEASONS, UPGRADES, STAFF_TYPES,
     TRAITS, ILLNESSES, ENRICHMENTS, MISSIONS, VISITOR_TYPES, ACHIEVEMENTS,
-    RESEARCH, RESEARCH_BRANCHES } from '../GameData.js';
+    RESEARCH, RESEARCH_BRANCHES, DECORATIONS, FACILITIES } from '../GameData.js';
 
 export default class HUDScene extends Phaser.Scene {
     constructor() { super('HUDScene'); }
@@ -68,7 +70,7 @@ export default class HUDScene extends Phaser.Scene {
         this.rpTxt = this.txt(W - 268, midY, '0', 9, '#44DDAA').setOrigin(0, 0.5);
         this.repFace = this.add.image(300, midY, 'rep_face_5').setScale(0.9);
         this.add.image(W - 210, midY, 'icon_food').setScale(1.3);
-        this.foodTxt = this.txt(W - 196, midY, '1000', 9, '#FF9944').setOrigin(0, 0.5);
+        this.foodTxt = this.txt(W - 196, midY, '100', 9, '#FF9944').setOrigin(0, 0.5);
         this.add.image(W - 120, midY, 'icon_coin').setScale(1.3);
         this.coinTxt = this.txt(W - 106, midY, '', 9, CLR.gold).setOrigin(0, 0.5);
 
@@ -94,7 +96,7 @@ export default class HUDScene extends Phaser.Scene {
         const mode = this._activeSpeed || 'normal';
         if (mode === 'normal') return;
         const btn = mode === 'slow' ? this.tortoiseBtn : this.hareBtn;
-        this._speedGlow = btn.preFX.addGlow(0xffffff, 2, 0, false, 0.15, 10);
+        this._speedGlow = btn.preFX.addGlow(0xcccc88, 1.5, 0, false, 0.1, 6);
         this._speedGlowTarget = btn;
     }
 
@@ -192,8 +194,9 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== TOOLBAR ========== */
 
-    // Bottom bar: Build (opens habitat popup) and management toggles (Missions, Upgrades, Staff, Research, Journal).
-    // All elements stored in toolbarElements for hide/show during habitat zoom.
+    // Bottom bar: Build (opens two-level build menu: categories → items) and management toggles
+    // (Missions, Upgrades, Staff, Research, Journal).
+    // All elements stored in toolbarElements for hide/show during habitat/facility zoom.
     createToolbar() {
         const barY = H - 62;
         this.toolbarElements = [];
@@ -211,6 +214,7 @@ export default class HUDScene extends Phaser.Scene {
             { key: 'journal', label: 'Journal', cost: null, color: 0xAA77CC },
         ];
         const gap = Math.min(130, (W - 10) / allItems.length);
+        this._toolGap = gap;
         const startX = W / 2 - (allItems.length * gap) / 2 + gap / 2;
 
         this.toolBtns = [];
@@ -227,7 +231,7 @@ export default class HUDScene extends Phaser.Scene {
             });
             hit.on('pointerout', () => {
                 const isActive = item.key === this.activeBuild ||
-                    (item.key === 'build' && this.activeBuild && HABITATS[this.activeBuild]) ||
+                    (item.key === 'build' && this.activeBuild && (HABITATS[this.activeBuild] || this.activeBuild?.startsWith('decor_') || this.activeBuild?.startsWith('facility_'))) ||
                     item.key === this._activePanel;
                 this.drawToolBtn(bg, x, y, item.color, isActive, gap);
             });
@@ -269,86 +273,179 @@ export default class HUDScene extends Phaser.Scene {
         bg.strokeRoundedRect(x - w / 2, y - 23, w, 46, 4);
     }
 
-    /* ========== BUILD POPUP ========== */
-    // Habitat selection popup above toolbar. Unaffordable habitats are greyed out and non-interactive.
+    /* ========== BUILD MENU ========== */
+    // Two-level build system: vertical category submenu (Habitats / Decorations) with the
+    // selected category at the bottom (highlighted, right arrow), and item picker to its right.
 
     toggleBuildPopup(anchorX, barY) {
         if (this.buildPopup) { this.closeBuildPopup(); return; }
         this.closeAllPanels();
         this._activePanel = 'build';
         this._refreshToolBtns();
+        this._buildCategory = null;
 
         this._buildDismiss = this.add.rectangle(W / 2, H / 2, W, H, 0, 0)
             .setInteractive().setDepth(259);
         this._buildDismiss.on('pointerdown', () => this.closeBuildPopup());
 
-        const habitats = Object.values(HABITATS);
-        const cellW = 105, pad = 16;
-        const pw = habitats.length * cellW + pad * 2;
-        const ph = 76;
-        const px = Math.round((W - pw) / 2);
-        const py = barY - ph - 10;
+        this._buildAnchorX = anchorX;
+        this._buildBarY = barY;
+        this._renderBuildMenu();
+    }
 
-        const ct = this.add.container(px, py).setDepth(260);
-        const bg = this.add.graphics();
-        bg.fillStyle(CLR.uiBg, 0.96);
-        bg.fillRoundedRect(0, 0, pw, ph, 6);
-        bg.lineStyle(2, 0x66BB55);
-        bg.strokeRoundedRect(0, 0, pw, ph, 6);
-        ct.add(bg);
+    _renderBuildMenu() {
+        if (this.buildPopup) this.buildPopup.destroy();
+        if (this._buildItemPopup) { this._buildItemPopup.destroy(); this._buildItemPopup = null; }
+        const anchorX = this._buildAnchorX;
+        const barY = this._buildBarY;
+        const cat = this._buildCategory;
+        const categories = ['habitats', 'decorations', 'facilities'];
+        const catLabels = { habitats: 'Habitats', decorations: 'Decorations', facilities: 'Facilities' };
+        const catColor = { habitats: 0x66BB55, decorations: 0xBB8844, facilities: 0x6699BB };
 
-        habitats.forEach((h, i) => {
-            const bx = pad + i * cellW + cellW / 2;
-            const by = ph / 2;
-            const cost = this.gs.getHabitatCost(h.id);
-            const canAfford = this.gs.state.coins >= cost;
-            const rx = bx - cellW / 2 + 4, ry = by - 30, rw = cellW - 8, rh = 60;
+        const catW = (this._toolGap || 130) - 6, catH = 32, catGap = 4;
+        const menuBottom = barY - 10;
+        const catX = anchorX - catW / 2;
 
-            const btnBg = this.add.graphics();
-            btnBg.fillStyle(canAfford ? h.fill : 0x444444, canAfford ? 0.3 : 0.25);
-            btnBg.fillRoundedRect(rx, ry, rw, rh, 4);
-            ct.add(btnBg);
+        const ct = this.add.container(0, 0).setDepth(260);
 
-            ct.add(this.txt(bx, by - 12, h.name, 7, canAfford ? CLR.uiText : '#666666').setOrigin(0.5));
-            ct.add(this.txt(bx, by + 6, `${cost}g`, 6, canAfford ? CLR.gold : '#884444').setOrigin(0.5));
+        categories.forEach((cid, i) => {
+            const isActive = cid === cat;
+            const cy = menuBottom - (categories.length - i) * (catH + catGap);
+            const bg = this.add.graphics();
+            const cc = catColor[cid];
+            bg.fillStyle(cc, isActive ? 0.5 : 0.22);
+            bg.fillRoundedRect(catX, cy, catW, catH, 4);
+            bg.lineStyle(isActive ? 2 : 1, cc, isActive ? 1 : 0.5);
+            bg.strokeRoundedRect(catX, cy, catW, catH, 4);
+            ct.add(bg);
 
-            if (canAfford) {
-                const hit = this.add.rectangle(bx, by, rw, rh, 0, 0).setInteractive({ useHandCursor: true });
-                hit.on('pointerover', () => {
-                    btnBg.clear();
-                    btnBg.fillStyle(h.fill, 0.55);
-                    btnBg.fillRoundedRect(rx, ry, rw, rh, 4);
-                    btnBg.lineStyle(1, h.fill, 0.8);
-                    btnBg.strokeRoundedRect(rx, ry, rw, rh, 4);
-                });
-                hit.on('pointerout', () => {
-                    btnBg.clear();
-                    btnBg.fillStyle(h.fill, 0.3);
-                    btnBg.fillRoundedRect(rx, ry, rw, rh, 4);
-                });
-                hit.on('pointerdown', () => {
-                    this.closeBuildPopup();
-                    this.gs.enterBuild(h.id);
-                });
-                ct.add(hit);
-            }
+            const label = catLabels[cid] + (isActive ? '  \u25B6' : '');
+            ct.add(this.txt(catX + catW / 2, cy + catH / 2, label, 7, isActive ? CLR.uiText : '#AAAAAA').setOrigin(0.5));
+
+            const hit = this.add.rectangle(catX + catW / 2, cy + catH / 2, catW, catH, 0, 0).setInteractive({ useHandCursor: true });
+            hit.on('pointerover', () => { if (cid !== this._buildCategory) { bg.clear(); bg.fillStyle(cc, 0.35); bg.fillRoundedRect(catX, cy, catW, catH, 4); bg.lineStyle(1, cc, 0.8); bg.strokeRoundedRect(catX, cy, catW, catH, 4); } });
+            hit.on('pointerout', () => { if (cid !== this._buildCategory) { bg.clear(); bg.fillStyle(cc, 0.22); bg.fillRoundedRect(catX, cy, catW, catH, 4); bg.lineStyle(1, cc, 0.5); bg.strokeRoundedRect(catX, cy, catW, catH, 4); } });
+            hit.on('pointerdown', () => {
+                if (this._buildCategory === cid) {
+                    this._buildCategory = null;
+                    this._renderBuildMenu();
+                } else {
+                    this._buildCategory = cid;
+                    this._renderBuildMenu();
+                }
+            });
+            ct.add(hit);
         });
 
-        ct.setScale(0.85).setAlpha(0);
-        this.tweens.add({ targets: ct, scaleX: 1, scaleY: 1, alpha: 1, duration: 150, ease: 'Back.easeOut' });
         this.buildPopup = ct;
+
+        if (cat) this._renderBuildItems(cat, catX, catW, menuBottom, catH, catGap, catColor[cat]);
+    }
+
+    _renderBuildItems(cat, catX, catW, menuBottom, catH, catGap, color) {
+        const items = cat === 'habitats' ? Object.values(HABITATS) : cat === 'facilities' ? Object.values(FACILITIES) : Object.values(DECORATIONS);
+        const cellW = 100, pad = 12;
+        const itemPw = items.length * cellW + pad * 2;
+        const itemPh = 68;
+
+        const itemX = catX + catW + 8;
+        const itemY = menuBottom - itemPh - 10;
+
+        const ct = this.add.container(0, 0).setDepth(260);
+
+        const ibg = this.add.graphics();
+        ibg.fillStyle(CLR.uiBg, 0.96);
+        ibg.fillRoundedRect(itemX, itemY, itemPw, itemPh, 6);
+        ibg.lineStyle(2, color);
+        ibg.strokeRoundedRect(itemX, itemY, itemPw, itemPh, 6);
+        ct.add(ibg);
+
+        if (cat === 'habitats') {
+            items.forEach((h, i) => {
+                const bx = itemX + pad + i * cellW + cellW / 2;
+                const by = itemY + itemPh / 2;
+                const cost = this.gs.getHabitatCost(h.id);
+                const canAfford = this.gs.state.coins >= cost;
+                const rx = bx - cellW / 2 + 4, ry = by - 26, rw = cellW - 8, rh = 52;
+
+                const btnBg = this.add.graphics();
+                btnBg.fillStyle(canAfford ? h.fill : 0x444444, canAfford ? 0.3 : 0.25);
+                btnBg.fillRoundedRect(rx, ry, rw, rh, 4);
+                ct.add(btnBg);
+                ct.add(this.txt(bx, by - 10, h.name, 7, canAfford ? CLR.uiText : '#666666').setOrigin(0.5));
+                ct.add(this.txt(bx, by + 6, `${cost}g`, 6, canAfford ? CLR.gold : '#884444').setOrigin(0.5));
+
+                if (canAfford) {
+                    const hit = this.add.rectangle(bx, by, rw, rh, 0, 0).setInteractive({ useHandCursor: true });
+                    hit.on('pointerover', () => { btnBg.clear(); btnBg.fillStyle(h.fill, 0.55); btnBg.fillRoundedRect(rx, ry, rw, rh, 4); btnBg.lineStyle(1, h.fill, 0.8); btnBg.strokeRoundedRect(rx, ry, rw, rh, 4); });
+                    hit.on('pointerout', () => { btnBg.clear(); btnBg.fillStyle(h.fill, 0.3); btnBg.fillRoundedRect(rx, ry, rw, rh, 4); });
+                    hit.on('pointerdown', () => { this.closeBuildPopup(); this.gs.enterBuild(h.id); });
+                    ct.add(hit);
+                }
+            });
+        } else if (cat === 'facilities') {
+            items.forEach((f, i) => {
+                const bx = itemX + pad + i * cellW + cellW / 2;
+                const by = itemY + itemPh / 2;
+                const canAfford = this.gs.state.coins >= f.cost;
+                const rx = bx - cellW / 2 + 4, ry = by - 26, rw = cellW - 8, rh = 52;
+
+                const btnBg = this.add.graphics();
+                btnBg.fillStyle(canAfford ? f.fill : 0x444444, canAfford ? 0.3 : 0.25);
+                btnBg.fillRoundedRect(rx, ry, rw, rh, 4);
+                ct.add(btnBg);
+                ct.add(this.txt(bx, by - 10, f.name, 7, canAfford ? CLR.uiText : '#666666').setOrigin(0.5));
+                ct.add(this.txt(bx, by + 6, `${f.cost}g`, 6, canAfford ? CLR.gold : '#884444').setOrigin(0.5));
+
+                if (canAfford) {
+                    const hit = this.add.rectangle(bx, by, rw, rh, 0, 0).setInteractive({ useHandCursor: true });
+                    hit.on('pointerover', () => { btnBg.clear(); btnBg.fillStyle(f.fill, 0.55); btnBg.fillRoundedRect(rx, ry, rw, rh, 4); btnBg.lineStyle(1, f.fill, 0.8); btnBg.strokeRoundedRect(rx, ry, rw, rh, 4); });
+                    hit.on('pointerout', () => { btnBg.clear(); btnBg.fillStyle(f.fill, 0.3); btnBg.fillRoundedRect(rx, ry, rw, rh, 4); });
+                    hit.on('pointerdown', () => { this.closeBuildPopup(); this.gs.enterFacilityBuild(f.id); });
+                    ct.add(hit);
+                }
+            });
+        } else {
+            items.forEach((d, i) => {
+                const bx = itemX + pad + i * cellW + cellW / 2;
+                const by = itemY + itemPh / 2;
+                const canAfford = this.gs.state.coins >= d.cost;
+                const rx = bx - cellW / 2 + 4, ry = by - 26, rw = cellW - 8, rh = 52;
+
+                const btnBg = this.add.graphics();
+                btnBg.fillStyle(canAfford ? d.color : 0x444444, canAfford ? 0.3 : 0.25);
+                btnBg.fillRoundedRect(rx, ry, rw, rh, 4);
+                ct.add(btnBg);
+                ct.add(this.add.image(bx, by - 10, `decor_${d.id}`).setScale(0.8));
+                ct.add(this.txt(bx, by + 14, `${d.cost}g`, 6, canAfford ? CLR.gold : '#884444').setOrigin(0.5));
+
+                if (canAfford) {
+                    const hit = this.add.rectangle(bx, by, rw, rh, 0, 0).setInteractive({ useHandCursor: true });
+                    hit.on('pointerover', () => { btnBg.clear(); btnBg.fillStyle(d.color, 0.55); btnBg.fillRoundedRect(rx, ry, rw, rh, 4); btnBg.lineStyle(1, d.color, 0.8); btnBg.strokeRoundedRect(rx, ry, rw, rh, 4); });
+                    hit.on('pointerout', () => { btnBg.clear(); btnBg.fillStyle(d.color, 0.3); btnBg.fillRoundedRect(rx, ry, rw, rh, 4); });
+                    hit.on('pointerdown', () => { this.closeBuildPopup(); this.gs.enterDecorBuild(d.id); });
+                    ct.add(hit);
+                }
+            });
+        }
+
+        this._buildItemPopup = ct;
     }
 
     closeBuildPopup() {
         if (this._buildDismiss) { this._buildDismiss.destroy(); this._buildDismiss = null; }
+        if (this._buildItemPopup) { this._buildItemPopup.destroy(); this._buildItemPopup = null; }
         if (this.buildPopup) { this.buildPopup.destroy(); this.buildPopup = null; }
+        this._buildCategory = null;
         if (this._activePanel === 'build') { this._activePanel = null; this._refreshToolBtns(); }
     }
 
     /* ========== EVENTS ========== */
 
-    // Subscribes to game events: timeUpdate, coinsUpdate, foodUpdate, rescueEvent, showAnimalInfo, showHabitatInfo,
-    // animalUpdate (auto-refreshes animal panel), habitatViewClosed (cleanup on zoom-out), etc.
+    // Subscribes to game events: timeUpdate, coinsUpdate, foodUpdate, rescueEvent, showAnimalInfo,
+    // showHabitatInfo, showFacilityView (triggers facility back bar), animalUpdate (auto-refreshes
+    // animal panel), habitatViewClosed (cleanup on zoom-out from habitat or facility), etc.
     listenEvents() {
         const ev = this.game.events;
         ev.on('timeUpdate', this.updateTime, this);
@@ -363,7 +460,7 @@ export default class HUDScene extends Phaser.Scene {
             if (!mode) this.closeBuildPopup();
             this.toolBtns.forEach(b => {
                 const isActive = b.key === mode ||
-                    (b.key === 'build' && mode && HABITATS[mode]);
+                    (b.key === 'build' && mode && (HABITATS[mode] || (mode && mode.startsWith('decor_')) || (mode && mode.startsWith('facility_'))));
                 this.drawToolBtn(b.bg, b.x, b.y, b.color, isActive, b.gap);
             });
         });
@@ -373,6 +470,7 @@ export default class HUDScene extends Phaser.Scene {
             this.destroyBackBar();
             this.showToolbar();
         });
+        ev.on('showFacilityView', fac => this.showFacilityBackBar(fac));
         ev.on('animalUpdate', () => {
             if (this.animalPanel && this._viewedAnimal) {
                 const fresh = this.gs.state.animals.find(a => a.id === this._viewedAnimal.id);
@@ -428,20 +526,30 @@ export default class HUDScene extends Phaser.Scene {
     _showNextNotif() {
         if (!this._notifQueue || this._notifQueue.length === 0) { this._notifActive = false; return; }
         this._notifActive = true;
-        const text = this._notifQueue.shift();
+        const entry = this._notifQueue.shift();
+        const isObj = typeof entry === 'object';
+        const text = isObj ? entry.text : entry;
+        const icon = isObj ? entry.icon : null;
         const topY = 50;
 
-        const n = this.add.text(W / 2, topY + 8, text, {
+        const n = this.add.text(W / 2, topY + 8, (icon ? '  ' : '') + text, {
             fontFamily: '"Press Start 2P", monospace', fontSize: '9px', color: CLR.uiText,
             stroke: '#000000', strokeThickness: 2,
-            backgroundColor: '#2D1B0EDD', padding: { x: 14, y: 8 }, wordWrap: { width: 580 }
+            backgroundColor: '#2D1B0EDD', padding: { x: 10, y: 8 }, wordWrap: { width: 420 }
         }).setOrigin(0.5, 0).setAlpha(0).setDepth(200);
 
-        this.tweens.add({ targets: n, alpha: 1, y: topY, duration: 300 });
+        let iconImg = null;
+        if (icon) {
+            iconImg = this.add.image(n.x - n.width / 2 + 14, topY + 8 + n.height / 2, icon)
+                .setScale(1.2).setTint(0xFFD700).setAlpha(0).setDepth(201);
+        }
+
+        const elements = icon ? [n, iconImg] : [n];
+        this.tweens.add({ targets: elements, alpha: 1, y: `-=8`, duration: 300 });
         this.tweens.add({
-            targets: n, alpha: 0, y: topY - 12,
+            targets: elements, alpha: 0, y: `-=12`,
             delay: 2400, duration: 400,
-            onComplete: () => { n.destroy(); this._showNextNotif(); }
+            onComplete: () => { elements.forEach(e => e.destroy()); this._showNextNotif(); }
         });
     }
 
@@ -499,7 +607,7 @@ export default class HUDScene extends Phaser.Scene {
                 } else {
                     tint.destroy(); ct.destroy(); this.rescuePopup = null; this._rescueTint = null;
                     this._pendingRescue = ev;
-                    const needsZoom = this.gs.state.viewingHabitat || this.gs.cameras.main.zoom > 1;
+                    const needsZoom = this.gs.state.viewingHabitat || this.gs.state.viewingFacility || this.gs.cameras.main.zoom > 1;
                     if (needsZoom) {
                         this.gs.zoomOut();
                         this.time.delayedCall(400, () => this.gs.enterRescueSelect(ev));
@@ -539,6 +647,7 @@ export default class HUDScene extends Phaser.Scene {
                     tint.destroy(); ct.destroy(); this.rescuePopup = null; this._rescueTint = null;
                     this.gs.state.rescuePaused = false;
                     this._pendingRescue = ev;
+                    this.closeBuildPopup();
                     this.gs.enterBuild(compatType.id);
                 });
                 bldBtn.on('pointerover', () => bldBtn.setColor('#88CCFF'));
@@ -849,6 +958,29 @@ export default class HUDScene extends Phaser.Scene {
 
         this._backBarElements = [backBar, bbBg, bbBtn];
         this.habitatPanel = ct;
+    }
+
+    showFacilityBackBar() {
+        this.destroyBackBar();
+        this.hideToolbar();
+
+        const barY = H - 62;
+        const backBar = this.add.graphics().setDepth(250);
+        backBar.fillStyle(CLR.uiBg, 0.9); backBar.fillRect(0, barY, W, 62);
+        backBar.lineStyle(1, CLR.uiBorder); backBar.lineBetween(0, barY, W, barY);
+
+        const bbW = 160, bbH = 38;
+        const bbX = W / 2 - bbW / 2, bbY = barY + 12;
+        const bbBg = this.add.graphics().setDepth(250);
+        bbBg.fillStyle(0x664422, 0.75); bbBg.fillRoundedRect(bbX, bbY, bbW, bbH, 6);
+        bbBg.lineStyle(2, 0xAA8855); bbBg.strokeRoundedRect(bbX, bbY, bbW, bbH, 6);
+
+        const bbBtn = this.txt(W / 2, bbY + bbH / 2, '\u2190 Back', 9, '#FFCC88').setOrigin(0.5).setDepth(250).setInteractive({ useHandCursor: true });
+        bbBtn.on('pointerdown', () => { this.gs.zoomOut(); });
+        bbBtn.on('pointerover', () => { bbBtn.setColor('#FFEECC'); bbBg.clear(); bbBg.fillStyle(0x886633, 0.85); bbBg.fillRoundedRect(bbX, bbY, bbW, bbH, 6); bbBg.lineStyle(2, 0xCCBB77); bbBg.strokeRoundedRect(bbX, bbY, bbW, bbH, 6); });
+        bbBtn.on('pointerout', () => { bbBtn.setColor('#FFCC88'); bbBg.clear(); bbBg.fillStyle(0x664422, 0.75); bbBg.fillRoundedRect(bbX, bbY, bbW, bbH, 6); bbBg.lineStyle(2, 0xAA8855); bbBg.strokeRoundedRect(bbX, bbY, bbW, bbH, 6); });
+
+        this._backBarElements = [backBar, bbBg, bbBtn];
     }
 
     /* ========== UPGRADES PANEL ========== */
@@ -1389,7 +1521,7 @@ export default class HUDScene extends Phaser.Scene {
     // Destroys all open panels and mission refresh timer. keepZoom=true preserves the
     // camera zoom and back bar (used by rescue events so they don't interrupt the zoomed view).
     closeAllPanels(keepZoom = false) {
-        if (!keepZoom && this.gs.state.viewingHabitat) { this.gs.zoomOut(); this.showToolbar(); }
+        if (!keepZoom && (this.gs.state.viewingHabitat || this.gs.state.viewingFacility)) { this.gs.zoomOut(); this.showToolbar(); }
         ['animalPanel', 'upgradePanel', 'staffPanel', 'missionPanel', 'journalPanel', 'habitatPanel', 'researchPanel'].forEach(k => {
             if (this[k]) { this[k].destroy(); this[k] = null; }
         });
@@ -1404,7 +1536,7 @@ export default class HUDScene extends Phaser.Scene {
         if (!this.toolBtns) return;
         this.toolBtns.forEach(b => {
             const isActive = b.key === this.activeBuild ||
-                (b.key === 'build' && this.activeBuild && HABITATS[this.activeBuild]) ||
+                (b.key === 'build' && this.activeBuild && (HABITATS[this.activeBuild] || this.activeBuild?.startsWith('decor_') || this.activeBuild?.startsWith('facility_'))) ||
                 b.key === this._activePanel;
             this.drawToolBtn(b.bg, b.x, b.y, b.color, isActive, b.gap);
         });

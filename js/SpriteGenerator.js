@@ -2,7 +2,7 @@
 // Generates ALL game textures procedurally using Phaser's Graphics API (no external image files).
 // Entry point: SpriteGenerator.generate() called from BootScene.
 
-import { TILE, SPECIES, CLR, ENRICHMENTS } from './GameData.js';
+import { TILE, SPECIES, CLR, ENRICHMENTS, DECORATIONS } from './GameData.js';
 
 // Lighten a hex color by n (0–255 per channel).
 function bright(c, n) {
@@ -43,6 +43,7 @@ export class SpriteGenerator {
         this.particles(scene);
         this.staff(scene);
         this.enrichments(scene);
+        this.decorations(scene);
     }
 
     // Terrain tiles: grass variants, path, fence (horizontal), fence_v (vertical for side walls).
@@ -509,8 +510,8 @@ export class SpriteGenerator {
                 const bend = (t - 0.5) * 6;
                 g.lineStyle(2, 0x000000, 1);
                 g.beginPath();
-                for (let x = 5; x <= 15; x++) {
-                    const nx = (x - 10) / 5;
+                for (let x = 6; x <= 14; x++) {
+                    const nx = (x - 10) / 4;
                     const y = 14 - bend * (1 - nx * nx);
                     if (x === 5) g.moveTo(x, y); else g.lineTo(x, y);
                 }
@@ -708,6 +709,55 @@ export class SpriteGenerator {
             g.fillCircle(5, 3, 3);
             g.fillRect(4, 6, 2, 4);
             g.fillRect(2, 7, 6, 2);
+        });
+    }
+
+    // Decoration sprites: single-tile placeable items (tree, path, trashcan, flowers).
+    static decorations(scene) {
+        tex(scene, 'decor_tree', TILE, TILE, g => {
+            g.fillStyle(0x4a3020);
+            g.fillRect(14, 16, 4, 12);
+            g.fillStyle(0x2a5a2a);
+            g.fillCircle(16, 12, 9);
+            g.fillStyle(0x3a7a3a);
+            g.fillCircle(14, 10, 5);
+            g.fillStyle(0x1a4a1a);
+            g.fillCircle(19, 14, 4);
+        });
+        tex(scene, 'decor_path', TILE, TILE, g => {
+            g.fillStyle(CLR.path);
+            g.fillRect(0, 0, TILE, TILE);
+            g.fillStyle(dark(CLR.path, 15));
+            const rng = new Phaser.Math.RandomDataGenerator(['dp']);
+            for (let j = 0; j < 3; j++) {
+                g.fillRect(rng.between(4, 24), rng.between(4, 24), 3, 2);
+            }
+        });
+        tex(scene, 'decor_trashcan', TILE, TILE, g => {
+            g.fillStyle(0x666666);
+            g.fillRect(10, 10, 12, 16);
+            g.fillStyle(0x888888);
+            g.fillRect(9, 8, 14, 4);
+            g.fillStyle(0x777777);
+            g.fillRect(12, 26, 8, 2);
+            g.fillStyle(0x555555);
+            g.fillRect(13, 14, 6, 1);
+            g.fillRect(13, 18, 6, 1);
+            g.fillRect(13, 22, 6, 1);
+        });
+        tex(scene, 'decor_flowers', TILE, TILE, g => {
+            const rng = new Phaser.Math.RandomDataGenerator(['fl']);
+            const colors = [0xFF6688, 0xFFDD44, 0xAABBFF, 0xFF88CC, 0xFFFFFF, 0xFF9944];
+            for (let i = 0; i < 6; i++) {
+                const fx = rng.between(6, TILE - 6);
+                const fy = rng.between(10, TILE - 4);
+                g.fillStyle(0x44AA44);
+                g.fillRect(fx, fy, 1, 4);
+                g.fillStyle(rng.pick(colors));
+                g.fillCircle(fx, fy, 3);
+                g.fillStyle(0xFFEE88);
+                g.fillCircle(fx, fy, 1);
+            }
         });
     }
 

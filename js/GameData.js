@@ -1,5 +1,6 @@
 // Havenwood — central game data/config registry. All constants, species (with foodCost and bondTreatsBase),
-// habitats, missions, upgrades, staff (volunteer is free/limited), research, and UI palette.
+// habitats, facilities (garden with produce), decorations, missions, upgrades, staff (volunteer is
+// free/limited), research, and UI palette.
 
 // Grid/layout constants — tile size, map dimensions, MAP_Y offset (top bar), canvas height includes UI bars, time scale, starting currency
 export const TILE = 32;
@@ -28,6 +29,28 @@ export const HABITATS = {
     forest: { id: 'forest', name: 'Forest', cost: 200, w: 5, h: 5, capacity: 4, types: ['mammal_large', 'mammal_small'], fill: 0x3a7a3a, stroke: 0x1f4f1f, desc: 'A sheltered grove for forest dwellers.' },
     pond:   { id: 'pond', name: 'Pond', cost: 150, w: 4, h: 4, capacity: 3, types: ['aquatic', 'amphibian', 'bird'], fill: 0x4A80B4, stroke: 0x2a5580, desc: 'A tranquil pond for aquatic creatures.' },
     barn:   { id: 'barn', name: 'Barn', cost: 250, w: 4, h: 4, capacity: 5, types: ['domestic'], fill: 0xCD853F, stroke: 0x8B5A2B, desc: 'A warm barn for domestic animals.' },
+};
+
+// Facilities — zoomable multi-tile buildings (no animals). Garden grows harvestable produce.
+export const FACILITIES = {
+    garden: { id: 'garden', name: 'Garden', cost: 150, w: 4, h: 4, fill: 0x88CC66, stroke: 0x5A8A3A, desc: 'A tranquil garden that beautifies the sanctuary.' },
+};
+
+// Garden produce — 3 types × 4 each (12 total). Picked items give food and regrow after 8 hours (480 min).
+// New gardens start empty (all produce growing); saved gardens restore exact regrow state.
+export const GARDEN_PRODUCE = [
+    { id: 'tomato',  name: 'Tomato',  color: 0xDD3333, leafColor: 0x44AA44, food: 15 },
+    { id: 'carrot',  name: 'Carrot',  color: 0xFF8822, leafColor: 0x55BB55, food: 12 },
+    { id: 'cabbage', name: 'Cabbage', color: 0x66BB44, leafColor: 0x338822, food: 10 },
+];
+export const GARDEN_REGROW_TIME = 480;
+
+// Decorations — single-tile placeable items that improve sanctuary aesthetics
+export const DECORATIONS = {
+    tree:     { id: 'tree',     name: 'Tree',     cost: 15, color: 0x2a5a2a },
+    path:     { id: 'path',     name: 'Path',     cost: 5,  color: 0xD4B87C },
+    trashcan: { id: 'trashcan', name: 'Trashcan', cost: 10, color: 0x888888 },
+    flowers:  { id: 'flowers',  name: 'Flowers',  cost: 10, color: 0xFF88AA },
 };
 
 // Species — 14 animals with rarity, hunger rates; some are seasonal-only.

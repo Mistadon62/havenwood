@@ -1,19 +1,25 @@
 /**
  * GameScene - Core gameplay scene for Havenwood, a Phaser 3 animal sanctuary management game.
- * Handles map, building, habitat zoom view (with auto-select and animal cycling), animals,
+ * Handles map, building (habitats, decorations, facilities), habitat zoom view (with
+ * auto-select and animal cycling), facility zoom view (with clickable produce), animals,
  * goal-driven visitors (8-direction A* pathfinding, closest-side viewing preference, react
- * with speech bubbles, reputation per visit, paths recalculate on habitat move), staff,
+ * with speech bubbles, reputation per visit, paths recalculate on build changes), staff,
  * automatic breeding (trait inheritance, generation tracking, name inheritance from
  * same-gender parent, breed-only variant recipes with fixed names), missions, research,
  * time, seasons, rescue events (game-time driven, fully modal with time-pause — spawning
  * suppressed, persisted across save/load), settings/pause menu (ESC from sanctuary or
- * during rescue), auto-save (toggleable), animal relocation, food system, bond XP/levels,
- * friendship happiness buffs, loneliness debuffs, and save/load.
+ * during rescue), auto-save (toggleable), animal relocation, food system (starting food
+ * 100, gardens produce food over time), bond XP/levels, friendship happiness buffs,
+ * loneliness debuffs, and save/load. Facilities are zoomable multi-tile buildings (like
+ * gardens) that block walkability and occupy grid space but hold no animals. Gardens
+ * contain 12 produce items (3 types × 4 each) that start unripe, grow over 8 in-game
+ * hours, can be clicked to harvest for food, then regrow. Mini progress bars beneath
+ * each item are visible only when zoomed in.
  */
 import { TILE, COLS, ROWS, W, H, MAP_Y, TIME_SCALE, START_COINS, HABITATS, SPECIES, RARITY_WEIGHT, RESCUE_MSG, CLR,
     SEASONS, SEASON_ORDER, SEASON_LENGTH, SEASON_CYCLE, UPGRADES, STAFF_TYPES,
     TRAITS, TRAIT_IDS, ILLNESSES, ENRICHMENTS, MISSIONS, VISITOR_TYPES, ACHIEVEMENTS,
-    RESEARCH, RESEARCH_BRANCHES } from '../GameData.js';
+    RESEARCH, RESEARCH_BRANCHES, DECORATIONS, FACILITIES, GARDEN_PRODUCE, GARDEN_REGROW_TIME } from '../GameData.js';
 import { SoundManager } from '../SoundManager.js';
 
 let uid = 0;
@@ -31,7 +37,7 @@ export default class GameScene extends Phaser.Scene {
         this.input.on('pointerdown', () => this.sfx.resume());
 
         this.state = {
-            day: 1, time: 360, coins: START_COINS, rep: 50, food: 1000,
+            day: 1, time: 360, coins: START_COINS, rep: 50, food: 100,
             buildMode: null,
             habitats: [], animals: [], staff: [],
             discoveries: new Set(),
@@ -47,11 +53,16 @@ export default class GameScene extends Phaser.Scene {
             researchPoints: 0,
             researchUnlocked: new Set(),
             viewingHabitat: null,
+            viewingFacility: null,
             rescuePaused: false,
             settingsPaused: false,
             autoSave: true,
+            decorations: [],
+            facilities: [],
         };
         this.visitors = [];
+        this.decorSprites = [];
+        this.facilitySprites = [];
         this.staffSprites = [];
         this.grid = [];
         this.habitatDecoObjects = [];
@@ -155,11 +166,13 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== INPUT ========== */
-    // Pointer move shows build preview in build mode; in default mode, hovering over a habitat
-    // shows a pointer cursor and faint stroke outline. Pointerdown places habitat or zooms in;
-    // zooming in auto-selects a random animal after the camera animation completes.
-    // World clicks and hover outlines are suppressed while zoomed (viewingHabitat) or while a
-    // HUD management panel is open (hasOpenPanel check prevents clicking through panels).
+    // Pointer move shows build preview in build mode (habitat, decoration, or facility); in default
+    // mode, hovering over a habitat or facility shows a pointer cursor and faint stroke outline.
+    // Pointerdown places buildable or zooms in; zooming into a habitat auto-selects a random animal,
+    // zooming into a facility (garden) enables produce clicking. While zoomed into a facility,
+    // hovering ripe produce shows pointer cursor and clicking harvests it.
+    // World clicks and hover outlines are suppressed while zoomed (viewingHabitat/viewingFacility)
+    // or while a HUD management panel is open (hasOpenPanel check prevents clicking through panels).
     // Right-click or ESC exits build mode. ESC priority: close settings → open settings during
     // rescue → cancel habitat select → cancel move → close panels → zoom out → exit build → open settings.
     // Browser context menu is suppressed on the canvas.
@@ -169,6 +182,41 @@ export default class GameScene extends Phaser.Scene {
             if (this.state.buildMode) {
                 this.hoverOutline.setVisible(false);
                 const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
+                const isDecor = this.state.buildMode.startsWith('decor_');
+                const isFacility = this.state.buildMode.startsWith('facility_');
+
+                if (isDecor) {
+                    const ok = this.canPlaceDecor(gx, gy);
+                    const c = ok ? 0x00ff00 : 0xff0000;
+                    this.preview.clear().setVisible(true);
+                    this.preview.fillStyle(c, 0.25);
+                    this.preview.fillRect(gx * TILE, MAP_Y + gy * TILE, TILE, TILE);
+                    this.preview.lineStyle(2, c, 0.7);
+                    this.preview.strokeRect(gx * TILE, MAP_Y + gy * TILE, TILE, TILE);
+                    return;
+                }
+
+                if (isFacility) {
+                    const facId = this.state.buildMode.replace('facility_', '');
+                    const ft = FACILITIES[facId];
+                    const ok = this.canPlaceFacility(facId, gx, gy);
+                    const c = ok ? 0x00ff00 : 0xff0000;
+                    if (this._buildPreview) {
+                        const dx = gx * TILE, dy = gy * TILE;
+                        for (const t of this._buildPreview.tracked) {
+                            t.obj.setVisible(true);
+                            if (t.isGfx) t.obj.setPosition(t.origX + dx, t.origY + dy);
+                            else { t.obj.x = t.origX + dx; t.obj.y = t.origY + dy; }
+                        }
+                    }
+                    this.preview.clear().setVisible(true);
+                    this.preview.fillStyle(c, 0.25);
+                    this.preview.fillRect(gx * TILE, MAP_Y + gy * TILE, ft.w * TILE, ft.h * TILE);
+                    this.preview.lineStyle(2, c, 0.7);
+                    this.preview.strokeRect(gx * TILE, MAP_Y + gy * TILE, ft.w * TILE, ft.h * TILE);
+                    return;
+                }
+
                 const isMove = this.state.buildMode.startsWith('_move_');
                 const habType = isMove ? this.state.buildMode.replace('_move_', '') : this.state.buildMode;
                 const ht = HABITATS[habType];
@@ -219,6 +267,22 @@ export default class GameScene extends Phaser.Scene {
                 this.game.canvas.style.cursor = 'default';
                 return;
             }
+            if (this.state.viewingFacility) {
+                this.hoverOutline.setVisible(false);
+                const fac = this.state.facilities.find(f => f.id === this.state.viewingFacility);
+                if (fac && fac.produce) {
+                    const wx = ptr.worldX, wy = ptr.worldY;
+                    const hitRadius = 6;
+                    let hovering = false;
+                    for (const slot of fac.produce) {
+                        if (slot.picked) continue;
+                        const dx = wx - slot.x, dy = wy - slot.y;
+                        if (dx * dx + dy * dy < hitRadius * hitRadius) { hovering = true; break; }
+                    }
+                    this.game.canvas.style.cursor = hovering ? 'pointer' : 'default';
+                }
+                return;
+            }
             if (this.state.viewingHabitat) { this.hoverOutline.setVisible(false); return; }
             const hud = this.scene.get('HUDScene');
             if (hud && hud.hasOpenPanel()) { this.hoverOutline.setVisible(false); this.game.canvas.style.cursor = 'default'; return; }
@@ -232,6 +296,17 @@ export default class GameScene extends Phaser.Scene {
                         this.hoverOutline.clear().setVisible(true);
                         this.hoverOutline.lineStyle(2, ht.stroke, 0.5);
                         this.hoverOutline.strokeRect(hab.gx * TILE, MAP_Y + hab.gy * TILE, ht.w * TILE, ht.h * TILE);
+                        this.game.canvas.style.cursor = 'pointer';
+                        return;
+                    }
+                }
+                if (cell && typeof cell === 'string' && cell.startsWith('fac_')) {
+                    const fac = this.state.facilities.find(f => f.id === cell);
+                    if (fac) {
+                        const ft = FACILITIES[fac.type];
+                        this.hoverOutline.clear().setVisible(true);
+                        this.hoverOutline.lineStyle(2, ft.stroke, 0.5);
+                        this.hoverOutline.strokeRect(fac.gx * TILE, MAP_Y + fac.gy * TILE, ft.w * TILE, ft.h * TILE);
                         this.game.canvas.style.cursor = 'pointer';
                         return;
                     }
@@ -266,12 +341,33 @@ export default class GameScene extends Phaser.Scene {
             if (ptr.rightButtonDown()) { if (this._movingHabitat) { this.cancelMove(); } else { this.exitBuild(); } return; }
             if (this._skipPointerDown) { this._skipPointerDown = false; return; }
             if (this.state.rescuePaused) return;
+            if (this.state.viewingFacility) {
+                const fac = this.state.facilities.find(f => f.id === this.state.viewingFacility);
+                if (fac && fac.produce) {
+                    const wx = ptr.worldX, wy = ptr.worldY;
+                    const hitRadius = 6;
+                    for (const slot of fac.produce) {
+                        if (slot.picked) continue;
+                        const dx = wx - slot.x, dy = wy - slot.y;
+                        if (dx * dx + dy * dy < hitRadius * hitRadius) {
+                            this.pickProduce(fac, slot);
+                            return;
+                        }
+                    }
+                }
+                return;
+            }
             if (this.state.viewingHabitat) return;
             const hud = this.scene.get('HUDScene');
             if (hud && hud.hasOpenPanel()) return;
             if (this.state.buildMode) {
                 const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
-                if (this._movingHabitat) {
+                if (this.state.buildMode.startsWith('decor_')) {
+                    if (this.canPlaceDecor(gx, gy)) this.placeDecor(this.state.buildMode.replace('decor_', ''), gx, gy);
+                } else if (this.state.buildMode.startsWith('facility_')) {
+                    const facId = this.state.buildMode.replace('facility_', '');
+                    if (this.canPlaceFacility(facId, gx, gy)) { this.placeFacility(facId, gx, gy); this.exitBuild(); }
+                } else if (this._movingHabitat) {
                     const habType = this.state.buildMode.replace('_move_', '');
                     if (this.canPlaceMove(habType, gx, gy)) this.finishMove(gx, gy);
                 } else {
@@ -290,8 +386,14 @@ export default class GameScene extends Phaser.Scene {
                             const habAnimals = this.state.animals.filter(a => a.habitatId === hab.id);
                             if (habAnimals.length > 0) {
                                 const pick = Phaser.Utils.Array.GetRandom(habAnimals);
-                                this.time.delayedCall(420, () => this.selectAnimal(pick));
+                                this.selectAnimal(pick);
                             }
+                        }
+                    } else if (cell && typeof cell === 'string' && cell.startsWith('fac_')) {
+                        const fac = this.state.facilities.find(f => f.id === cell);
+                        if (fac) {
+                            this.sfx.click();
+                            this.zoomToFacility(fac);
                         }
                     }
                 }
@@ -310,7 +412,7 @@ export default class GameScene extends Phaser.Scene {
             }
             if (this._movingHabitat) { this.cancelMove(); return; }
             if (hud && hud.hasOpenPanel()) { hud.closeAllPanels(); return; }
-            if (this.state.viewingHabitat || this.cameras.main.zoom > 1) this.zoomOut();
+            if (this.state.viewingHabitat || this.state.viewingFacility || this.cameras.main.zoom > 1) this.zoomOut();
             else if (this.state.buildMode) this.exitBuild();
             else if (hud) hud.toggleSettingsMenu();
         });
@@ -318,12 +420,13 @@ export default class GameScene extends Phaser.Scene {
         this.game.canvas.addEventListener('contextmenu', e => e.preventDefault());
     }
 
-    /* ========== HABITAT ZOOM ========== */
-    // Zoom camera (2.5x) to center on a habitat; zoom out restores default view.
+    /* ========== HABITAT / FACILITY ZOOM ========== */
+    // Zoom camera (2.5x) to center on a habitat or facility; zoom out restores default view.
     // Uses camera.pan/zoomTo with force:true so rescue events can't leave the camera stuck.
-    // viewingHabitat tracks the active habitat id; world clicks and build mode are suppressed while set.
-    // zoomOut clears any active animal hover glow and emits habitatViewClosed before animating.
-    // On zoom-in, a random animal is auto-selected after the camera animation completes.
+    // viewingHabitat/viewingFacility track the active id; world clicks and build mode are
+    // suppressed while either is set. zoomOut clears both, hides garden mini bars, removes
+    // animal hover glow, and emits habitatViewClosed before animating.
+    // zoomToFacility shows garden mini progress bars and emits showFacilityView (triggers back bar).
 
     zoomToHabitat(hab) {
         const ht = HABITATS[hab.type];
@@ -338,9 +441,30 @@ export default class GameScene extends Phaser.Scene {
         cam.zoomTo(2.5, 400, 'Quad.easeInOut', true);
     }
 
+    zoomToFacility(fac) {
+        const ft = FACILITIES[fac.type];
+        const cx = fac.gx * TILE + (ft.w * TILE) / 2;
+        const cy = MAP_Y + fac.gy * TILE + (ft.h * TILE) / 2;
+        this.state.viewingFacility = fac.id;
+        this.hoverOutline.setVisible(false);
+        this.game.canvas.style.cursor = 'default';
+
+        if (fac.type === 'garden') this.showGardenMiniBars(fac);
+
+        const cam = this.cameras.main;
+        cam.pan(cx, cy, 400, 'Quad.easeInOut', true);
+        cam.zoomTo(2.5, 400, 'Quad.easeInOut', true);
+        this.game.events.emit('showFacilityView', fac);
+    }
+
     zoomOut() {
-        if (!this.state.viewingHabitat && this.cameras.main.zoom === 1) return;
+        if (!this.state.viewingHabitat && !this.state.viewingFacility && this.cameras.main.zoom === 1) return;
+        if (this.state.viewingFacility) {
+            const fac = this.state.facilities.find(f => f.id === this.state.viewingFacility);
+            if (fac && fac.type === 'garden') this.hideGardenMiniBars(fac);
+        }
         this.state.viewingHabitat = null;
+        this.state.viewingFacility = null;
         this._selectedAnimal = null;
         for (const a of this.state.animals) {
             if (a.sprite._hoverGlow) { a.sprite.preFX.remove(a.sprite._hoverGlow); a.sprite._hoverGlow = null; }
@@ -386,6 +510,7 @@ export default class GameScene extends Phaser.Scene {
         this._moveOrigin = { gx: hab.gx, gy: hab.gy };
 
         this.state.viewingHabitat = null;
+        this.state.viewingFacility = null;
         this._selectedAnimal = null;
         for (const a of this.state.animals) {
             if (a.sprite._hoverGlow) { a.sprite.preFX.remove(a.sprite._hoverGlow); a.sprite._hoverGlow = null; }
@@ -499,8 +624,10 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== BUILD ========== */
-    // Habitat placement with live preview (gfx + decor at 70% opacity) that follows the cursor,
-    // overlaid with a green/red tint for placement validation. Seasonal cost discounts apply.
+    // Habitat/decoration/facility placement with live preview that follows the cursor, overlaid
+    // with a green/red tint for placement validation. Habitats and facilities use multi-tile
+    // previews (gfx + decor at 70% opacity); decorations use single-tile previews.
+    // Seasonal cost discounts apply to habitats. exitBuild recalculates visitor paths.
 
     enterBuild(type) {
         const hud = this.scene.get('HUDScene');
@@ -510,7 +637,7 @@ export default class GameScene extends Phaser.Scene {
         } else {
             this._preBuildPanel = null;
         }
-        if (this.state.viewingHabitat || this.cameras.main.zoom > 1) {
+        if (this.state.viewingHabitat || this.state.viewingFacility || this.cameras.main.zoom > 1) {
             this.zoomOut();
         }
         this.state.buildMode = type;
@@ -524,6 +651,7 @@ export default class GameScene extends Phaser.Scene {
         this.preview.setVisible(false);
         this._destroyBuildPreview();
         this._showNPCs();
+        this._recalcVisitorPaths();
         this.game.events.emit('buildModeChanged', null);
         const hud = this.scene.get('HUDScene');
         if (hud && hud._pendingRescue) {
@@ -541,6 +669,262 @@ export default class GameScene extends Phaser.Scene {
             hud.reopenPanel(this._preBuildPanel);
             this._preBuildPanel = null;
         }
+    }
+
+    enterDecorBuild(decorId) {
+        const hud = this.scene.get('HUDScene');
+        if (hud && hud.hasOpenPanel()) hud.closeAllPanels(true);
+        if (this.state.viewingHabitat || this.state.viewingFacility || this.cameras.main.zoom > 1) this.zoomOut();
+        this.state.buildMode = `decor_${decorId}`;
+        this._hideNPCs();
+        this.game.events.emit('buildModeChanged', this.state.buildMode);
+    }
+
+    canPlaceDecor(gx, gy) {
+        if (gx < 1 || gy < 1 || gx >= COLS - 1 || gy >= ROWS - 1) return false;
+        const decorId = this.state.buildMode.replace('decor_', '');
+        const dec = DECORATIONS[decorId];
+        if (!dec || this.state.coins < dec.cost) return false;
+        const cell = this.grid[gy]?.[gx];
+        return cell === null;
+    }
+
+    placeDecor(decorId, gx, gy) {
+        const dec = DECORATIONS[decorId];
+        if (!dec) return;
+        this.spendCoins(dec.cost);
+        this.grid[gy][gx] = `dec_${decorId}`;
+        const px = gx * TILE + TILE / 2, py = MAP_Y + gy * TILE + TILE / 2;
+        const sprite = this.add.image(px, py, `decor_${decorId}`).setDepth(10);
+        this.decorSprites.push({ id: decorId, gx, gy, sprite });
+        this.state.decorations.push({ id: decorId, gx, gy });
+        this.sfx.build();
+        this._recalcVisitorPaths();
+    }
+
+    removeDecor(gx, gy) {
+        const idx = this.state.decorations.findIndex(d => d.gx === gx && d.gy === gy);
+        if (idx < 0) return;
+        this.state.decorations.splice(idx, 1);
+        const si = this.decorSprites.findIndex(d => d.gx === gx && d.gy === gy);
+        if (si >= 0) { this.decorSprites[si].sprite.destroy(); this.decorSprites.splice(si, 1); }
+        this.grid[gy][gx] = null;
+        this._recalcVisitorPaths();
+    }
+
+    /* ========== FACILITIES ========== */
+    // Facilities are multi-tile buildings placed like habitats but without animals.
+    // Garden: 4×4 tiles, contains 12 produce items (3 rows × 4 columns). Produce starts unripe
+    // on fresh placement, grows over GARDEN_REGROW_TIME (480 min / 8 hours), and can be clicked
+    // while zoomed in to harvest for food. Each item shows a mini progress bar (visible only when
+    // zoomed in) while regrowing. Facility grid cells use 'fac_' prefix IDs, blocking walkability.
+    // Facilities are persisted in save/load including per-item produce regrow state.
+
+    enterFacilityBuild(facId) {
+        const hud = this.scene.get('HUDScene');
+        if (hud && hud.hasOpenPanel()) hud.closeAllPanels(true);
+        if (this.state.viewingHabitat || this.state.viewingFacility || this.cameras.main.zoom > 1) this.zoomOut();
+        this.state.buildMode = `facility_${facId}`;
+        this._createFacilityPreview(facId);
+        this._hideNPCs();
+        this.game.events.emit('buildModeChanged', this.state.buildMode);
+    }
+
+    canPlaceFacility(facId, gx, gy) {
+        const ft = FACILITIES[facId];
+        if (!ft) return false;
+        if (gx < 1 || gy < 1 || gx + ft.w > COLS - 1 || gy + ft.h > ROWS - 1) return false;
+        if (this.state.coins < ft.cost) return false;
+        for (let dy = 0; dy < ft.h; dy++)
+            for (let dx = 0; dx < ft.w; dx++)
+                if (this.grid[gy + dy][gx + dx] !== null) return false;
+        return true;
+    }
+
+    placeFacility(facId, gx, gy, opts = {}) {
+        const ft = FACILITIES[facId];
+        const id = opts.id || genId('fac');
+        for (let dy = 0; dy < ft.h; dy++)
+            for (let dx = 0; dx < ft.w; dx++)
+                this.grid[gy + dy][gx + dx] = id;
+
+        let gfx, decor;
+        if (this._buildPreview) {
+            gfx = this._buildPreview.gfx;
+            decor = this._buildPreview.decor;
+            gfx.setPosition(0, 0).setDepth(10).setAlpha(1);
+            const px = gx * TILE, py = MAP_Y + gy * TILE, pw = ft.w * TILE, ph = ft.h * TILE;
+            gfx.clear(); gfx.fillStyle(ft.fill, 0.4); gfx.fillRect(px, py, pw, ph);
+            gfx.lineStyle(2, ft.stroke, 0.9); gfx.strokeRect(px + 1, py + 1, pw - 2, ph - 2);
+            const dx = gx * TILE, dy = gy * TILE;
+            for (const t of this._buildPreview.tracked) {
+                if (t.obj === gfx) continue;
+                if (t.isGfx) t.obj.setPosition(t.origX + dx, t.origY + dy);
+                else { t.obj.x = t.origX + dx; t.obj.y = t.origY + dy; }
+            }
+            decor.forEach(d => { d.setDepth(12); d.setAlpha(1); });
+            this._buildPreview.adopted = true;
+        } else {
+            gfx = this.add.graphics().setDepth(10);
+            const px = gx * TILE, py = MAP_Y + gy * TILE, pw = ft.w * TILE, ph = ft.h * TILE;
+            gfx.fillStyle(ft.fill, 0.4); gfx.fillRect(px, py, pw, ph);
+            gfx.lineStyle(2, ft.stroke, 0.9); gfx.strokeRect(px + 1, py + 1, pw - 2, ph - 2);
+            decor = this.addFacilityDecor(facId, gx, gy, ft);
+        }
+
+        const fac = { id, type: facId, gx, gy, w: ft.w, h: ft.h, gfx, decor };
+        this.state.facilities.push(fac);
+        this.facilitySprites.push(fac);
+
+        if (facId === 'garden') this.initGardenProduce(fac, opts.produce);
+
+        if (opts.cost !== false) {
+            this.spendCoins(ft.cost);
+            this.sfx.build();
+        }
+        this._nudgeNPCsFromHabitat(gx, gy, ft.w, ft.h);
+        this._recalcVisitorPaths();
+        return fac;
+    }
+
+    addFacilityDecor(facId, gx, gy, ft) {
+        const base = gx * TILE, top = MAP_Y + gy * TILE;
+        const pw = ft.w * TILE, ph = ft.h * TILE;
+        const g = this.add.graphics().setDepth(12);
+        const objects = [g];
+        if (facId === 'garden') {
+            const rowSpacing = (ph - 16) / 3;
+            for (let row = 0; row < 3; row++) {
+                const ry = top + 10 + row * rowSpacing;
+                g.fillStyle(0x6B4226, 0.35);
+                g.fillRoundedRect(base + 8, ry - 2, pw - 16, 10, 2);
+            }
+        }
+        return objects;
+    }
+
+    initGardenProduce(fac, saved) {
+        fac.produce = [];
+        const ft = FACILITIES[fac.type];
+        const base = fac.gx * TILE, top = MAP_Y + fac.gy * TILE;
+        const pw = ft.w * TILE, ph = ft.h * TILE;
+        const rowSpacing = (ph - 16) / 3;
+
+        for (let row = 0; row < 3; row++) {
+            const pType = GARDEN_PRODUCE[row];
+            const ry = top + 10 + row * rowSpacing;
+            for (let col = 0; col < 4; col++) {
+                const fx = base + 20 + col * ((pw - 40) / 3);
+                const fy = ry;
+                const idx = row * 4 + col;
+                const sv = saved ? saved[idx] : null;
+                const regrowLeft = sv ? sv.regrowLeft : (saved ? 0 : GARDEN_REGROW_TIME);
+                const picked = regrowLeft > 0;
+
+                const sprite = this._drawProduce(fx, fy, pType, picked);
+                const miniBar = this.add.graphics().setDepth(14).setVisible(false);
+                const slot = { row, col, type: pType.id, x: fx, y: fy, picked, regrowLeft, sprite, miniBar };
+                this._drawMiniBar(slot);
+                fac.produce.push(slot);
+            }
+        }
+    }
+
+    _drawProduce(x, y, pType, picked) {
+        const cy = y + 3;
+        const g = this.add.graphics().setDepth(13);
+        if (picked) {
+            g.fillStyle(0x6B4226, 0.2);
+            g.fillCircle(x, cy, 2);
+        } else {
+            g.fillStyle(pType.leafColor);
+            g.fillRect(x - 1, cy + 1, 2, 4);
+            g.fillStyle(pType.leafColor, 0.7);
+            g.fillCircle(x - 2, cy, 2);
+            g.fillCircle(x + 2, cy, 2);
+            g.fillStyle(pType.color);
+            g.fillCircle(x, cy - 1, 3);
+        }
+        return g;
+    }
+
+    _drawMiniBar(slot) {
+        const g = slot.miniBar;
+        g.clear();
+        if (!slot.picked) return;
+        const bw = 10, bh = 2;
+        const bx = slot.x - bw / 2, by = slot.y + 9;
+        const pct = 1 - (slot.regrowLeft / GARDEN_REGROW_TIME);
+        g.fillStyle(0x333333, 0.6);
+        g.fillRect(bx, by, bw, bh);
+        if (pct > 0) {
+            g.fillStyle(0x66AA33, 0.9);
+            g.fillRect(bx, by, Math.round(bw * pct), bh);
+        }
+    }
+
+    _refreshProduceSprite(slot) {
+        if (slot.sprite) slot.sprite.destroy();
+        const pType = GARDEN_PRODUCE.find(p => p.id === slot.type);
+        slot.sprite = this._drawProduce(slot.x, slot.y, pType, slot.picked);
+        this._drawMiniBar(slot);
+    }
+
+    showGardenMiniBars(fac) {
+        if (!fac.produce) return;
+        for (const slot of fac.produce) slot.miniBar.setVisible(true);
+    }
+
+    hideGardenMiniBars(fac) {
+        if (!fac.produce) return;
+        for (const slot of fac.produce) slot.miniBar.setVisible(false);
+    }
+
+    pickProduce(fac, slot) {
+        if (slot.picked) return;
+        slot.picked = true;
+        slot.regrowLeft = GARDEN_REGROW_TIME;
+        this._refreshProduceSprite(slot);
+        const pType = GARDEN_PRODUCE.find(p => p.id === slot.type);
+        this.addFood(pType.food);
+        this.sfx.click();
+    }
+
+    updateGardens(delta) {
+        const dt = TIME_SCALE * this.timeSpeedMult * delta / 1000;
+        for (const fac of this.state.facilities) {
+            if (fac.type !== 'garden' || !fac.produce) continue;
+            for (const slot of fac.produce) {
+                if (!slot.picked) continue;
+                slot.regrowLeft -= dt;
+                if (slot.regrowLeft <= 0) {
+                    slot.regrowLeft = 0;
+                    slot.picked = false;
+                    this._refreshProduceSprite(slot);
+                } else {
+                    this._drawMiniBar(slot);
+                }
+            }
+        }
+    }
+
+    _createFacilityPreview(facId) {
+        this._destroyBuildPreview();
+        const ft = FACILITIES[facId];
+        const gfx = this.add.graphics().setDepth(55).setAlpha(0.7);
+        gfx.fillStyle(ft.fill, 0.4); gfx.fillRect(0, MAP_Y, ft.w * TILE, ft.h * TILE);
+        gfx.lineStyle(2, ft.stroke, 0.9); gfx.strokeRect(1, MAP_Y + 1, ft.w * TILE - 2, ft.h * TILE - 2);
+
+        const decor = this.addFacilityDecor(facId, 0, 0, ft);
+        decor.forEach(d => { d.setDepth(56); d.setAlpha(0.7); });
+
+        const tracked = [{ obj: gfx, origX: 0, origY: 0, isGfx: true }];
+        for (const d of decor)
+            tracked.push({ obj: d, origX: d.x || 0, origY: d.y || 0, isGfx: d.type === 'Graphics' });
+
+        this._buildPreview = { gfx, decor, tracked };
+        gfx.setVisible(false);
+        decor.forEach(d => d.setVisible(false));
     }
 
     _createBuildPreview(type) {
@@ -572,12 +956,18 @@ export default class GameScene extends Phaser.Scene {
     }
 
     _hideNPCs() {
-        for (const v of this.visitors) v.sprite.setVisible(false);
+        for (const v of this.visitors) {
+            v.sprite.setVisible(false);
+            if (v._bubble) v._bubble.setVisible(false);
+        }
         for (const s of this.state.staff) s.sprite.setVisible(false);
     }
 
     _showNPCs() {
-        for (const v of this.visitors) v.sprite.setVisible(true);
+        for (const v of this.visitors) {
+            v.sprite.setVisible(true);
+            if (v._bubble) v._bubble.setVisible(true);
+        }
         for (const s of this.state.staff) s.sprite.setVisible(true);
     }
 
@@ -1563,7 +1953,8 @@ export default class GameScene extends Phaser.Scene {
 
     _isWalkable(gx, gy) {
         if (gy < 0 || gy >= ROWS || gx < 0 || gx >= COLS) return false;
-        return this.grid[gy]?.[gx] === null || this.grid[gy][gx] === 'entrance';
+        const cell = this.grid[gy]?.[gx];
+        return cell === null || cell === 'entrance' || cell === 'dec_path';
     }
 
     _findPath(sx, sy, ex, ey) {
@@ -2195,7 +2586,7 @@ export default class GameScene extends Phaser.Scene {
             const fn = checks[ach.id];
             if (fn && fn()) {
                 s.achievementsEarned.add(ach.id);
-                this.game.events.emit('notification', `\u2605 Achievement: ${ach.name}!`);
+                this.game.events.emit('notification', { text: `Achievement: ${ach.name}!`, icon: 'particle_star' });
                 this.sfx.upgrade();
                 this.game.events.emit('achievementEarned', ach.id);
             }
@@ -2204,6 +2595,7 @@ export default class GameScene extends Phaser.Scene {
 
     /* ========== ECONOMY ========== */
     // Coins: add/spend, emit coinsUpdate. stats.earned tracks total income.
+    // Food: addFood increases food and emits foodUpdate (used by garden produce harvesting).
 
     addCoins(n) {
         this.state.coins += n;
@@ -2217,8 +2609,14 @@ export default class GameScene extends Phaser.Scene {
         this.game.events.emit('coinsUpdate', this.state.coins);
     }
 
+    addFood(n) {
+        this.state.food += n;
+        this.game.events.emit('foodUpdate', this.state.food);
+    }
+
     /* ========== SAVE / LOAD ========== */
-    // Serialize state to localStorage. Sets become arrays; load rebuilds habitats, animals, staff, missions.
+    // Serialize state to localStorage. Sets become arrays; load rebuilds habitats, animals, staff,
+    // missions, decorations, and facilities (including per-item garden produce regrow state).
 
     saveGame() {
         const data = {
@@ -2263,6 +2661,11 @@ export default class GameScene extends Phaser.Scene {
                 msg: this.state.pendingRescue.msg,
             } : null,
             rescueAccum: this._rescueAccum,
+            decorations: this.state.decorations.map(d => ({ id: d.id, gx: d.gx, gy: d.gy })),
+            facilities: this.state.facilities.map(f => ({
+                id: f.id, type: f.type, gx: f.gx, gy: f.gy,
+                produce: f.produce ? f.produce.map(p => ({ type: p.type, picked: p.picked, regrowLeft: p.regrowLeft })) : undefined,
+            })),
             autoSave: this.state.autoSave,
             visitors: this.visitors.map(v => ({
                 visitorType: v.visitorType, x: v.sprite.x, y: v.sprite.y,
@@ -2282,7 +2685,7 @@ export default class GameScene extends Phaser.Scene {
             const d = JSON.parse(raw);
             this.state.day = d.day; this.state.time = d.time;
             this.state.coins = d.coins; this.state.rep = d.rep || 0;
-            this.state.food = d.food ?? 1000;
+            this.state.food = d.food ?? 100;
             this.state.discoveries = new Set(d.discoveries || []);
             this.state.seenVariants = new Set(d.seenVariants || []);
             this.state.rescuedVariants = new Set(d.rescuedVariants || []);
@@ -2304,6 +2707,22 @@ export default class GameScene extends Phaser.Scene {
                         const spr = this.add.image(px, py, `enrich_${eId}`).setDepth(11).setScale(0.9);
                         this.enrichmentSprites.push({ habitatId: hab.id, enrichId: eId, sprite: spr });
                     }
+                }
+            }
+            if (d.decorations) {
+                for (const dec of d.decorations) {
+                    if (!DECORATIONS[dec.id]) continue;
+                    this.grid[dec.gy][dec.gx] = `dec_${dec.id}`;
+                    const px = dec.gx * TILE + TILE / 2, py = MAP_Y + dec.gy * TILE + TILE / 2;
+                    const sprite = this.add.image(px, py, `decor_${dec.id}`).setDepth(10);
+                    this.decorSprites.push({ id: dec.id, gx: dec.gx, gy: dec.gy, sprite });
+                    this.state.decorations.push({ id: dec.id, gx: dec.gx, gy: dec.gy });
+                }
+            }
+            if (d.facilities) {
+                for (const f of d.facilities) {
+                    if (!FACILITIES[f.type]) continue;
+                    this.placeFacility(f.type, f.gx, f.gy, { id: f.id, cost: false, produce: f.produce });
                 }
             }
             for (const a of d.animals) {
@@ -2394,9 +2813,12 @@ export default class GameScene extends Phaser.Scene {
         if (this.state.rescuePaused || this.state.settingsPaused || this._movingHabitat || this._habSelectMode) return;
         this.updateTime(delta);
         this.updateAnimals(delta, time);
-        this.updateVisitors(delta);
-        this.updateStaff(delta);
+        if (!this.state.buildMode) {
+            this.updateVisitors(delta);
+            this.updateStaff(delta);
+        }
         this.updateMissions(delta);
+        this.updateGardens(delta);
         this.sfx.updateAmbient(delta, this.state.time);
 
         this._rescueAccum += delta * this.timeSpeedMult;
