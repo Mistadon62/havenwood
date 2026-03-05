@@ -1,7 +1,8 @@
 // UI overlay scene running parallel to GameScene. Has its own camera, unaffected by GameScene zoom.
 // Communicates via this.game.events; this.gs = GameScene reference for state and method calls.
 // Manages toolbar (hidden during habitat zoom, disabled during rescue), habitat/animal panels
-// (with close X, back bar, and navigation arrows to cycle animals), settings/pause menu
+// (with close X, back bar, navigation arrows to cycle animals, generation display for bred animals),
+// settings/pause menu
 // (gear icon or ESC from sanctuary; includes auto-save toggle), rescue popup with time-pause
 // and full modal blocking, build popup, and management panels (vertically centered).
 // Top bar shows day/season, reputation face, clock with speed controls, research points, food count, and coins.
@@ -582,7 +583,8 @@ export default class HUDScene extends Phaser.Scene {
         const genderKey = animal.gender === 'female' ? 'icon_female' : 'icon_male';
         ct.add(this.add.image(pw / 2 + nameTxt.width / 2 + 10, 14, genderKey).setScale(1.2));
         const rClr = '#' + rc.toString(16).padStart(6, '0');
-        ct.add(this.txt(pw / 2, 28, `${sp.name} (${sp.rarity})`, 6, rClr).setOrigin(0.5));
+        const genLabel = animal.generation > 1 ? ` \u2022 Gen ${animal.generation}` : '';
+        ct.add(this.txt(pw / 2, 28, `${sp.name} (${sp.rarity})${genLabel}`, 6, rClr).setOrigin(0.5));
         const animalTex = animal.variantIdx != null ? `animal_${animal.speciesId}_${animal.variantIdx}` : `animal_${animal.speciesId}`;
         ct.add(this.add.image(pw / 2, 56, animalTex).setScale(1.2));
 
@@ -651,7 +653,8 @@ export default class HUDScene extends Phaser.Scene {
         if (animal.bonds.length > 0) {
             const bondNames = animal.bonds.slice(0, 3).map(bid => {
                 const b = this.gs.state.animals.find(a => a.id === bid);
-                return b ? b.name : '?';
+                if (!b) return '?';
+                return b.generation > 1 ? `${b.name} G${b.generation}` : b.name;
             }).join(', ');
             const friendsTxt = this.txt(8, yy, `Friends: ${bondNames}`, 5, '#66BBFF').setWordWrapWidth(pw - 16);
             ct.add(friendsTxt);

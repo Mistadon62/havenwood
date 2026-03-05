@@ -3,11 +3,12 @@
  * Handles map, building, habitat zoom view (with auto-select and animal cycling), animals,
  * goal-driven visitors (8-direction A* pathfinding, closest-side viewing preference, react
  * with speech bubbles, reputation per visit, paths recalculate on habitat move), staff,
- * automatic breeding, missions, research, time, seasons, rescue events (game-time driven,
- * fully modal with time-pause — spawning suppressed, persisted across save/load),
- * settings/pause menu (ESC from sanctuary or during rescue), auto-save (toggleable),
- * animal relocation, food system, bond XP/levels, friendship happiness buffs, loneliness
- * debuffs, and save/load.
+ * automatic breeding (trait inheritance, generation tracking, name inheritance from
+ * same-gender parent, breed-only variant recipes with fixed names), missions, research,
+ * time, seasons, rescue events (game-time driven, fully modal with time-pause — spawning
+ * suppressed, persisted across save/load), settings/pause menu (ESC from sanctuary or
+ * during rescue), auto-save (toggleable), animal relocation, food system, bond XP/levels,
+ * friendship happiness buffs, loneliness debuffs, and save/load.
  */
 import { TILE, COLS, ROWS, W, H, MAP_Y, TIME_SCALE, START_COINS, HABITATS, SPECIES, RARITY_WEIGHT, RESCUE_MSG, CLR,
     SEASONS, SEASON_ORDER, SEASON_LENGTH, SEASON_CYCLE, UPGRADES, STAFF_TYPES,
@@ -819,6 +820,10 @@ export default class GameScene extends Phaser.Scene {
             isPregnant: opts.isPregnant || false,
             pregnancyTimer: opts.pregnancyTimer || 0,
             mateVariantIdx: opts.mateVariantIdx,
+            mateTrait: opts.mateTrait,
+            mateName: opts.mateName,
+            mateGeneration: opts.mateGeneration,
+            generation: opts.generation || 1,
         };
 
         if (animal.isBaby) sprite.setScale(0.6);
@@ -1109,6 +1114,10 @@ export default class GameScene extends Phaser.Scene {
     /* ========== BREEDING ========== */
     // Automatic: male+female of same species, same habitat, both adult/healthy/off cooldown.
     // checkAutoBreed runs periodically from a timer; small random chance per eligible pair per check.
+    // Trait inheritance: 45% mother / 45% father / 10% random mutation.
+    // Generations: baby gen = max(parent gens) + 1; rescued animals are gen 1.
+    // Naming: breed-only babies always use their variant's fixed name; normal babies
+    // inherit the same-gender parent's name (girls from mother, boys from father).
 
     checkAutoBreed() {
         const checked = new Set();
@@ -1135,6 +1144,9 @@ export default class GameScene extends Phaser.Scene {
             const father = mother === a ? partner : a;
             mother.isPregnant = true;
             mother.mateVariantIdx = father.variantIdx;
+            mother.mateTrait = father.trait;
+            mother.mateName = father.name;
+            mother.mateGeneration = father.generation || 1;
             mother.pregnancyTimer = (breedBoost ? 1.5 : 3) * 720;
             mother.breedCooldown = (breedBoost ? 4 : 7) * 720;
             father.breedCooldown = (breedBoost ? 4 : 7) * 720;
@@ -1164,26 +1176,47 @@ export default class GameScene extends Phaser.Scene {
                 }
             }
         }
-        // Fall back to a random non-breedOnly variant
         if (vi == null) {
             const normal = sp.variants.map((v, i) => v.breedOnly ? -1 : i).filter(i => i >= 0);
             vi = normal[Phaser.Math.Between(0, normal.length - 1)];
         }
 
         const v = sp.variants[vi];
-        const baby = this.addAnimal(sp.id, v.name, parent.habitatId, { isBaby: true, variantIdx: vi });
+        const isSpecial = v.breedOnly;
+        const babyGen = Math.max(parent.generation || 1, parent.mateGeneration || 1) + 1;
+
+        // Trait inheritance: 45% mother, 45% father, 10% mutation
+        const tRoll = Math.random();
+        const inheritedTrait = tRoll < 0.45 ? parent.trait
+            : tRoll < 0.9 ? (parent.mateTrait || parent.trait)
+            : Phaser.Utils.Array.GetRandom(TRAIT_IDS);
+
+        // Breed-only babies always use their variant's fixed name;
+        // normal babies inherit the same-gender parent's name
+        let babyName = v.name;
+        if (!isSpecial) {
+            const babyIsFemale = v.gender === 'f';
+            if (babyIsFemale) babyName = parent.name;
+            else if (parent.mateName) babyName = parent.mateName;
+        }
+
+        const baby = this.addAnimal(sp.id, babyName, parent.habitatId, {
+            isBaby: true, variantIdx: vi, trait: inheritedTrait, generation: babyGen,
+        });
         if (baby) {
             this.state.stats.bred++;
             this.state.rescuedVariants.add(`${sp.id}_${vi}`);
             this.state.seenVariants.add(`${sp.id}_${vi}`);
             if (!this.state.discoveries.has(parent.speciesId)) this.state.discoveries.add(parent.speciesId);
-            const isSpecial = sp.variants[vi].breedOnly;
-            const label = isSpecial ? `★ Special variant! ${v.name}` : v.name;
+            const label = isSpecial ? `★ Special variant! ${babyName}` : babyName;
             this.game.events.emit('notification', `${label} the baby ${sp.name} was born!`);
             this.sfx.rescue();
             this.starEffect(parent.sprite.x, parent.sprite.y);
         }
         parent.mateVariantIdx = undefined;
+        parent.mateTrait = undefined;
+        parent.mateName = undefined;
+        parent.mateGeneration = undefined;
     }
 
     /* ========== ILLNESS ========== */
@@ -2196,6 +2229,8 @@ export default class GameScene extends Phaser.Scene {
                 isBaby: a.isBaby, growthTimer: a.growthTimer,
                 breedCooldown: a.breedCooldown, isPregnant: a.isPregnant,
                 pregnancyTimer: a.pregnancyTimer, mateVariantIdx: a.mateVariantIdx,
+                mateTrait: a.mateTrait, mateName: a.mateName, mateGeneration: a.mateGeneration,
+                generation: a.generation,
             })),
             staff: this.state.staff.map(s => ({ id: s.id, type: s.type })),
             discoveries: [...this.state.discoveries],
@@ -2272,6 +2307,8 @@ export default class GameScene extends Phaser.Scene {
                     isBaby: a.isBaby, growthTimer: a.growthTimer,
                     breedCooldown: a.breedCooldown || 0, isPregnant: a.isPregnant,
                     pregnancyTimer: a.pregnancyTimer || 0, mateVariantIdx: a.mateVariantIdx,
+                    mateTrait: a.mateTrait, mateName: a.mateName, mateGeneration: a.mateGeneration,
+                    generation: a.generation || 1,
                 });
             }
             if (d.staff) {

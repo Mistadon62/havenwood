@@ -33,7 +33,8 @@ export const HABITATS = {
 // Species — 14 animals with rarity, hunger rates; some are seasonal-only.
 // Each species has variants: { name, gender ('m'/'f'), color } for unique appearances per individual.
 // Special breed-only variants have { breedOnly: true, parents: [idxA, idxB] } — obtainable
-// only by breeding the two specified parent variants together.
+// only by breeding the two specified parent variants together. Breed-only babies always
+// use their variant's fixed name. Normal offspring inherit the same-gender parent's name.
 // bondTreatsBase: base bond XP gained per treat (scaled by rarity; higher rarity = more XP per treat).
 // foodCost: amount of food consumed per feeding action.
 export const SPECIES = {
