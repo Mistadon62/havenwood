@@ -1,8 +1,8 @@
 /**
  * GameScene - Core gameplay scene for Havenwood, a Phaser 3 animal sanctuary management game.
  * Handles map, building (habitats, decorations, facilities), habitat zoom view (with
- * auto-select, animal cycling, and cross-habitat navigation by clicking other habitats
- * or their animals while zoomed), facility zoom view (with clickable produce), animals,
+ * auto-select, animal cycling, and cross-navigation between habitats and facilities by
+ * clicking/hovering nearby ones while zoomed), facility zoom view (with clickable produce), animals,
  * goal-driven visitors (8-direction A* pathfinding, closest-side viewing preference, react
  * with speech bubbles, reputation per visit, paths recalculate on build changes), staff,
  * automatic breeding (trait inheritance, generation tracking, name inheritance from
@@ -173,10 +173,11 @@ export default class GameScene extends Phaser.Scene {
     // Pointerdown places buildable or zooms in; zooming into a habitat auto-selects a random animal,
     // zooming into a facility (garden) enables produce clicking. While zoomed into a facility,
     // hovering ripe produce shows pointer cursor and clicking harvests it.
-    // While zoomed into a habitat, clicking/hovering on a *different* habitat shows a hover outline
-    // and navigates to it (panning camera, updating habitat/animal panels). Clicking an animal in
-    // another habitat also navigates. World clicks are otherwise suppressed while zoomed
-    // (viewingHabitat/viewingFacility) or while a HUD management panel is open.
+    // Cross-navigation: while zoomed into any habitat or facility, hovering a *different* habitat
+    // or facility shows a hover outline and pointer cursor; clicking navigates to it (pans camera,
+    // updates panels). Clicking an animal in another habitat also navigates. Produce hover is
+    // checked first so garden picking still works. World clicks are otherwise suppressed while
+    // zoomed (viewingHabitat/viewingFacility) or while a HUD management panel is open.
     // Right-click or ESC exits build mode. ESC priority: close settings → open settings during
     // rescue → cancel habitat select → cancel move → close panels → zoom out → exit build → open settings.
     // Browser context menu is suppressed on the canvas.
@@ -271,23 +272,23 @@ export default class GameScene extends Phaser.Scene {
                 this.game.canvas.style.cursor = 'default';
                 return;
             }
-            if (this.state.viewingFacility) {
-                this.hoverOutline.setVisible(false);
-                const fac = this.state.facilities.find(f => f.id === this.state.viewingFacility);
-                if (fac && fac.produce) {
-                    const wx = ptr.worldX, wy = ptr.worldY;
-                    const hitRadius = 6;
-                    let hovering = false;
-                    for (const slot of fac.produce) {
-                        if (slot.picked) continue;
-                        const dx = wx - slot.x, dy = wy - slot.y;
-                        if (dx * dx + dy * dy < hitRadius * hitRadius) { hovering = true; break; }
+            if (this.state.viewingHabitat || this.state.viewingFacility) {
+                if (this.state.viewingFacility) {
+                    const fac = this.state.facilities.find(f => f.id === this.state.viewingFacility);
+                    if (fac && fac.produce) {
+                        const wx = ptr.worldX, wy = ptr.worldY;
+                        const hitRadius = 6;
+                        for (const slot of fac.produce) {
+                            if (slot.picked) continue;
+                            const dx = wx - slot.x, dy = wy - slot.y;
+                            if (dx * dx + dy * dy < hitRadius * hitRadius) {
+                                this.hoverOutline.setVisible(false);
+                                this.game.canvas.style.cursor = 'pointer';
+                                return;
+                            }
+                        }
                     }
-                    this.game.canvas.style.cursor = hovering ? 'pointer' : 'default';
                 }
-                return;
-            }
-            if (this.state.viewingHabitat) {
                 const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
                 if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
                     const cell = this.grid[gy]?.[gx];
@@ -298,6 +299,17 @@ export default class GameScene extends Phaser.Scene {
                             this.hoverOutline.clear().setVisible(true);
                             this.hoverOutline.lineStyle(2, ht.stroke, 0.5);
                             this.hoverOutline.strokeRect(hab.gx * TILE, MAP_Y + hab.gy * TILE, ht.w * TILE, ht.h * TILE);
+                            this.game.canvas.style.cursor = 'pointer';
+                            return;
+                        }
+                    }
+                    if (cell && typeof cell === 'string' && cell.startsWith('fac_') && cell !== this.state.viewingFacility) {
+                        const fac = this.state.facilities.find(f => f.id === cell);
+                        if (fac) {
+                            const ft = FACILITIES[fac.type];
+                            this.hoverOutline.clear().setVisible(true);
+                            this.hoverOutline.lineStyle(2, ft.stroke, 0.5);
+                            this.hoverOutline.strokeRect(fac.gx * TILE, MAP_Y + fac.gy * TILE, ft.w * TILE, ft.h * TILE);
                             this.game.canvas.style.cursor = 'pointer';
                             return;
                         }
@@ -378,6 +390,27 @@ export default class GameScene extends Phaser.Scene {
                         }
                     }
                 }
+                const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
+                if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
+                    const cell = this.grid[gy]?.[gx];
+                    if (cell && typeof cell === 'string' && cell.startsWith('hab_')) {
+                        const hab = this.state.habitats.find(h => h.id === cell);
+                        if (hab) {
+                            this.sfx.click();
+                            this.zoomToHabitat(hab);
+                            this.game.events.emit('showHabitatInfo', hab);
+                            const habAnimals = this.state.animals.filter(a => a.habitatId === hab.id);
+                            if (habAnimals.length > 0) {
+                                this.selectAnimal(Phaser.Utils.Array.GetRandom(habAnimals));
+                            }
+                            return;
+                        }
+                    }
+                    if (cell && typeof cell === 'string' && cell.startsWith('fac_') && cell !== this.state.viewingFacility) {
+                        const navFac = this.state.facilities.find(f => f.id === cell);
+                        if (navFac) { this.sfx.click(); this.zoomToFacility(navFac); return; }
+                    }
+                }
                 return;
             }
             if (this.state.viewingHabitat) {
@@ -396,7 +429,12 @@ export default class GameScene extends Phaser.Scene {
                             } else {
                                 this.clearSelectedAnimal();
                             }
+                            return;
                         }
+                    }
+                    if (cell && typeof cell === 'string' && cell.startsWith('fac_')) {
+                        const navFac = this.state.facilities.find(f => f.id === cell);
+                        if (navFac) { this.sfx.click(); this.clearSelectedAnimal(); this.zoomToFacility(navFac); return; }
                     }
                 }
                 return;
@@ -466,12 +504,18 @@ export default class GameScene extends Phaser.Scene {
     /* ========== HABITAT / FACILITY ZOOM ========== */
     // Zoom camera (2.5x) to center on a habitat or facility; zoom out restores default view.
     // Uses camera.pan/zoomTo with force:true so rescue events can't leave the camera stuck.
-    // viewingHabitat/viewingFacility track the active id; world clicks and build mode are
-    // suppressed while either is set. zoomOut clears both, hides garden mini bars, removes
-    // animal hover glow, and emits habitatViewClosed before animating.
-    // zoomToFacility shows garden mini progress bars and emits showFacilityView (triggers back bar).
+    // viewingHabitat/viewingFacility track the active id; only one is set at a time.
+    // zoomToHabitat clears viewingFacility (hiding garden mini bars if needed) and vice versa,
+    // so cross-navigation between habitats and facilities stays consistent.
+    // zoomOut clears both, hides garden mini bars, removes animal hover glow, and emits
+    // habitatViewClosed. zoomToFacility shows garden mini bars and emits showFacilityView.
 
     zoomToHabitat(hab) {
+        if (this.state.viewingFacility) {
+            const oldFac = this.state.facilities.find(f => f.id === this.state.viewingFacility);
+            if (oldFac && oldFac.type === 'garden') this.hideGardenMiniBars(oldFac);
+            this.state.viewingFacility = null;
+        }
         const ht = HABITATS[hab.type];
         const cx = hab.gx * TILE + (ht.w * TILE) / 2;
         const cy = MAP_Y + hab.gy * TILE + (ht.h * TILE) / 2;
@@ -485,6 +529,14 @@ export default class GameScene extends Phaser.Scene {
     }
 
     zoomToFacility(fac) {
+        if (this.state.viewingHabitat) {
+            this.state.viewingHabitat = null;
+            this.clearSelectedAnimal();
+        }
+        if (this.state.viewingFacility) {
+            const oldFac = this.state.facilities.find(f => f.id === this.state.viewingFacility);
+            if (oldFac && oldFac.type === 'garden') this.hideGardenMiniBars(oldFac);
+        }
         const ft = FACILITIES[fac.type];
         const cx = fac.gx * TILE + (ft.w * TILE) / 2;
         const cy = MAP_Y + fac.gy * TILE + (ft.h * TILE) / 2;
