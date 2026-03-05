@@ -471,6 +471,8 @@ export default class HUDScene extends Phaser.Scene {
             this.showToolbar();
         });
         ev.on('showFacilityView', fac => this.showFacilityBackBar(fac));
+        ev.on('habitatSelectEnter', label => this.showSelectBar(label));
+        ev.on('habitatSelectExit', () => this.hideSelectBar());
         ev.on('animalUpdate', () => {
             if (this.animalPanel && this._viewedAnimal) {
                 const fresh = this.gs.state.animals.find(a => a.id === this._viewedAnimal.id);
@@ -981,6 +983,32 @@ export default class HUDScene extends Phaser.Scene {
         bbBtn.on('pointerout', () => { bbBtn.setColor('#FFCC88'); bbBg.clear(); bbBg.fillStyle(0x664422, 0.75); bbBg.fillRoundedRect(bbX, bbY, bbW, bbH, 6); bbBg.lineStyle(2, 0xAA8855); bbBg.strokeRoundedRect(bbX, bbY, bbW, bbH, 6); });
 
         this._backBarElements = [backBar, bbBg, bbBtn];
+    }
+
+    showSelectBar(labelText) {
+        this.destroySelectBar();
+        this.hideToolbar();
+
+        const barY = H - 62;
+        const bar = this.add.graphics().setDepth(250);
+        bar.fillStyle(CLR.uiBg, 0.9); bar.fillRect(0, barY, W, 62);
+        bar.lineStyle(1, CLR.uiBorder); bar.lineBetween(0, barY, W, barY);
+
+        const label = this.txt(W / 2, barY + 31, labelText, 8, '#88FFAA').setOrigin(0.5).setDepth(250);
+
+        this._selectBarElements = [bar, label];
+    }
+
+    hideSelectBar() {
+        this.destroySelectBar();
+        this.showToolbar();
+    }
+
+    destroySelectBar() {
+        if (this._selectBarElements) {
+            this._selectBarElements.forEach(e => e.destroy());
+            this._selectBarElements = null;
+        }
     }
 
     /* ========== UPGRADES PANEL ========== */

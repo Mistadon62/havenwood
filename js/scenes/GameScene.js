@@ -2470,17 +2470,15 @@ export default class GameScene extends Phaser.Scene {
             this._selectHighlights.strokeRect(hab.gx * TILE, MAP_Y + hab.gy * TILE, ht.w * TILE, ht.h * TILE);
         }
 
-        this._selectLabel = this.add.text(W / 2, MAP_Y - 6, labelText, {
-            fontFamily: '"Press Start 2P"', fontSize: '9px', color: '#88FFAA', align: 'center'
-        }).setOrigin(0.5, 1).setDepth(62);
+        this.game.events.emit('habitatSelectEnter', labelText);
     }
 
     _exitHabitatSelect() {
         if (this._selectHighlights) { this._selectHighlights.destroy(); this._selectHighlights = null; }
-        if (this._selectLabel) { this._selectLabel.destroy(); this._selectLabel = null; }
         this._habSelectMode = null;
         this.hoverOutline.setVisible(false);
         this._showNPCs();
+        this.game.events.emit('habitatSelectExit');
     }
 
     enterRescueSelect(ev) {
