@@ -44,7 +44,7 @@ havenwood/
 | File | Role |
 |---|---|
 | `GameData.js` | Central data registry. Every species, habitat, upgrade, research node, achievement, etc. is defined here. Species include `foodCost` (food consumed per feed), `bondTreatsBase` (bond XP per treat), and breed-only variants with parent recipes. Volunteers are free with a max count of 1. Change game balance by editing this file. |
-| `GameScene.js` | The game simulation. Manages the grid map, animal behavior (bond XP/levels, friendship buffs, loneliness debuffs), visitors (reputation speech bubbles, welfare-gated rep gain/loss), staff, food system, time/seasons, automatic breeding, illness, missions, research, economy, achievements, and save/load. |
+| `GameScene.js` | The game simulation. Manages the grid map, animal behavior (bond XP/levels, friendship buffs, loneliness debuffs), goal-driven visitors (8-direction A* pathfinding, closest-side viewing preference, react with heart/worried/... bubbles, reputation per visit), staff, food system, time/seasons, automatic breeding, illness, missions, research, economy, achievements, and save/load. |
 | `HUDScene.js` | All UI. Runs as a parallel Phaser scene on top of GameScene. Toolbar with Build popup menu for habitat placement, vertically centered management panels (Rescue, Upgrades, Staff, Research, Journal — all closeable with ESC), settings/pause menu, and notifications. Exposes `hasOpenPanel()` and `closeAllPanels()` so GameScene can suppress world clicks and close panels via keyboard. Communicates via `this.game.events` (Phaser's global event emitter). |
 | `SpriteGenerator.js` | Draws every texture at boot using Phaser's Graphics API — animals, terrain, UI icons (fork+knife for food, book for research), particles, enrichment items, staff, visitors. Zero external image files. |
 | `SoundManager.js` | Generates all sound effects procedurally using the Web Audio API — oscillators and filtered noise. Zero audio files. |
@@ -125,7 +125,7 @@ The sanctuary starts with 1000 food. Each time you feed an animal, it consumes f
 
 ### Rescue Events
 
-Random rescue events pop up periodically (every ~50 seconds, 30% faster with Conservation upgrade). A grey tint dims the game and time pauses while the popup is shown. The player can accept (if a compatible habitat has room) or pass. If no compatible habitat exists or all are full, the popup shows a "Build [Type] (Xg)" button naming the specific habitat needed and its cost. Rescue events do not interrupt the current view — if zoomed into a habitat, the habitat and animal panels remain open behind the popup. If the rescued animal enters the currently viewed habitat, the panel refreshes to show the updated count. Rescue events are suppressed during build mode and habitat move mode to avoid interrupting placement.
+Random rescue events pop up periodically (every ~50 seconds, 30% faster with Conservation upgrade). A grey tint dims the game and time pauses while the popup is shown — visitor spawning is also suppressed so they don't pile up at the entrance. The player can accept (if a compatible habitat has room) or pass. If no compatible habitat exists or all are full, the popup shows a "Build [Type] (Xg)" button naming the specific habitat needed and its cost. Rescue events do not interrupt the current view — if zoomed into a habitat, the habitat and animal panels remain open behind the popup. If the rescued animal enters the currently viewed habitat, the panel refreshes to show the updated count. Rescue events are suppressed during build mode and habitat move mode to avoid interrupting placement.
 
 ### Breeding
 
@@ -135,21 +135,32 @@ Each species has 2 special **breed-only variants** that can only be obtained by 
 
 ### Visitors
 
-Visitors spawn during business hours (8 AM - 6 PM), walk in through a randomized entrance tile (any of the 4 entrance tiles), wander open tiles (avoiding habitats), then leave via a random entrance tile. Income comes in two parts:
+Visitors spawn during business hours (8 AM - 6 PM) and have goal-driven AI. Instead of wandering randomly, they seek out habitats to visit. Pathfinding uses an 8-direction A* algorithm (cardinal + diagonal moves) so visitors walk natural-looking routes around obstacles. Spawning is suppressed during rescue popups, build mode, and habitat move mode to prevent crowding at the entrance.
 
-- **Admission fee** (on entry): flat 5g base, scaled by visitor type multiplier and income upgrades/research
-- **Donation** (on exit): satisfaction-based tip calculated from average animal happiness, total animal count, enrichment happiness bonuses, season bonuses, gift shop upgrade, and tour guide staff multipliers
+1. **Enter** through a randomized entrance tile (admission fee collected silently — no popup)
+2. **Seek habitat** — pick an unvisited habitat (preferring less crowded ones) and walk to a viewing spot on its closest side, falling back to farther sides if the nearest ones are taken
+3. **View habitat** — stand and observe for a variable duration (2–5 seconds), then react:
+   - **Heart bubble** (+1 rep): animals are healthy, fed, and happy
+   - **Worried bubble** (-1 rep): animals are hungry (<20), unhappy (<20), low health (<40), or sick
+   - **"..." bubble** (no rep change): habitat is empty — visitor lingers briefly (0.5–1s) then moves on
+4. **Repeat** — visit a randomized number of habitats (not always all of them), spending varying amounts of time at each, then head for the exit
+5. **Leave** — pay a satisfaction-based donation (shown as a floating popup) and depart
+
+Income comes in two parts:
+
+- **Admission fee** (on entry): flat 5g base, scaled by visitor type multiplier and income upgrades/research (collected silently)
+- **Donation** (on exit): based on average animal happiness, total animal count, enrichment bonuses, per-visit satisfaction score, season bonuses, gift shop upgrade, and tour guide multipliers (shown as a floating popup)
 
 Visitor types: Family, Tourist, Photographer, School, VIP — each with different income multipliers and stay durations.
 
 ### Reputation
 
-Reputation unlocks VIP visitors (at 100 rep, or 50 with `vip_easier` research) and reflects the sanctuary's public image. It is tied to visitor presence:
+Reputation unlocks VIP visitors (at 100 rep, or 50 with `vip_easier` research) and reflects the sanctuary's public image. It is driven entirely by visitor habitat visits:
 
-- **+1 per visitor leaving**: only if no animals are currently mistreated (hungry <20, unhappy <20, low health <40, or sick). A heart speech bubble appears above the visitor.
-- **+2 per day**: only if at least one visitor has been served.
-- **+10 per rescue**: always granted.
-- **Reputation drain**: every 15 seconds, if visitors are present and any animals are suffering, reputation is docked (up to -3 per check). No notification is shown — the player must watch their rep counter.
+- **+1 per happy habitat visit**: visitor sees well-cared-for animals → heart bubble
+- **-1 per troubled habitat visit**: visitor sees mistreated animals → worried bubble
+- **+2 per day**: only if at least one visitor has been served
+- **+10 per rescue**: always granted
 
 Reputation cannot drop below 0.
 

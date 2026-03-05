@@ -465,6 +465,17 @@ export class SpriteGenerator {
             g.fillTriangle(1, 5, 11, 5, 6, 11);
         });
 
+        tex(scene, 'icon_worried', 12, 12, g => {
+            g.fillStyle(0xFFCC44);
+            g.fillCircle(6, 6, 5);
+            g.fillStyle(0x000000);
+            g.fillCircle(4, 5, 1);
+            g.fillCircle(8, 5, 1);
+            g.fillRect(4, 8, 4, 1);
+            g.fillStyle(0x44AAFF);
+            g.fillTriangle(10, 2, 11, 5, 9, 5);
+        });
+
         tex(scene, 'particle_coin', 10, 10, g => {
             g.fillStyle(0xFFD700);
             g.fillCircle(5, 5, 4);
