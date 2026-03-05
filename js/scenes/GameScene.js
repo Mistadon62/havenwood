@@ -1364,9 +1364,13 @@ export default class GameScene extends Phaser.Scene {
         }
 
         const t = this.state.time;
-        // Lighting phases: 300–420 dawn, 420–720 day, 720–1020 dusk, 1020–1200 sunset, 1200–300 night
+        // Lighting phases: 240–300 pre-dawn, 300–420 dawn, 420–720 day, 720–1020 dusk, 1020–1200 sunset, night otherwise
         let color = 0x000033, alpha = 0;
-        if (t >= 300 && t < 420) {
+        if (t >= 240 && t < 300) {
+            const p = (t - 240) / 60;
+            alpha = 0.32 - p * 0.14;
+            color = Phaser.Display.Color.GetColor(p * 40 | 0, p * 20 | 0, 51 + p * 4 | 0);
+        } else if (t >= 300 && t < 420) {
             const p = (t - 300) / 120;
             alpha = 0.18 * (1 - p);
             color = Phaser.Display.Color.GetColor(40 + p * 20 | 0, 20 + p * 30 | 0, 55 - p * 40 | 0);
@@ -1745,10 +1749,11 @@ export default class GameScene extends Phaser.Scene {
         } else if (type === 'worried') {
             icon = this.add.image(0, -1, 'icon_worried').setScale(0.9);
         } else {
-            icon = this.add.text(0, -1, '...', {
-                fontFamily: '"Press Start 2P", monospace', fontSize: '8px', color: '#888888',
-                stroke: '#000', strokeThickness: 1
-            }).setOrigin(0.5);
+            icon = this.add.graphics();
+            icon.fillStyle(0x888888);
+            icon.fillCircle(-4, -1, 1.5);
+            icon.fillCircle(0, -1, 1.5);
+            icon.fillCircle(4, -1, 1.5);
         }
         ct.add(icon);
 

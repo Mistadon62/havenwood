@@ -473,7 +473,13 @@ export default class HUDScene extends Phaser.Scene {
                 } else {
                     tint.destroy(); ct.destroy(); this.rescuePopup = null; this._rescueTint = null;
                     this._pendingRescue = ev;
-                    this.gs.enterRescueSelect(ev);
+                    const needsZoom = this.gs.state.viewingHabitat || this.gs.cameras.main.zoom > 1;
+                    if (needsZoom) {
+                        this.gs.zoomOut();
+                        this.time.delayedCall(400, () => this.gs.enterRescueSelect(ev));
+                    } else {
+                        this.gs.enterRescueSelect(ev);
+                    }
                 }
             });
             accBtn.on('pointerover', () => accBtn.setColor(CLR.gold));
