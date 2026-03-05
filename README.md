@@ -46,7 +46,7 @@ havenwood/
 | `GameData.js` | Central data registry. Every species, habitat, upgrade, research node, achievement, etc. is defined here. Species include `foodCost` (food consumed per feed), `bondTreatsBase` (bond XP per treat), and breed-only variants with parent recipes. Volunteers are free with a max count of 1. Change game balance by editing this file. |
 | `GameScene.js` | The game simulation. Manages the grid map, animal behavior (bond XP/levels, friendship buffs, loneliness debuffs), goal-driven visitors (8-direction A* pathfinding, closest-side viewing preference, react with heart/worried/... bubbles, reputation per visit), staff, food system, time/seasons, automatic breeding, illness, missions, research, economy, achievements, and save/load. |
 | `HUDScene.js` | All UI. Runs as a parallel Phaser scene on top of GameScene. Toolbar with Build popup menu for habitat placement, vertically centered management panels (Rescue, Upgrades, Staff, Research, Journal — all closeable with ESC), settings/pause menu, and notifications. Exposes `hasOpenPanel()` and `closeAllPanels()` so GameScene can suppress world clicks and close panels via keyboard. Communicates via `this.game.events` (Phaser's global event emitter). |
-| `SpriteGenerator.js` | Draws every texture at boot using Phaser's Graphics API — animals, terrain, UI icons (fork+knife for food, book for research), particles, enrichment items, staff, visitors. Zero external image files. |
+| `SpriteGenerator.js` | Draws every texture at boot using Phaser's Graphics API — animals (drawn right-facing so `flipX` works correctly for movement), terrain, UI icons (fork+knife for food, book for research), reputation face sprites (11 expression levels), particles, enrichment items, staff, visitors. Zero external image files. |
 | `SoundManager.js` | Generates all sound effects procedurally using the Web Audio API — oscillators and filtered noise. Zero audio files. |
 
 ---
@@ -80,7 +80,7 @@ GameScene and HUDScene communicate via Phaser's global event system (`this.game.
 
 - 1 game day = 1440 minutes (matching real 24-hour clock)
 - `TIME_SCALE` (default: 2) controls how many game-minutes pass per real second
-- Day/night cycle affects a color overlay (dawn, day, dusk, night phases)
+- Day/night cycle affects a color overlay (pre-dawn, dawn, day, dusk, sunset, night phases with smooth transitions)
 - 4 seasons cycle every 7 days (28-day year): Spring → Summer → Autumn → Winter
 - Each season has gameplay bonuses/penalties (e.g., summer boosts visitors, winter reduces them) and particle effects (petals, fireflies, leaves, snow)
 
@@ -99,11 +99,11 @@ Capacity can be increased by the Habitat Plus upgrade (+1) and the Wildlife Biol
 
 #### Habitat Zoom View
 
-Clicking a habitat from the sanctuary overview zooms the camera (2.5x) to center on it, opens the habitat info panel on the left, and auto-selects a random animal. The panel has a red X close button in its top-right corner, and the bottom toolbar is replaced with a centered "< Back" button — both zoom back out. Animals are only clickable while zoomed in; hovering over an animal shows a glow effect that follows the sprite shape (using Phaser's `preFX.addGlow`), which persists while the animal's info panel is open. Navigation arrows (`<` / `>`) below the animal panel cycle through all animals in the habitat, transferring the glow highlight. Pressing ESC or clicking Back/X zooms back out to the sanctuary overview, closing both the habitat and any open animal panel. The zoom uses Phaser's `camera.pan()` and `camera.zoomTo()` with `force: true` so it can be safely interrupted. Grass extends 8 tiles beyond the main grid so the blue background never shows through when zooming into edge habitats.
+Clicking a habitat from the sanctuary overview zooms the camera (2.5x) to center on it, opens the habitat info panel on the left, and auto-selects a random animal. The panel has a red X close button in its top-right corner, and the bottom toolbar is replaced with a centered "< Back" button — both zoom back out. Animals are only clickable while zoomed in; hovering over an animal shows a glow effect that follows the sprite shape (using Phaser's `preFX.addGlow`), which persists while the animal's info panel is open. Navigation arrows (`<` / `>`) below the animal panel cycle through all animals in the habitat, transferring the glow highlight. Pressing ESC or clicking Back/X zooms back out to the sanctuary overview, closing both the habitat and any open animal panel. Pressing ESC again from the sanctuary view opens the settings/pause menu. The zoom uses Phaser's `camera.pan()` and `camera.zoomTo()` with `force: true` so it can be safely interrupted. Grass extends 8 tiles beyond the main grid so the blue background never shows through when zooming into edge habitats.
 
 #### Move Habitat
 
-The habitat info panel includes a "Move Habitat" button. Clicking it zooms back out, pauses time and all movement, temporarily removes the habitat from the grid, and enters a placement preview mode. The full habitat — background, decor, enrichments, and animals — follows the cursor with a green/red overlay indicating valid or invalid placement. Click to confirm the new location; press ESC or right-click to cancel and return the habitat to its original spot. Rescue events are suppressed during move mode.
+The habitat info panel includes a "Move Habitat" button. Clicking it zooms back out, pauses time and all movement, temporarily removes the habitat from the grid, and enters a placement preview mode. The full habitat — background, decor, enrichments, and animals — follows the cursor with a green/red overlay indicating valid or invalid placement. Click to confirm the new location; press ESC or right-click to cancel and return the habitat to its original spot. When a habitat is moved, any visitors currently walking toward it recalculate their target viewing spot and path based on the new position. Rescue events are suppressed during move mode.
 
 ### Animals
 
@@ -125,7 +125,7 @@ The sanctuary starts with 1000 food. Each time you feed an animal, it consumes f
 
 ### Rescue Events
 
-Random rescue events pop up periodically (every ~50 seconds, 30% faster with Conservation upgrade). A grey tint dims the game and time pauses while the popup is shown — visitor spawning is also suppressed so they don't pile up at the entrance. The player can accept (if a compatible habitat has room) or pass. If no compatible habitat exists or all are full, the popup shows a "Build [Type] (Xg)" button naming the specific habitat needed and its cost. Rescue events do not interrupt the current view — if zoomed into a habitat, the habitat and animal panels remain open behind the popup. If the rescued animal enters the currently viewed habitat, the panel refreshes to show the updated count. Rescue events are suppressed during build mode and habitat move mode to avoid interrupting placement.
+Random rescue events pop up periodically (every ~50 seconds of game time, 30% faster with Conservation upgrade; the first rescue arrives after ~4 seconds). Timing is driven by game-time so it pauses naturally and scales with speed. A grey tint dims the game and time pauses while the popup is shown — visitor spawning is also suppressed so they don't pile up at the entrance. The rescue popup is fully modal: all other interactions are blocked (toolbar, habitat clicks, animal selection, panel buttons) until the player resolves the rescue. ESC still opens/closes the settings menu during a rescue. The player can accept (if a compatible habitat has room) or pass. If multiple compatible habitats exist, the camera zooms out to the sanctuary view so the player can pick one. If no compatible habitat exists or all are full, the popup shows a "Build [Type] (Xg)" button naming the specific habitat needed and its cost. Rescue events do not interrupt the current view — if zoomed into a habitat, the habitat and animal panels remain visible behind the popup. If the rescued animal enters the currently viewed habitat, the panel refreshes to show the updated count. Rescue events are suppressed during build mode and habitat move mode to avoid interrupting placement. Pending rescue events are persisted in the save file and restored on load.
 
 ### Breeding
 
@@ -142,7 +142,7 @@ Visitors spawn during business hours (8 AM - 6 PM) and have goal-driven AI. Inst
 3. **View habitat** — stand and observe for a variable duration (2–5 seconds), then react:
    - **Heart bubble** (+1 rep): animals are healthy, fed, and happy
    - **Worried bubble** (-1 rep): animals are hungry (<20), unhappy (<20), low health (<40), or sick
-   - **"..." bubble** (no rep change): habitat is empty — visitor lingers briefly (0.5–1s) then moves on
+   - **"..." bubble** (no rep change): habitat is empty — three dot graphics in a speech bubble; visitor lingers briefly (0.5–1s) then moves on
 4. **Repeat** — visit a randomized number of habitats (not always all of them), spending varying amounts of time at each, then head for the exit
 5. **Leave** — pay a satisfaction-based donation (shown as a floating popup) and depart
 
@@ -155,14 +155,13 @@ Visitor types: Family, Tourist, Photographer, School, VIP — each with differen
 
 ### Reputation
 
-Reputation unlocks VIP visitors (at 100 rep, or 50 with `vip_easier` research) and reflects the sanctuary's public image. It is driven entirely by visitor habitat visits:
+Reputation starts at 50, unlocks VIP visitors (at 100 rep, or 50 with `vip_easier` research), and reflects the sanctuary's public image. It is driven entirely by visitors:
 
 - **+1 per happy habitat visit**: visitor sees well-cared-for animals → heart bubble
 - **-1 per troubled habitat visit**: visitor sees mistreated animals → worried bubble
 - **+2 per day**: only if at least one visitor has been served
-- **+10 per rescue**: always granted
 
-Reputation cannot drop below 0.
+Reputation cannot drop below 0. Displayed in the top bar as a dynamic face icon (no numeric count) that transitions from a red frown (0) through a yellow neutral expression (50) to a bright green smile (100), changing in 10-point increments.
 
 ### Staff
 
@@ -219,14 +218,15 @@ Place items in habitats to boost animal happiness:
 
 ### Achievements
 
-22 milestones tracked automatically (first rescue, species discovered, breeding, earnings, etc.). Viewable in the Journal panel.
+22 milestones tracked automatically (first rescue, species discovered, breeding, earnings, etc.). Viewable in the Journal panel. Achievement notifications are prefixed with a ★ star icon.
 
 ### Save System
 
-- **Auto-save**: every 60 seconds to `localStorage` (key: `havenwood_save`)
-- **Manual save**: via the settings menu (gear icon in top bar)
+- **Auto-save**: every 60 seconds to `localStorage` (key: `havenwood_save`), toggleable via a checkbox in the settings menu (default: on)
+- **Manual save**: via the settings menu (gear icon in top bar, or press ESC from the sanctuary view)
 - **Export**: download save as JSON file
 - **Exit to Menu**: saves and returns to the title screen via the settings menu
+- Pending rescue events are included in the save so they survive reload
 - Save format version is tracked (`v: 5`) for migration compatibility
 - `Set` objects (upgrades, discoveries, achievements, research) are serialized as arrays
 

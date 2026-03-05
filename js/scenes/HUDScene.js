@@ -1,9 +1,10 @@
 // UI overlay scene running parallel to GameScene. Has its own camera, unaffected by GameScene zoom.
 // Communicates via this.game.events; this.gs = GameScene reference for state and method calls.
-// Manages toolbar (hidden during habitat zoom), habitat/animal panels (with close X, back bar,
-// and navigation arrows to cycle animals), settings/pause menu (gear icon, replaces SAVE button),
-// rescue popup with time-pause, build popup, and management panels (vertically centered).
-// Top bar shows day/season, clock with speed controls, research points, reputation, food count, and coins.
+// Manages toolbar (hidden during habitat zoom, disabled during rescue), habitat/animal panels
+// (with close X, back bar, and navigation arrows to cycle animals), settings/pause menu
+// (gear icon or ESC from sanctuary; includes auto-save toggle), rescue popup with time-pause
+// and full modal blocking, build popup, and management panels (vertically centered).
+// Top bar shows day/season, reputation face, clock with speed controls, research points, food count, and coins.
 // hasOpenPanel() lets GameScene suppress world clicks while a management panel or settings is visible.
 import { W, H, HABITATS, SPECIES, RARITY_COLOR, CLR, SEASONS, UPGRADES, STAFF_TYPES,
     TRAITS, ILLNESSES, ENRICHMENTS, MISSIONS, VISITOR_TYPES, ACHIEVEMENTS,
@@ -43,7 +44,7 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== TOP BAR ========== */
 
-    // Day, season, clock, speed controls (tortoise/hare), research points, reputation star, food count, coins, settings gear.
+    // Day, season, reputation face (dynamic expression based on rep 0–100), clock, speed controls (tortoise/hare), research points, food count, coins, settings gear.
     // All elements are vertically centered at midY=21 using setOrigin(_, 0.5).
     createTopBar() {
         const bar = this.add.graphics();
@@ -62,10 +63,9 @@ export default class HUDScene extends Phaser.Scene {
         this.hareBtn.on('pointerdown', () => this._setTimeSpeed('fast'));
         this.timeTxt.on('pointerdown', () => this._setTimeSpeed('normal'));
 
-        this.add.image(W - 340, midY, 'icon_research').setScale(1.2);
-        this.rpTxt = this.txt(W - 328, midY, '0', 9, '#44DDAA').setOrigin(0, 0.5);
-        this.repLabel = this.txt(W - 288, midY - 2, '\u2605', 10, CLR.gold).setOrigin(0, 0.5);
-        this.repTxt = this.txt(W - 272, midY, '0', 9, CLR.gold).setOrigin(0, 0.5);
+        this.add.image(W - 280, midY, 'icon_research').setScale(1.2);
+        this.rpTxt = this.txt(W - 268, midY, '0', 9, '#44DDAA').setOrigin(0, 0.5);
+        this.repFace = this.add.image(300, midY, 'rep_face_5').setScale(0.9);
         this.add.image(W - 210, midY, 'icon_food').setScale(1.3);
         this.foodTxt = this.txt(W - 196, midY, '1000', 9, '#FF9944').setOrigin(0, 0.5);
         this.add.image(W - 120, midY, 'icon_coin').setScale(1.3);
@@ -98,12 +98,14 @@ export default class HUDScene extends Phaser.Scene {
     }
 
     /* ========== SETTINGS MENU ========== */
+    // Opened via ESC from sanctuary view (or during rescue) and gear icon. Save, Exit to Menu,
+    // Resume buttons, and an Auto-Save checkbox. Auto-save setting is persisted in the save file.
 
     toggleSettingsMenu() {
         if (this.settingsPanel) { this.closeSettingsMenu(); return; }
         this.gs.state.settingsPaused = true;
 
-        const pw = 260, ph = 220;
+        const pw = 260, ph = 260;
         const px = W / 2 - pw / 2, py = this.centerPanelY(ph);
         const ct = this.add.container(px, py).setDepth(310);
 
@@ -162,6 +164,23 @@ export default class HUDScene extends Phaser.Scene {
         resHit.on('pointerout', () => { resBg.clear(); resBg.fillStyle(0x555566, 0.6); resBg.fillRoundedRect(bx, 160, btnW, btnH, 5); });
         resHit.on('pointerdown', () => this.closeSettingsMenu());
 
+        const checkSize = 16;
+        const checkX = bx, checkY = 210;
+        const checkBg = this.add.graphics();
+        const drawCheck = () => {
+            checkBg.clear();
+            checkBg.lineStyle(2, 0xAA8855); checkBg.strokeRect(checkX, checkY, checkSize, checkSize);
+            if (this.gs.state.autoSave) {
+                checkBg.fillStyle(0x44DD44, 0.9); checkBg.fillRect(checkX + 3, checkY + 3, checkSize - 6, checkSize - 6);
+            }
+        };
+        drawCheck();
+        ct.add(checkBg);
+        const checkHit = this.add.rectangle(checkX + checkSize / 2, checkY + checkSize / 2, checkSize, checkSize, 0, 0).setInteractive({ useHandCursor: true });
+        ct.add(checkHit);
+        checkHit.on('pointerdown', () => { this.gs.state.autoSave = !this.gs.state.autoSave; drawCheck(); });
+        ct.add(this.txt(checkX + checkSize + 10, checkY + checkSize / 2, 'Auto-Save', 8, '#CCBBAA').setOrigin(0, 0.5));
+
         this.settingsPanel = ct;
     }
 
@@ -201,7 +220,10 @@ export default class HUDScene extends Phaser.Scene {
             this.toolbarElements.push(bg);
             const hit = this.add.rectangle(x, y, gap - 4, 50, 0, 0).setInteractive({ useHandCursor: true });
             this.toolbarElements.push(hit);
-            hit.on('pointerover', () => this.drawToolBtn(bg, x, y, item.color, true, gap));
+            hit.on('pointerover', () => {
+                if (this.gs.state.rescuePaused) { this.game.canvas.style.cursor = 'default'; return; }
+                this.drawToolBtn(bg, x, y, item.color, true, gap);
+            });
             hit.on('pointerout', () => {
                 const isActive = item.key === this.activeBuild ||
                     (item.key === 'build' && this.activeBuild && HABITATS[this.activeBuild]) ||
@@ -209,6 +231,7 @@ export default class HUDScene extends Phaser.Scene {
                 this.drawToolBtn(bg, x, y, item.color, isActive, gap);
             });
             hit.on('pointerdown', () => {
+                if (this.gs.state.rescuePaused) return;
                 if (item.key === 'build') { this.toggleBuildPopup(x, barY); return; }
                 if (item.key === 'upgrades') { this.togglePanel('upgradePanel', () => this.showUpgradePanel(), 'upgrades'); return; }
                 if (item.key === 'staff') { this.togglePanel('staffPanel', () => this.showStaffPanel(), 'staff'); return; }
@@ -366,7 +389,7 @@ export default class HUDScene extends Phaser.Scene {
         });
     }
 
-    // Updates day, season, clock, reputation display.
+    // Updates day, season, clock, and reputation face texture.
     updateTime(d) {
         this.dayTxt.setText(`Day ${d.day}`);
         const sn = SEASONS[d.season];
@@ -377,7 +400,8 @@ export default class HUDScene extends Phaser.Scene {
         const ap = hr >= 12 ? 'PM' : 'AM';
         const dh = hr > 12 ? hr - 12 : (hr === 0 ? 12 : hr);
         this.timeTxt.setText(`${dh}:${mn.toString().padStart(2, '0')} ${ap}`);
-        this.repTxt.setText(d.rep.toString());
+        const repLevel = Math.max(0, Math.min(10, Math.floor(Phaser.Math.Clamp(d.rep, 0, 100) / 10)));
+        this.repFace.setTexture(`rep_face_${repLevel}`);
     }
 
     // Updates coin display with brief scale pulse.
@@ -424,12 +448,13 @@ export default class HUDScene extends Phaser.Scene {
 
     // Modal with rescued animal details. Buttons adapt: Rescue!/Pass if compatible habitats exist,
     // or "Build [Type] (Xg)"/Pass if none available. Pauses game time (rescuePaused),
-    // dims the screen with a grey tint, and preserves any open habitat/animal panels.
+    // dims the screen with a grey tint, blocks all other interactions (toolbar, habitat clicks,
+    // animal selection, panel buttons, ESC), and preserves any open habitat/animal panels.
+    // If multiple habitats are compatible, zooms out to sanctuary view for habitat selection.
     showRescue(ev) {
         if (this.rescuePopup) this.rescuePopup.destroy();
         if (this._rescueTint) this._rescueTint.destroy();
         this.gs.state.rescuePaused = true;
-        if (this.gs.rescueTimer) this.gs.rescueTimer.paused = true;
 
         this._rescueTint = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.45).setDepth(295);
         const tint = this._rescueTint;
@@ -453,8 +478,8 @@ export default class HUDScene extends Phaser.Scene {
 
         const dismissRescue = () => {
             tint.destroy(); ct.destroy(); this.rescuePopup = null; this._rescueTint = null;
+            this.gs.state.pendingRescue = null;
             this.gs.state.rescuePaused = false;
-            if (this.gs.rescueTimer) this.gs.rescueTimer.paused = false;
         };
 
         const btnW = 120, btnGap = 8;
@@ -512,7 +537,6 @@ export default class HUDScene extends Phaser.Scene {
                 bldBtn.on('pointerdown', () => {
                     tint.destroy(); ct.destroy(); this.rescuePopup = null; this._rescueTint = null;
                     this.gs.state.rescuePaused = false;
-                    if (this.gs.rescueTimer) this.gs.rescueTimer.paused = false;
                     this._pendingRescue = ev;
                     this.gs.enterBuild(compatType.id);
                 });
@@ -652,7 +676,7 @@ export default class HUDScene extends Phaser.Scene {
         ct.addAt(bg, 0);
 
         const closeBtn = this.txt(pw - 8, 4, 'X', 8, '#FF6666').setOrigin(0.5, 0).setInteractive({ useHandCursor: true });
-        closeBtn.on('pointerdown', () => { ct.destroy(); this.animalPanel = null; this._viewedAnimal = null; this.gs.clearSelectedAnimal(); });
+        closeBtn.on('pointerdown', () => { if (this.gs.state.rescuePaused) return; ct.destroy(); this.animalPanel = null; this._viewedAnimal = null; this.gs.clearSelectedAnimal(); });
         ct.add(closeBtn);
 
         // Navigation arrows to cycle through habitat animals
@@ -670,6 +694,7 @@ export default class HUDScene extends Phaser.Scene {
             prevBtn.on('pointerover', () => prevBtn.setColor('#FFFFFF'));
             prevBtn.on('pointerout', () => prevBtn.setColor('#AAAAAA'));
             prevBtn.on('pointerdown', () => {
+                if (this.gs.state.rescuePaused) return;
                 const ni = (curIdx - 1 + habAnimals.length) % habAnimals.length;
                 this.gs.selectAnimal(habAnimals[ni]);
             });
@@ -681,6 +706,7 @@ export default class HUDScene extends Phaser.Scene {
             nextBtn.on('pointerover', () => nextBtn.setColor('#FFFFFF'));
             nextBtn.on('pointerout', () => nextBtn.setColor('#AAAAAA'));
             nextBtn.on('pointerdown', () => {
+                if (this.gs.state.rescuePaused) return;
                 const ni = (curIdx + 1) % habAnimals.length;
                 this.gs.selectAnimal(habAnimals[ni]);
             });
@@ -707,7 +733,7 @@ export default class HUDScene extends Phaser.Scene {
         bg.fillStyle(color, 0.55); bg.fillRoundedRect(x, y, w, 26, 3);
         ct.add(bg);
         const btn = this.txt(x + w / 2, y + 13, label, 6).setOrigin(0.5).setInteractive({ useHandCursor: true });
-        btn.on('pointerdown', cb);
+        btn.on('pointerdown', () => { if (!this.gs.state.rescuePaused) cb(); });
         btn.on('pointerover', () => { bg.clear(); bg.fillStyle(color, 0.8); bg.fillRoundedRect(x, y, w, 26, 3); });
         btn.on('pointerout', () => { bg.clear(); bg.fillStyle(color, 0.55); bg.fillRoundedRect(x, y, w, 26, 3); });
         ct.add(btn);
@@ -795,7 +821,7 @@ export default class HUDScene extends Phaser.Scene {
         ct.addAt(bg, 0);
 
         const closeBtn = this.txt(pw - 8, 6, 'X', 8, '#CC4444').setOrigin(1, 0).setInteractive({ useHandCursor: true });
-        closeBtn.on('pointerdown', () => { this.gs.zoomOut(); });
+        closeBtn.on('pointerdown', () => { if (!this.gs.state.rescuePaused) this.gs.zoomOut(); });
         closeBtn.on('pointerover', () => closeBtn.setColor('#FF6666'));
         closeBtn.on('pointerout', () => closeBtn.setColor('#CC4444'));
         ct.add(closeBtn);
@@ -814,7 +840,7 @@ export default class HUDScene extends Phaser.Scene {
         bbBg.lineStyle(2, 0xAA8855); bbBg.strokeRoundedRect(bbX, bbY, bbW, bbH, 6);
 
         const bbBtn = this.txt(W / 2, bbY + bbH / 2, '< Back', 9, '#FFCC88').setOrigin(0.5).setDepth(250).setInteractive({ useHandCursor: true });
-        bbBtn.on('pointerdown', () => { this.gs.zoomOut(); });
+        bbBtn.on('pointerdown', () => { if (!this.gs.state.rescuePaused) this.gs.zoomOut(); });
         bbBtn.on('pointerover', () => { bbBtn.setColor('#FFEECC'); bbBg.clear(); bbBg.fillStyle(0x886633, 0.85); bbBg.fillRoundedRect(bbX, bbY, bbW, bbH, 6); bbBg.lineStyle(2, 0xCCBB77); bbBg.strokeRoundedRect(bbX, bbY, bbW, bbH, 6); });
         bbBtn.on('pointerout', () => { bbBtn.setColor('#FFCC88'); bbBg.clear(); bbBg.fillStyle(0x664422, 0.75); bbBg.fillRoundedRect(bbX, bbY, bbW, bbH, 6); bbBg.lineStyle(2, 0xAA8855); bbBg.strokeRoundedRect(bbX, bbY, bbW, bbH, 6); });
 

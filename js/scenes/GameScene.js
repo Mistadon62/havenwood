@@ -2,8 +2,10 @@
  * GameScene - Core gameplay scene for Havenwood, a Phaser 3 animal sanctuary management game.
  * Handles map, building, habitat zoom view (with auto-select and animal cycling), animals,
  * goal-driven visitors (8-direction A* pathfinding, closest-side viewing preference, react
- * with speech bubbles, reputation per visit), staff, automatic breeding, missions, research,
- * time, seasons, rescue events (with time-pause — spawning suppressed), settings/pause menu,
+ * with speech bubbles, reputation per visit, paths recalculate on habitat move), staff,
+ * automatic breeding, missions, research, time, seasons, rescue events (game-time driven,
+ * fully modal with time-pause — spawning suppressed, persisted across save/load),
+ * settings/pause menu (ESC from sanctuary or during rescue), auto-save (toggleable),
  * animal relocation, food system, bond XP/levels, friendship happiness buffs, loneliness
  * debuffs, and save/load.
  */
@@ -28,7 +30,7 @@ export default class GameScene extends Phaser.Scene {
         this.input.on('pointerdown', () => this.sfx.resume());
 
         this.state = {
-            day: 1, time: 360, coins: START_COINS, rep: 0, food: 1000,
+            day: 1, time: 360, coins: START_COINS, rep: 50, food: 1000,
             buildMode: null,
             habitats: [], animals: [], staff: [],
             discoveries: new Set(),
@@ -46,6 +48,7 @@ export default class GameScene extends Phaser.Scene {
             viewingHabitat: null,
             rescuePaused: false,
             settingsPaused: false,
+            autoSave: true,
         };
         this.visitors = [];
         this.staffSprites = [];
@@ -68,14 +71,11 @@ export default class GameScene extends Phaser.Scene {
         if (!this.isNewGame) this.loadGame();
         this.updateSeason();
 
-        this.time.delayedCall(4000, () => this.triggerRescue('cat'));
-
         this.rescueInterval = 50000;
-        this.rescueTimer = this.time.addEvent({
-            delay: this.rescueInterval, callback: () => this.triggerRescue(), loop: true
-        });
+        this._rescueAccum = this.rescueInterval - 4000;
+        this._firstRescue = true;
+        this._autoSaveAccum = 0;
         this.time.addEvent({ delay: 7000, callback: () => this.trySpawnVisitor(), loop: true });
-        this.time.addEvent({ delay: 60000, callback: () => this.saveGame(), loop: true });
         this.time.addEvent({ delay: 5000, callback: () => this.staffWork(), loop: true });
         this.time.addEvent({ delay: 10000, callback: () => this.checkIllness(), loop: true });
         this.time.addEvent({ delay: 8000, callback: () => this.updateBonds(), loop: true });
@@ -159,8 +159,8 @@ export default class GameScene extends Phaser.Scene {
     // zooming in auto-selects a random animal after the camera animation completes.
     // World clicks and hover outlines are suppressed while zoomed (viewingHabitat) or while a
     // HUD management panel is open (hasOpenPanel check prevents clicking through panels).
-    // Right-click or ESC exits build mode; ESC also closes the settings menu, zooms out,
-    // or closes open management panels (in priority order).
+    // Right-click or ESC exits build mode. ESC priority: close settings → open settings during
+    // rescue → cancel habitat select → cancel move → close panels → zoom out → exit build → open settings.
     // Browser context menu is suppressed on the canvas.
 
     setupInput() {
@@ -264,6 +264,7 @@ export default class GameScene extends Phaser.Scene {
             }
             if (ptr.rightButtonDown()) { if (this._movingHabitat) { this.cancelMove(); } else { this.exitBuild(); } return; }
             if (this._skipPointerDown) { this._skipPointerDown = false; return; }
+            if (this.state.rescuePaused) return;
             if (this.state.viewingHabitat) return;
             const hud = this.scene.get('HUDScene');
             if (hud && hud.hasOpenPanel()) return;
@@ -299,6 +300,7 @@ export default class GameScene extends Phaser.Scene {
         this.input.keyboard.on('keydown-ESC', () => {
             const hud = this.scene.get('HUDScene');
             if (hud && hud.settingsPanel) { hud.closeSettingsMenu(); return; }
+            if (this.state.rescuePaused) { if (hud) hud.toggleSettingsMenu(); return; }
             if (this._habSelectMode) {
                 const cancel = this._habSelectMode.onCancel;
                 this._exitHabitatSelect();
@@ -308,7 +310,8 @@ export default class GameScene extends Phaser.Scene {
             if (this._movingHabitat) { this.cancelMove(); return; }
             if (hud && hud.hasOpenPanel()) { hud.closeAllPanels(); return; }
             if (this.state.viewingHabitat || this.cameras.main.zoom > 1) this.zoomOut();
-            else this.exitBuild();
+            else if (this.state.buildMode) this.exitBuild();
+            else if (hud) hud.toggleSettingsMenu();
         });
 
         this.game.canvas.addEventListener('contextmenu', e => e.preventDefault());
@@ -375,6 +378,7 @@ export default class GameScene extends Phaser.Scene {
     // All habitat elements (gfx, decor, enrichments, animals) stay visible and follow the
     // cursor as a live preview with a green/red overlay. Time and movement are paused.
     // Click to place at new location; ESC or right-click cancels and returns it to the original spot.
+    // Visitors seeking the moved habitat recalculate their target viewing spot and path.
 
     enterMoveMode(hab) {
         this._movingHabitat = hab;
@@ -820,13 +824,13 @@ export default class GameScene extends Phaser.Scene {
         if (animal.isBaby) sprite.setScale(0.6);
 
         sprite.on('pointerdown', () => {
-            if (!this.state.viewingHabitat) return;
+            if (!this.state.viewingHabitat || this.state.rescuePaused) return;
             this._skipPointerDown = true;
             this.sfx.click();
             this.selectAnimal(animal);
         });
         sprite.on('pointerover', () => {
-            if (!this.state.viewingHabitat) return;
+            if (!this.state.viewingHabitat || this.state.rescuePaused) return;
             if (!sprite.preFX) return;
             if (!sprite._hoverGlow) sprite._hoverGlow = sprite.preFX.addGlow(0xffffff, 2, 0, false, 0.15, 10);
         });
@@ -1348,7 +1352,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== TIME ========== */
-    // 1440 min/day, TIME_SCALE for speed. Day/night overlay: dawn 05:00–07:00, dusk 17:00–20:00, night 21:00–05:00.
+    // 1440 min/day, TIME_SCALE for speed. Day/night overlay: pre-dawn 04:00–05:00, dawn 05:00–07:00, day 07:00–12:00, dusk 12:00–17:00, sunset 17:00–20:00, night 20:00–04:00.
 
     updateTime(delta) {
         this.state.time += TIME_SCALE * this.timeSpeedMult * delta / 1000;
@@ -1584,6 +1588,13 @@ export default class GameScene extends Phaser.Scene {
     _recalcVisitorPaths() {
         for (const v of this.visitors) {
             if (v.phase === 'viewing') continue;
+            if (v.phase === 'seeking' && v.targetHab) {
+                const hab = this.state.habitats.find(h => h.id === v.targetHab);
+                if (hab) {
+                    const spot = this.findViewingSpot(hab, v) || this.randomOpenTile();
+                    v.tx = spot.x; v.ty = spot.y;
+                }
+            }
             this._setVisitorPath(v);
         }
     }
@@ -1885,7 +1896,6 @@ export default class GameScene extends Phaser.Scene {
         this.game.events.emit('upgradesUpdate', [...this.state.upgrades]);
         if (id === 'conservation') {
             this.rescueInterval = Math.round(this.rescueInterval * 0.7);
-            this.rescueTimer.delay = this.rescueInterval;
         }
         return true;
     }
@@ -1932,9 +1942,10 @@ export default class GameScene extends Phaser.Scene {
 
     /* ========== RESCUE ========== */
     // Timed events: pick species by rarity weights, show rescue dialog, accept adds animal.
-    // Only one rescue at a time — triggerRescue skips if rescuePaused. The rescue timer is paused
-    // while a popup is active so events don't queue up. HUDScene pauses game time (rescuePaused),
-    // shows a grey tint, and resumes the timer on dismiss.
+    // Rescue timing is driven by game-time (accumulated in update()), not wall-clock time, so
+    // it pauses naturally with the game and scales with speed. triggerRescue skips if rescuePaused.
+    // HUDScene sets rescuePaused, shows a grey tint, and blocks all other interactions.
+    // Pending rescue is stored in state.pendingRescue for save/load persistence.
     // If zoomed into a habitat, panels stay open; accepting re-emits showHabitatInfo to refresh.
 
     triggerRescue(forceSpecies) {
@@ -1948,7 +1959,9 @@ export default class GameScene extends Phaser.Scene {
         const msg = tmpl.replace('{name}', v.name).replace('{species}', sp.name);
         this.state.seenVariants.add(`${sp.id}_${vi}`);
         this.sfx.rescue();
-        this.game.events.emit('rescueEvent', { speciesId: sp.id, name: v.name, variantIdx: vi, habitat: hab, msg });
+        const ev = { speciesId: sp.id, name: v.name, variantIdx: vi, habitat: hab, msg };
+        this.state.pendingRescue = ev;
+        this.game.events.emit('rescueEvent', ev);
     }
 
     // Weighted by RARITY_WEIGHT; season match and rare_boost research double odds.
@@ -1986,9 +1999,9 @@ export default class GameScene extends Phaser.Scene {
     }
 
     acceptRescueInto(ev, hab) {
+        this.state.pendingRescue = null;
         this.addAnimal(ev.speciesId, ev.name, hab.id, { variantIdx: ev.variantIdx });
         this.state.stats.rescued++;
-        this.state.rep += 10;
         this.state.rescuedVariants.add(`${ev.speciesId}_${ev.variantIdx}`);
         this.earnResearchPoints(1);
         if (!this.state.discoveries.has(ev.speciesId)) {
@@ -2042,7 +2055,6 @@ export default class GameScene extends Phaser.Scene {
         this._enterHabitatSelect(compatIds, `Click a habitat to place ${ev.name}`, hab => {
             if (hud) hud._pendingRescue = null;
             this.state.rescuePaused = false;
-            if (this.rescueTimer) this.rescueTimer.paused = false;
             this.acceptRescueInto(ev, hab);
         }, () => {
             if (hud) { hud._pendingRescue = null; hud.showRescue(ev); }
@@ -2102,7 +2114,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== ACHIEVEMENTS ========== */
-    // One-time unlocks; each has a check function; emits notification and achievementEarned.
+    // One-time unlocks; each has a check function; emits ★-prefixed notification and achievementEarned.
 
     checkAchievements() {
         const s = this.state;
@@ -2139,7 +2151,7 @@ export default class GameScene extends Phaser.Scene {
             const fn = checks[ach.id];
             if (fn && fn()) {
                 s.achievementsEarned.add(ach.id);
-                this.game.events.emit('notification', `Achievement: ${ach.name}!`);
+                this.game.events.emit('notification', `\u2605 Achievement: ${ach.name}!`);
                 this.sfx.upgrade();
                 this.game.events.emit('achievementEarned', ach.id);
             }
@@ -2198,6 +2210,14 @@ export default class GameScene extends Phaser.Scene {
             })),
             researchPoints: this.state.researchPoints,
             researchUnlocked: [...this.state.researchUnlocked],
+            pendingRescue: this.state.pendingRescue ? {
+                speciesId: this.state.pendingRescue.speciesId,
+                name: this.state.pendingRescue.name,
+                variantIdx: this.state.pendingRescue.variantIdx,
+                msg: this.state.pendingRescue.msg,
+            } : null,
+            rescueAccum: this._rescueAccum,
+            autoSave: this.state.autoSave,
             visitors: this.visitors.map(v => ({
                 visitorType: v.visitorType, x: v.sprite.x, y: v.sprite.y,
                 tx: v.tx, ty: v.ty, speed: v.speed, timer: v.timer,
@@ -2290,6 +2310,18 @@ export default class GameScene extends Phaser.Scene {
             this.game.events.emit('upgradesUpdate', [...this.state.upgrades]);
             this.game.events.emit('staffUpdate', this.state.staff);
             this.game.events.emit('missionsUpdate');
+
+            this._rescueAccum = d.rescueAccum ?? 0;
+            this._firstRescue = false;
+            this.state.autoSave = d.autoSave ?? true;
+
+            if (d.pendingRescue) {
+                const pr = d.pendingRescue;
+                this.state.pendingRescue = pr;
+                this.time.delayedCall(0, () => {
+                    this.game.events.emit('rescueEvent', pr);
+                });
+            }
         } catch (e) {
             console.error('Failed to load save:', e);
         }
@@ -2307,7 +2339,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== UPDATE ========== */
-    // Main loop: time, animals, visitors, staff, missions, ambient sound.
+    // Main loop: time, animals, visitors, staff, missions, ambient sound, rescue timing, auto-save.
     // Skipped entirely while rescuePaused or settingsPaused is set (rescue/settings freezes all simulation).
 
     update(time, delta) {
@@ -2318,5 +2350,20 @@ export default class GameScene extends Phaser.Scene {
         this.updateStaff(delta);
         this.updateMissions(delta);
         this.sfx.updateAmbient(delta, this.state.time);
+
+        this._rescueAccum += delta * this.timeSpeedMult;
+        if (this._rescueAccum >= this.rescueInterval) {
+            this._rescueAccum -= this.rescueInterval;
+            if (this._firstRescue) { this._firstRescue = false; this.triggerRescue('cat'); }
+            else this.triggerRescue();
+        }
+
+        if (this.state.autoSave) {
+            this._autoSaveAccum += delta;
+            if (this._autoSaveAccum >= 60000) {
+                this._autoSaveAccum -= 60000;
+                this.saveGame();
+            }
+        }
     }
 }

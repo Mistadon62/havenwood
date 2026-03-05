@@ -144,6 +144,7 @@ export class SpriteGenerator {
     }
 
     // Individual animal sprites: one draw method per species, or drawGeneric fallback.
+    // Default (unflipped) sprites face right, so tails go left and forward features (beaks, faces) go right.
     static animals(scene) {
         Object.entries(SPECIES).forEach(([id, sp]) => {
             tex(scene, `animal_${id}`, TILE, TILE, g => {
@@ -173,9 +174,9 @@ export class SpriteGenerator {
         rect(g, 19, 12, 1, 2, 0x111111);
         rect(g, 15, 15, 2, 1, 0xFFAAAA);
         rect(g, 9, 19, 14, 7, c);
-        rect(g, 23, 19, 2, 2, c);
-        rect(g, 25, 17, 2, 2, c);
-        rect(g, 27, 15, 2, 3, c);
+        rect(g, 7, 19, 2, 2, c);
+        rect(g, 5, 17, 2, 2, c);
+        rect(g, 3, 15, 2, 3, c);
         rect(g, 10, 26, 3, 4, d);
         rect(g, 19, 26, 3, 4, d);
     }
@@ -190,8 +191,8 @@ export class SpriteGenerator {
         rect(g, 14, 13, 4, 2, 0x333333);
         rect(g, 15, 15, 3, 2, 0xFF8899);
         rect(g, 9, 16, 14, 9, c);
-        rect(g, 23, 14, 2, 3, c);
-        rect(g, 25, 12, 2, 3, c);
+        rect(g, 7, 14, 2, 3, c);
+        rect(g, 5, 12, 2, 3, c);
         rect(g, 10, 25, 3, 4, d);
         rect(g, 19, 25, 3, 4, d);
     }
@@ -209,7 +210,7 @@ export class SpriteGenerator {
         rect(g, 15, 15, 2, 1, 0xFFAAAA);
         rect(g, 10, 18, 12, 8, c);
         g.fillStyle(0xFFFFFF);
-        g.fillCircle(23, 21, 3);
+        g.fillCircle(9, 21, 3);
         rect(g, 11, 26, 3, 3, d);
         rect(g, 18, 26, 3, 3, d);
     }
@@ -228,9 +229,9 @@ export class SpriteGenerator {
         rect(g, 19, 12, 1, 2, 0x111111);
         rect(g, 9, 18, 14, 8, c);
         rect(g, 13, 20, 6, 6, 0xFFE4C4);
-        rect(g, 23, 17, 3, 3, c);
-        rect(g, 25, 15, 3, 4, c);
-        rect(g, 27, 16, 2, 2, 0xFFFFFF);
+        rect(g, 6, 17, 3, 3, c);
+        rect(g, 4, 15, 3, 4, c);
+        rect(g, 3, 16, 2, 2, 0xFFFFFF);
         rect(g, 10, 26, 3, 4, d);
         rect(g, 19, 26, 3, 4, d);
     }
@@ -283,7 +284,7 @@ export class SpriteGenerator {
         rect(g, 10, 8, 12, 10, c);
         rect(g, 12, 4, 8, 6, c);
         rect(g, 14, 6, 2, 2, 0x222222);
-        rect(g, 7, 7, 5, 3, 0xEE8822);
+        rect(g, 20, 7, 5, 3, 0xEE8822);
         rect(g, 8, 12, 3, 4, dark(c, 20));
         rect(g, 20, 13, 3, 3, bright(c, 15));
         rect(g, 12, 18, 3, 3, 0xEE8822);
@@ -301,11 +302,11 @@ export class SpriteGenerator {
         rect(g, 14, 12, 2, 3, d);
         rect(g, 18, 14, 2, 3, d);
         rect(g, 14, 17, 3, 2, d);
-        rect(g, 5, 14, 6, 5, 0x7a8a4a);
-        rect(g, 5, 16, 2, 2, 0x222222);
+        rect(g, 21, 14, 6, 5, 0x7a8a4a);
+        rect(g, 25, 16, 2, 2, 0x222222);
         rect(g, 10, 22, 3, 3, d);
         rect(g, 19, 22, 3, 3, d);
-        rect(g, 24, 16, 3, 2, d);
+        rect(g, 5, 16, 3, 2, d);
     }
     // Turtle: shell with pattern, head, legs.
 
@@ -384,10 +385,10 @@ export class SpriteGenerator {
             g.fillStyle(spk);
             g.fillTriangle(sx, 10, sx + 1, 3 + (i % 2) * 2, sx + 2, 10);
         }
-        rect(g, 8, 10, 18, 12, c);
-        rect(g, 4, 14, 6, 6, bright(c, 20));
-        rect(g, 4, 16, 2, 2, 0x222222);
-        rect(g, 3, 18, 2, 1, 0xFFAAAA);
+        rect(g, 6, 10, 18, 12, c);
+        rect(g, 22, 14, 6, 6, bright(c, 20));
+        rect(g, 26, 16, 2, 2, 0x222222);
+        rect(g, 27, 18, 2, 1, 0xFFAAAA);
         rect(g, 9, 22, 3, 3, d);
         rect(g, 16, 22, 3, 3, d);
         rect(g, 21, 22, 3, 3, d);
@@ -430,9 +431,9 @@ export class SpriteGenerator {
         rect(g, 19, 12, 1, 2, 0x111111);
         rect(g, 9, 18, 14, 8, c);
         rect(g, 13, 20, 6, 6, 0xFFFFFF);
-        rect(g, 23, 17, 3, 3, c);
-        rect(g, 25, 15, 4, 5, c);
-        rect(g, 28, 16, 2, 2, 0xFFFFFF);
+        rect(g, 6, 17, 3, 3, c);
+        rect(g, 3, 15, 4, 5, c);
+        rect(g, 2, 16, 2, 2, 0xFFFFFF);
         rect(g, 10, 26, 3, 4, d);
         rect(g, 19, 26, 3, 4, d);
     }
@@ -447,7 +448,7 @@ export class SpriteGenerator {
     }
     // Generic fallback: simple body, eyes, legs.
 
-    // UI icons and particles: coin, hearts, stars, zzz.
+    // UI icons and particles: coin, hearts, stars, zzz, reputation faces (11 expression levels).
     static ui(scene) {
         tex(scene, 'icon_coin', 16, 16, g => {
             g.fillStyle(0xFFD700);
@@ -492,6 +493,30 @@ export class SpriteGenerator {
             g.fillRect(2, 8, 2, 2);
             g.fillRect(8, 8, 2, 2);
         });
+
+        for (let i = 0; i <= 10; i++) {
+            tex(scene, `rep_face_${i}`, 20, 20, g => {
+                const t = i / 10;
+                const rr = Math.round(t < 0.5 ? 200 + (1 - t * 2) * 55 : 200 - (t - 0.5) * 2 * 130);
+                const gg = Math.round(t < 0.5 ? 60 + t * 2 * 140 : 200 + (t - 0.5) * 2 * 55);
+                const bb = Math.round(t < 0.5 ? 40 : 40 + (t - 0.5) * 2 * 30);
+                const faceColor = (rr << 16) | (gg << 8) | bb;
+                g.fillStyle(faceColor);
+                g.fillCircle(10, 10, 9);
+                g.fillStyle(0x000000);
+                g.fillCircle(6, 7, 1.5);
+                g.fillCircle(14, 7, 1.5);
+                const bend = (t - 0.5) * 6;
+                g.lineStyle(2, 0x000000, 1);
+                g.beginPath();
+                for (let x = 5; x <= 15; x++) {
+                    const nx = (x - 10) / 5;
+                    const y = 14 - bend * (1 - nx * nx);
+                    if (x === 5) g.moveTo(x, y); else g.lineTo(x, y);
+                }
+                g.strokePath();
+            });
+        }
 
         tex(scene, 'particle_zzz', 16, 12, g => {
             g.fillStyle(0xAAAAFF);
