@@ -1,6 +1,7 @@
 // UI overlay scene running parallel to GameScene. Has its own camera, unaffected by GameScene zoom.
 // Communicates via this.game.events; this.gs = GameScene reference for state and method calls.
-// Manages toolbar (hidden during habitat/facility zoom, disabled during rescue), habitat/animal
+// Manages toolbar (hidden during habitat/facility zoom, disabled during rescue, replaced by
+// build hint bar during build mode), habitat/animal
 // panels (with close X, back bar, navigation arrows to cycle animals, generation display for bred
 // animals), facility back bar (shown when zoomed into a garden or other facility), settings/pause
 // menu (gear icon or ESC from sanctuary; includes auto-save toggle), rescue popup with time-pause
@@ -463,7 +464,12 @@ export default class HUDScene extends Phaser.Scene {
         ev.on('notification', this.notify, this);
         ev.on('buildModeChanged', mode => {
             this.activeBuild = mode;
-            if (!mode) this.closeBuildPopup();
+            if (!mode) {
+                this.closeBuildPopup();
+                this.hideBuildHint();
+            } else {
+                this.showBuildHint();
+            }
             this.toolBtns.forEach(b => {
                 const isActive = b.key === mode ||
                     (b.key === 'build' && mode && (HABITATS[mode] || (mode && mode.startsWith('decor_')) || (mode && mode.startsWith('facility_'))));
@@ -1003,7 +1009,7 @@ export default class HUDScene extends Phaser.Scene {
         bar.fillStyle(CLR.uiBg, 0.9); bar.fillRect(0, barY, W, 62);
         bar.lineStyle(1, CLR.uiBorder); bar.lineBetween(0, barY, W, barY);
 
-        const label = this.txt(W / 2, barY + 31, labelText, 8, '#88FFAA').setOrigin(0.5).setDepth(250);
+        const label = this.txt(W / 2, barY + 31, labelText, 8, '#FFFFFF').setOrigin(0.5).setDepth(250);
 
         this._selectBarElements = [bar, label];
     }
@@ -1017,6 +1023,32 @@ export default class HUDScene extends Phaser.Scene {
         if (this._selectBarElements) {
             this._selectBarElements.forEach(e => e.destroy());
             this._selectBarElements = null;
+        }
+    }
+
+    showBuildHint() {
+        this.destroyBuildHint();
+        this.hideToolbar();
+
+        const barY = H - 62;
+        const bar = this.add.graphics().setDepth(250);
+        bar.fillStyle(CLR.uiBg, 0.9); bar.fillRect(0, barY, W, 62);
+        bar.lineStyle(1, CLR.uiBorder); bar.lineBetween(0, barY, W, barY);
+
+        const label = this.txt(W / 2, barY + 31, 'Left Click to Place, Right Click to Exit Build Mode', 8, '#FFFFFF').setOrigin(0.5).setDepth(250);
+
+        this._buildHintElements = [bar, label];
+    }
+
+    hideBuildHint() {
+        this.destroyBuildHint();
+        this.showToolbar();
+    }
+
+    destroyBuildHint() {
+        if (this._buildHintElements) {
+            this._buildHintElements.forEach(e => e.destroy());
+            this._buildHintElements = null;
         }
     }
 

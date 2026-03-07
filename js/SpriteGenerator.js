@@ -478,6 +478,16 @@ export class SpriteGenerator {
             g.fillTriangle(10, 2, 11, 5, 9, 5);
         });
 
+        tex(scene, 'icon_confused', 12, 12, g => {
+            g.fillStyle(0xFFCC44);
+            g.fillCircle(6, 6, 5);
+            g.fillStyle(0x000000);
+            g.fillRect(5, 3, 3, 1);
+            g.fillRect(7, 4, 1, 1);
+            g.fillRect(6, 5, 1, 2);
+            g.fillRect(6, 8, 1, 1);
+        });
+
         tex(scene, 'particle_coin', 10, 10, g => {
             g.fillStyle(0xFFD700);
             g.fillCircle(5, 5, 4);

@@ -3,8 +3,12 @@
  * Handles map, building (habitats, decorations, facilities), habitat zoom view (with
  * auto-select, animal cycling, and cross-navigation between habitats and facilities by
  * clicking/hovering nearby ones while zoomed), facility zoom view (with clickable produce), animals,
- * goal-driven visitors (8-direction A* pathfinding, closest-side viewing preference, react
- * with speech bubbles, reputation per visit, paths recalculate on build changes), staff,
+ * goal-driven visitors (8-direction A* pathfinding, prefer dec_path/entrance tiles for
+ * viewing spots and routes, "?" confused pause when leaving path network for off-path
+ * habitats, react with speech bubbles, reputation per visit, paths recalculate on build changes),
+ * phase-based staff AI (volunteers/caretakers/vets walk into habitats via A* pathfinding,
+ * perform localized work with heart animations; tour guides gather nearby visitors into
+ * follower groups and lead them between habitats),
  * automatic breeding (trait inheritance, generation tracking, name inheritance from
  * same-gender parent, breed-only variant recipes with fixed names), missions, research,
  * time, seasons, rescue events (game-time driven, fully modal with time-pause — spawning
@@ -16,7 +20,8 @@
  * contain 12 produce items (3 types × 4 each) that start unripe, grow over 8 in-game
  * hours, can be clicked to harvest for food, then regrow. Mini progress bars beneath
  * each item are visible only when zoomed in. Timer-based callbacks (bonds, breeding,
- * illness, staff, achievements) have independent pause guards matching the main update loop.
+ * illness, achievements) have independent pause guards matching the main update loop.
+ * Staff work is driven inline by phase-based AI, not by a separate timer.
  */
 import { TILE, COLS, ROWS, W, H, MAP_Y, TIME_SCALE, START_COINS, HABITATS, SPECIES, RARITY_WEIGHT, RESCUE_MSG, CLR,
     SEASONS, SEASON_ORDER, SEASON_LENGTH, SEASON_CYCLE, UPGRADES, STAFF_TYPES,
@@ -90,7 +95,6 @@ export default class GameScene extends Phaser.Scene {
         this._firstRescue = true;
         this._autoSaveAccum = 0;
         this.time.addEvent({ delay: 7000, callback: () => this.trySpawnVisitor(), loop: true });
-        this.time.addEvent({ delay: 5000, callback: () => this.staffWork(), loop: true });
         this.time.addEvent({ delay: 10000, callback: () => this.checkIllness(), loop: true });
         this.time.addEvent({ delay: 8000, callback: () => this.updateBonds(), loop: true });
         this.time.addEvent({ delay: 15000, callback: () => this.checkAutoBreed(), loop: true });
@@ -706,6 +710,7 @@ export default class GameScene extends Phaser.Scene {
 
         this._nudgeNPCsFromHabitat(gx, gy, ht.w, ht.h);
         this._recalcVisitorPaths();
+        this._recalcStaffPaths();
         this._showNPCs();
         this._movingHabitat = null; this._moveOrigin = null; this._moveTracked = null;
         this.state.buildMode = null; this.preview.setVisible(false);
@@ -723,7 +728,8 @@ export default class GameScene extends Phaser.Scene {
     // Habitat/decoration/facility placement with live preview that follows the cursor, overlaid
     // with a green/red tint for placement validation. Habitats and facilities use multi-tile
     // previews (gfx + decor at 70% opacity); decorations use single-tile previews.
-    // Seasonal cost discounts apply to habitats. exitBuild recalculates visitor paths.
+    // Path decorations can be placed on entrance tiles (including the gate row).
+    // Seasonal cost discounts apply to habitats. exitBuild recalculates visitor and staff paths.
 
     enterBuild(type) {
         const hud = this.scene.get('HUDScene');
@@ -748,6 +754,7 @@ export default class GameScene extends Phaser.Scene {
         this._destroyBuildPreview();
         this._showNPCs();
         this._recalcVisitorPaths();
+        this._recalcStaffPaths();
         this.game.events.emit('buildModeChanged', null);
         const hud = this.scene.get('HUDScene');
         if (hud && hud._pendingRescue) {
@@ -777,12 +784,15 @@ export default class GameScene extends Phaser.Scene {
     }
 
     canPlaceDecor(gx, gy) {
-        if (gx < 1 || gy < 1 || gx >= COLS - 1 || gy >= ROWS - 1) return false;
         const decorId = this.state.buildMode.replace('decor_', '');
+        const isEntranceArea = (gy === ROWS - 1 || gy === ROWS - 2) && gx >= 13 && gx <= 16;
+        if (!isEntranceArea && (gx < 1 || gy < 1 || gx >= COLS - 1 || gy >= ROWS - 1)) return false;
         const dec = DECORATIONS[decorId];
         if (!dec || this.state.coins < dec.cost) return false;
         const cell = this.grid[gy]?.[gx];
-        return cell === null;
+        if (cell === null) return true;
+        if (cell === 'entrance' && decorId === 'path') return true;
+        return false;
     }
 
     placeDecor(decorId, gx, gy) {
@@ -796,6 +806,7 @@ export default class GameScene extends Phaser.Scene {
         this.state.decorations.push({ id: decorId, gx, gy });
         this.sfx.build();
         this._recalcVisitorPaths();
+        this._recalcStaffPaths();
     }
 
     removeDecor(gx, gy) {
@@ -804,8 +815,10 @@ export default class GameScene extends Phaser.Scene {
         this.state.decorations.splice(idx, 1);
         const si = this.decorSprites.findIndex(d => d.gx === gx && d.gy === gy);
         if (si >= 0) { this.decorSprites[si].sprite.destroy(); this.decorSprites.splice(si, 1); }
-        this.grid[gy][gx] = null;
+        const isEntranceArea = (gy === ROWS - 1 || gy === ROWS - 2) && gx >= 13 && gx <= 16;
+        this.grid[gy][gx] = isEntranceArea ? 'entrance' : null;
         this._recalcVisitorPaths();
+        this._recalcStaffPaths();
     }
 
     /* ========== FACILITIES ========== */
@@ -880,6 +893,7 @@ export default class GameScene extends Phaser.Scene {
         }
         this._nudgeNPCsFromHabitat(gx, gy, ft.w, ft.h);
         this._recalcVisitorPaths();
+        this._recalcStaffPaths();
         return fac;
     }
 
@@ -1098,6 +1112,7 @@ export default class GameScene extends Phaser.Scene {
             if (d) { v.tx = d.x; v.ty = d.y; }
         }
         for (const s of this.state.staff) {
+            if (s.type !== 'guide') continue;
             const d = nudge(s.sprite);
             if (d) { s.tx = d.x; s.ty = d.y; }
         }
@@ -1167,6 +1182,7 @@ export default class GameScene extends Phaser.Scene {
         }
         this._nudgeNPCsFromHabitat(gx, gy, ht.w, ht.h);
         this._recalcVisitorPaths();
+        this._recalcStaffPaths();
         return hab;
     }
 
@@ -1928,11 +1944,14 @@ export default class GameScene extends Phaser.Scene {
 
     /* ========== VISITORS ========== */
     // Goal-driven AI: visitors enter (admission fee collected silently), then visit habitats one by one.
-    // Phases: entering → seeking (pick habitat, walk to viewing spot) → viewing (react with bubble) → seeking/leaving.
+    // Phases: entering → seeking → [confused →] seeking → viewing → seeking/leaving.
+    // Visitors prefer path tiles (dec_path/entrance) for both routes and viewing spots. If a habitat
+    // is not connected to the path network, they walk on paths as far as possible, pause with a "?"
+    // bubble for 2 seconds (confused phase), then walk on grass. Short grass gaps (≤2 tiles) are
+    // walked seamlessly without pausing. Guided visitors (following a tour guide) skip normal movement.
     // At each habitat they react: heart bubble (+1 rep) if animals are well, worried bubble (-1 rep) if
     // animals are suffering, or "..." bubble (no rep change) if the habitat is empty — they linger briefly
-    // then move on. Visitors prefer the closest side of a habitat, falling back to farther sides if crowded.
-    // A* pathfinding uses 8-direction (diagonal) movement for natural-looking routes around obstacles.
+    // then move on. A* pathfinding uses 8-direction diagonal movement for natural-looking routes.
     // On exit they pay a satisfaction-based donation. Spawning is suppressed during rescue popups.
     // Each visitor tracks habitats already visited and views each for a variable duration.
 
@@ -1961,7 +1980,8 @@ export default class GameScene extends Phaser.Scene {
     }
 
     findViewingSpot(hab, visitor) {
-        const spots = [];
+        const pathSpots = [];
+        const grassSpots = [];
         const sides = [
             { dx: -1, dy: 0 }, { dx: hab.w, dy: 0 },
             { dx: 0, dy: -1 }, { dx: 0, dy: hab.h },
@@ -1972,10 +1992,15 @@ export default class GameScene extends Phaser.Scene {
                 const gx = hab.gx + (side.dx === -1 ? -1 : side.dx === hab.w ? hab.w : s);
                 const gy = hab.gy + (side.dy === -1 ? -1 : side.dy === hab.h ? hab.h : s);
                 if (gx < 0 || gx >= COLS || gy < 0 || gy >= ROWS) continue;
-                if (this.grid[gy]?.[gx] !== null) continue;
-                spots.push({ x: gx * TILE + TILE / 2, y: MAP_Y + gy * TILE + TILE / 2 });
+                const cell = this.grid[gy]?.[gx];
+                if (cell === 'dec_path' || cell === 'entrance') {
+                    pathSpots.push({ x: gx * TILE + TILE / 2, y: MAP_Y + gy * TILE + TILE / 2 });
+                } else if (cell === null) {
+                    grassSpots.push({ x: gx * TILE + TILE / 2, y: MAP_Y + gy * TILE + TILE / 2 });
+                }
             }
         }
+        const spots = pathSpots.length > 0 ? pathSpots : grassSpots;
         if (spots.length === 0) return null;
 
         const minDist = TILE * 0.8;
@@ -2032,14 +2057,7 @@ export default class GameScene extends Phaser.Scene {
         const sprite = this.add.image(entX, MAP_Y + (ROWS - 1) * TILE, `visitor_${vType.spriteIdx}`).setDepth(30).setAlpha(0.85);
 
         const entGx = Math.floor(entX / TILE);
-        let entryTarget = null;
-        for (let row = ROWS - 3; row >= 2; row--) {
-            if (this._isWalkable(entGx, row)) {
-                entryTarget = { x: entGx * TILE + TILE / 2, y: MAP_Y + row * TILE + TILE / 2 };
-                break;
-            }
-        }
-        if (!entryTarget) entryTarget = this.randomOpenTile();
+        const entryTarget = { x: entGx * TILE + TILE / 2, y: MAP_Y + (ROWS - 2) * TILE + TILE / 2 };
 
         const v = {
             sprite, visitorType: vType.id,
@@ -2064,11 +2082,26 @@ export default class GameScene extends Phaser.Scene {
         return cell === null || cell === 'entrance' || cell === 'dec_path';
     }
 
-    _findPath(sx, sy, ex, ey) {
+    _isPathWalkable(gx, gy) {
+        if (gy < 0 || gy >= ROWS || gx < 0 || gx >= COLS) return false;
+        const cell = this.grid[gy]?.[gx];
+        return cell === 'entrance' || cell === 'dec_path';
+    }
+
+    _isStaffWalkable(gx, gy) {
+        if (gy < 0 || gy >= ROWS || gx < 0 || gx >= COLS) return false;
+        const cell = this.grid[gy]?.[gx];
+        if (cell === null || cell === 'entrance' || cell === 'dec_path') return true;
+        if (typeof cell === 'string' && cell.startsWith('hab_')) return true;
+        return false;
+    }
+
+    _findPath(sx, sy, ex, ey, walkFn) {
+        const canWalk = walkFn || ((gx, gy) => this._isWalkable(gx, gy));
         const sgx = Math.floor(sx / TILE), sgy = Math.floor((sy - MAP_Y) / TILE);
         const egx = Math.floor(ex / TILE), egy = Math.floor((ey - MAP_Y) / TILE);
         if (sgx === egx && sgy === egy) return [];
-        if (!this._isWalkable(egx, egy)) return null;
+        if (!canWalk(egx, egy)) return null;
 
         const key = (x, y) => x + y * COLS;
         const open = [{ gx: sgx, gy: sgy, g: 0, f: 0 }];
@@ -2107,9 +2140,9 @@ export default class GameScene extends Phaser.Scene {
             for (const [dx, dy, cost] of dirs) {
                 const nx = cur.gx + dx, ny = cur.gy + dy;
                 const nk = key(nx, ny);
-                if (closed.has(nk) || !this._isWalkable(nx, ny)) continue;
+                if (closed.has(nk) || !canWalk(nx, ny)) continue;
                 if (dx !== 0 && dy !== 0) {
-                    if (!this._isWalkable(cur.gx + dx, cur.gy) || !this._isWalkable(cur.gx, cur.gy + dy)) continue;
+                    if (!canWalk(cur.gx + dx, cur.gy) || !canWalk(cur.gx, cur.gy + dy)) continue;
                 }
                 const ng = cur.g + cost;
                 if (gCost[nk] !== undefined && ng >= gCost[nk]) continue;
@@ -2121,15 +2154,81 @@ export default class GameScene extends Phaser.Scene {
         return null;
     }
 
+    _nearestPathTile(px, py) {
+        const gx0 = Math.floor(px / TILE), gy0 = Math.floor((py - MAP_Y) / TILE);
+        let best = null, bestDist = Infinity;
+        const radius = 8;
+        for (let dy = -radius; dy <= radius; dy++) {
+            for (let dx = -radius; dx <= radius; dx++) {
+                const nx = gx0 + dx, ny = gy0 + dy;
+                if (this._isPathWalkable(nx, ny)) {
+                    const d = dx * dx + dy * dy;
+                    if (d < bestDist) {
+                        bestDist = d;
+                        best = { x: nx * TILE + TILE / 2, y: MAP_Y + ny * TILE + TILE / 2 };
+                    }
+                }
+            }
+        }
+        return best;
+    }
+
     _setVisitorPath(v) {
-        const path = this._findPath(v.sprite.x, v.sprite.y, v.tx, v.ty);
-        v._path = path || [];
+        v._grassPath = null;
+        v._needsConfused = false;
+
+        const pathWalk = (gx, gy) => this._isPathWalkable(gx, gy);
+
+        const vgx = Math.floor(v.sprite.x / TILE);
+        const vgy = Math.floor((v.sprite.y - MAP_Y) / TILE);
+        const onPath = this._isPathWalkable(vgx, vgy);
+
+        if (onPath) {
+            const pathOnly = this._findPath(v.sprite.x, v.sprite.y, v.tx, v.ty, pathWalk);
+            if (pathOnly) {
+                v._path = pathOnly;
+                v._pathIdx = 0;
+                return;
+            }
+        }
+
+        const nearDest = this._nearestPathTile(v.tx, v.ty);
+        const nearStart = onPath ? null : this._nearestPathTile(v.sprite.x, v.sprite.y);
+
+        if (nearDest) {
+            const pathStart = nearStart
+                ? { x: nearStart.x, y: nearStart.y }
+                : { x: v.sprite.x, y: v.sprite.y };
+
+            const toNearPath = nearStart
+                ? (this._findPath(v.sprite.x, v.sprite.y, nearStart.x, nearStart.y) || [])
+                : [];
+
+            const onPathSeg = this._findPath(pathStart.x, pathStart.y, nearDest.x, nearDest.y, pathWalk);
+
+            if (onPathSeg) {
+                const grassSeg = this._findPath(nearDest.x, nearDest.y, v.tx, v.ty) || [];
+                if (grassSeg.length <= 2) {
+                    v._path = [...toNearPath, ...onPathSeg, ...grassSeg];
+                    v._pathIdx = 0;
+                } else {
+                    v._path = [...toNearPath, ...onPathSeg];
+                    v._pathIdx = 0;
+                    v._grassPath = grassSeg;
+                    v._needsConfused = true;
+                }
+                return;
+            }
+        }
+
+        const full = this._findPath(v.sprite.x, v.sprite.y, v.tx, v.ty);
+        v._path = full || [];
         v._pathIdx = 0;
     }
 
     _recalcVisitorPaths() {
         for (const v of this.visitors) {
-            if (v.phase === 'viewing') continue;
+            if (v.phase === 'viewing' || v.phase === 'confused' || v.phase === 'guided') continue;
             if (v.phase === 'seeking' && v.targetHab) {
                 const hab = this.state.habitats.find(h => h.id === v.targetHab);
                 if (hab) {
@@ -2147,10 +2246,28 @@ export default class GameScene extends Phaser.Scene {
             const v = this.visitors[i];
             v.timer += sDelta;
 
+            if (v.phase === 'guided') continue;
+            if (v.phase === 'confused') {
+                v._confusedTimer = (v._confusedTimer || 0) + sDelta;
+                if (v._confusedTimer >= 2000) {
+                    v._path = v._grassPath || [];
+                    v._pathIdx = 0;
+                    v._grassPath = null;
+                    v._needsConfused = false;
+                    v.phase = 'seeking';
+                }
+                continue;
+            }
+
             let wpx, wpy;
             if (v._path && v._pathIdx < v._path.length) {
                 wpx = v._path[v._pathIdx].x;
                 wpy = v._path[v._pathIdx].y;
+            } else if (v._needsConfused && v._grassPath && v._grassPath.length > 0 && v.phase === 'seeking') {
+                v.phase = 'confused';
+                v._confusedTimer = 0;
+                this.showVisitorBubble(v, 'confused');
+                continue;
             } else {
                 wpx = v.tx; wpy = v.ty;
             }
@@ -2199,6 +2316,13 @@ export default class GameScene extends Phaser.Scene {
                     }
                 }
             } else if (v.phase === 'leaving') {
+                if (v._grassPath && v._grassPath.length > 0) {
+                    v._path = v._grassPath;
+                    v._pathIdx = 0;
+                    v._grassPath = null;
+                    v._needsConfused = false;
+                    continue;
+                }
                 this.visitorDonation(v);
                 if (v._bubble) { v._bubble.destroy(); v._bubble = null; }
                 v.sprite.destroy();
@@ -2301,6 +2425,8 @@ export default class GameScene extends Phaser.Scene {
             icon = this.add.image(0, -1, 'particle_heart').setScale(0.8);
         } else if (type === 'worried') {
             icon = this.add.image(0, -1, 'icon_worried').setScale(0.9);
+        } else if (type === 'confused') {
+            icon = this.add.image(0, -1, 'icon_confused').setScale(0.9);
         } else {
             icon = this.add.graphics();
             icon.fillStyle(0x888888);
@@ -2318,8 +2444,153 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== STAFF ========== */
-    // Hired NPCs: caretakers feed, volunteers feed one habitat, vets heal. Wander and auto-work.
-    // Volunteers, caretakers, and vets can walk into habitats; tour guides avoid them like visitors.
+    // Phase-based goal-driven AI with A* pathfinding. Work effects are localized (per-habitat).
+    // Volunteer/caretaker/vet: idle → walking → working (inside habitat, heart animation) → idle.
+    // Tour guide: idle → wandering (actively seek nearest visitor) → gathering → leading → showing → idle.
+    // Guides attempt to gather followers every frame while wandering, not just from idle.
+    // Workers use _isStaffWalkable so they can enter habitats; guides use visitor walkability.
+
+    _initStaffState(s) {
+        s.phase = 'idle';
+        s.idleTimer = 0;
+        s.workTimer = 0;
+        s.targetHab = null;
+        s.tx = s.sprite.x;
+        s.ty = s.sprite.y;
+        s._path = [];
+        s._pathIdx = 0;
+        s.visitedHabs = new Set();
+        s.followers = [];
+        s.habsToShow = 0;
+    }
+
+    _setStaffPath(s) {
+        const walkFn = (s.type === 'guide')
+            ? (gx, gy) => this._isWalkable(gx, gy)
+            : (gx, gy) => this._isStaffWalkable(gx, gy);
+        const path = this._findPath(s.sprite.x, s.sprite.y, s.tx, s.ty, walkFn);
+        if (path === null) {
+            s._path = [];
+            s._pathIdx = 0;
+            s._noPath = true;
+            return;
+        }
+        s._path = path;
+        s._pathIdx = 0;
+        s._noPath = false;
+    }
+
+    _recalcStaffPaths() {
+        for (const s of this.state.staff) {
+            if (s.phase === 'working' || s.phase === 'showing' || s.phase === 'idle') continue;
+            this._setStaffPath(s);
+        }
+    }
+
+    _pickStaffTarget(s) {
+        if (this.state.habitats.length === 0) return null;
+        if (s.type === 'volunteer') {
+            return Phaser.Utils.Array.GetRandom(this.state.habitats);
+        }
+        if (s.type === 'caretaker') {
+            let best = null, worstHunger = Infinity;
+            for (const hab of this.state.habitats) {
+                const animals = this.state.animals.filter(a => a.habitatId === hab.id);
+                if (animals.length === 0) continue;
+                const avgHunger = animals.reduce((sum, a) => sum + a.hunger, 0) / animals.length;
+                if (avgHunger < worstHunger) { worstHunger = avgHunger; best = hab; }
+            }
+            return best || Phaser.Utils.Array.GetRandom(this.state.habitats);
+        }
+        if (s.type === 'vet') {
+            const sick = this.state.habitats.filter(h =>
+                this.state.animals.some(a => a.habitatId === h.id && (a.illness || a.health < 60))
+            );
+            if (sick.length > 0) return Phaser.Utils.Array.GetRandom(sick);
+            let best = null, worstHealth = Infinity;
+            for (const hab of this.state.habitats) {
+                const animals = this.state.animals.filter(a => a.habitatId === hab.id);
+                if (animals.length === 0) continue;
+                const avgHealth = animals.reduce((sum, a) => sum + a.health, 0) / animals.length;
+                if (avgHealth < worstHealth) { worstHealth = avgHealth; best = hab; }
+            }
+            return best || Phaser.Utils.Array.GetRandom(this.state.habitats);
+        }
+        return null;
+    }
+
+    _randomPointInHabitat(hab) {
+        const px = (hab.gx + 0.5 + Math.random() * (hab.w - 1)) * TILE;
+        const py = MAP_Y + (hab.gy + 0.5 + Math.random() * (hab.h - 1)) * TILE;
+        return { x: px, y: py };
+    }
+
+    _staffDoWork(s) {
+        const hab = this.state.habitats.find(h => h.id === s.targetHab);
+        if (!hab) return;
+        const animals = this.state.animals.filter(a => a.habitatId === hab.id);
+        if (animals.length === 0) return;
+
+        if (s.type === 'volunteer') {
+            animals.forEach(a => { a.hunger = Math.min(100, a.hunger + 12); });
+        } else if (s.type === 'caretaker') {
+            animals.forEach(a => { a.hunger = Math.min(100, a.hunger + 8); });
+        } else if (s.type === 'vet') {
+            const vetChance = this.hasResearch('super_vet') ? 1.0 : 0.3;
+            animals.forEach(a => {
+                a.health = Math.min(100, a.health + 5);
+                if (a.health < 50) a.health = Math.min(100, a.health + 10);
+                if (a.illness && Math.random() < vetChance) {
+                    a.illness = null;
+                    a.health = Math.min(100, a.health + 15);
+                    this.game.events.emit('notification', `Vet cured ${a.name}!`);
+                }
+            });
+        }
+
+        const target = Phaser.Utils.Array.GetRandom(animals);
+        this.heartEffect(target.sprite.x, target.sprite.y);
+    }
+
+    _guidePickHabitat(s) {
+        const unvisited = this.state.habitats.filter(h => !s.visitedHabs.has(h.id));
+        const pool = unvisited.length > 0 ? unvisited : this.state.habitats;
+        if (pool.length === 0) return null;
+        return Phaser.Utils.Array.GetRandom(pool);
+    }
+
+    _guideGather(s) {
+        const range = TILE * 8;
+        const available = this.visitors.filter(v =>
+            !v.guidedBy && (v.phase === 'seeking' || v.phase === 'viewing') &&
+            Math.abs(v.sprite.x - s.sprite.x) < range &&
+            Math.abs(v.sprite.y - s.sprite.y) < range
+        );
+        available.sort((a, b) => {
+            const da = Math.abs(a.sprite.x - s.sprite.x) + Math.abs(a.sprite.y - s.sprite.y);
+            const db = Math.abs(b.sprite.x - s.sprite.x) + Math.abs(b.sprite.y - s.sprite.y);
+            return da - db;
+        });
+        const count = Math.min(available.length, Phaser.Math.Between(2, 4));
+        s.followers = [];
+        for (let i = 0; i < count; i++) {
+            const v = available[i];
+            v.guidedBy = s.id;
+            v._savedPhase = v.phase;
+            v.phase = 'guided';
+            s.followers.push(v);
+        }
+    }
+
+    _guideReleaseFollowers(s) {
+        for (const v of s.followers) {
+            if (!v.sprite || !v.sprite.active) continue;
+            v.guidedBy = null;
+            v.phase = 'seeking';
+            this._visitorSeekHabitat(v);
+        }
+        s.followers = [];
+    }
 
     hireStaff(typeId) {
         const st = STAFF_TYPES[typeId];
@@ -2336,11 +2607,12 @@ export default class GameScene extends Phaser.Scene {
         }
         this.spendCoins(st.hireCost);
         const sprite = this.add.image(15 * TILE, MAP_Y + (ROWS - 2) * TILE, `staff_${typeId}`).setDepth(32).setAlpha(0.9);
-        this.state.staff.push({
+        const s = {
             id: genId('staff'), type: typeId, sprite,
-            tx: Phaser.Math.Between(4, COLS - 5) * TILE,
-            ty: MAP_Y + Phaser.Math.Between(4, ROWS - 5) * TILE, wTimer: 0
-        });
+            tx: 15 * TILE, ty: MAP_Y + (ROWS - 2) * TILE, wTimer: 0
+        };
+        this._initStaffState(s);
+        this.state.staff.push(s);
         this.sfx.build();
         this.game.events.emit('notification', `${st.name} hired!`);
         this.game.events.emit('staffUpdate', this.state.staff);
@@ -2350,7 +2622,9 @@ export default class GameScene extends Phaser.Scene {
     fireStaff(staffId) {
         const idx = this.state.staff.findIndex(s => s.id === staffId);
         if (idx === -1) return;
-        this.state.staff[idx].sprite.destroy();
+        const s = this.state.staff[idx];
+        if (s.type === 'guide') this._guideReleaseFollowers(s);
+        s.sprite.destroy();
         this.state.staff.splice(idx, 1);
         this.game.events.emit('staffUpdate', this.state.staff);
         this.game.events.emit('notification', 'Staff member let go.');
@@ -2359,50 +2633,188 @@ export default class GameScene extends Phaser.Scene {
     updateStaff(delta) {
         const sDelta = delta * this.timeSpeedMult;
         for (const s of this.state.staff) {
-            s.wTimer += sDelta;
-            const dx = s.tx - s.sprite.x, dy = s.ty - s.sprite.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist > 3) {
-                const spd = 22 * sDelta / 1000;
-                const nx = s.sprite.x + (dx / dist) * spd;
-                const ny = s.sprite.y + (dy / dist) * spd;
-                if (s.type === 'guide') {
-                    const gx = Math.floor(nx / TILE), gy = Math.floor((ny - MAP_Y) / TILE);
-                    if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS && this.grid[gy]?.[gx] !== null && this.grid[gy][gx] !== 'entrance') {
-                        const rr = this.randomOpenTile(); s.tx = rr.x; s.ty = rr.y;
-                        continue;
+            if (!s.phase) this._initStaffState(s);
+
+            if (s.type === 'guide') {
+                this._updateGuide(s, sDelta);
+            } else {
+                this._updateWorker(s, sDelta);
+            }
+        }
+    }
+
+    _staffMoveAlongPath(s, sDelta) {
+        if (s._noPath) { s._noPath = false; return true; }
+        let wpx, wpy;
+        if (s._path && s._pathIdx < s._path.length) {
+            wpx = s._path[s._pathIdx].x;
+            wpy = s._path[s._pathIdx].y;
+        } else {
+            wpx = s.tx; wpy = s.ty;
+        }
+        const dx = wpx - s.sprite.x, dy = wpy - s.sprite.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > 3) {
+            const speed = s.type === 'guide' ? 28 : 22;
+            const spd = speed * sDelta / 1000;
+            s.sprite.x += (dx / dist) * spd;
+            s.sprite.y += (dy / dist) * spd;
+            if (Math.abs(dx) > 1) s.sprite.setFlipX(dx < 0);
+            return false;
+        }
+        if (s._path && s._pathIdx < s._path.length) {
+            s._pathIdx++;
+            return false;
+        }
+        return true;
+    }
+
+    _updateWorker(s, sDelta) {
+        if (s.phase === 'idle') {
+            s.idleTimer += sDelta;
+            const idleWait = s.type === 'volunteer' ? 4000 : 2500;
+            if (s.idleTimer >= idleWait) {
+                s.idleTimer = 0;
+                const hab = this._pickStaffTarget(s);
+                if (hab) {
+                    s.targetHab = hab.id;
+                    const pt = this._randomPointInHabitat(hab);
+                    s.tx = pt.x; s.ty = pt.y;
+                    s.phase = 'walking';
+                    this._setStaffPath(s);
+                }
+            }
+        } else if (s.phase === 'walking') {
+            const arrived = this._staffMoveAlongPath(s, sDelta);
+            if (arrived) {
+                s.phase = 'working';
+                s.workTimer = 0;
+            }
+        } else if (s.phase === 'working') {
+            s.workTimer += sDelta;
+            if (s.workTimer >= 2500) {
+                this._staffDoWork(s);
+                s.phase = 'idle';
+                s.workTimer = 0;
+                s.targetHab = null;
+            }
+        }
+    }
+
+    _guideFindNearestVisitor(s) {
+        let best = null, bestDist = Infinity;
+        for (const v of this.visitors) {
+            if (v.guidedBy || (v.phase !== 'seeking' && v.phase !== 'viewing')) continue;
+            const d = Math.abs(v.sprite.x - s.sprite.x) + Math.abs(v.sprite.y - s.sprite.y);
+            if (d < bestDist) { bestDist = d; best = v; }
+        }
+        return best;
+    }
+
+    _updateGuide(s, sDelta) {
+        if (s.phase === 'idle') {
+            s.idleTimer += sDelta;
+            if (s.idleTimer >= 2000 && this.state.habitats.length > 0) {
+                s.idleTimer = 0;
+                this._guideGather(s);
+                if (s.followers.length > 0) {
+                    s.phase = 'leading';
+                    s.habsToShow = Math.min(this.state.habitats.length, Phaser.Math.Between(2, 3));
+                    s.visitedHabs = new Set();
+                    this._guideSeekNextHabitat(s);
+                } else {
+                    const nearest = this._guideFindNearestVisitor(s);
+                    if (nearest) {
+                        s.tx = nearest.sprite.x;
+                        s.ty = nearest.sprite.y;
+                    } else {
+                        const t = this.randomOpenTile();
+                        s.tx = t.x; s.ty = t.y;
+                    }
+                    this._setStaffPath(s);
+                    s.phase = 'wandering';
+                }
+            }
+        } else if (s.phase === 'wandering') {
+            this._guideGather(s);
+            if (s.followers.length > 0) {
+                s.phase = 'leading';
+                s.habsToShow = Math.min(this.state.habitats.length, Phaser.Math.Between(2, 3));
+                s.visitedHabs = new Set();
+                this._guideSeekNextHabitat(s);
+                return;
+            }
+            const arrived = this._staffMoveAlongPath(s, sDelta);
+            if (arrived) {
+                s.phase = 'idle';
+                s.idleTimer = 0;
+            }
+        } else if (s.phase === 'leading') {
+            const arrived = this._staffMoveAlongPath(s, sDelta);
+            this._guideUpdateFollowers(s, sDelta);
+            if (arrived) {
+                s.phase = 'showing';
+                s.workTimer = 0;
+                const hab = this.state.habitats.find(h => h.id === s.targetHab);
+                if (hab) {
+                    for (const v of s.followers) {
+                        if (!v.sprite || !v.sprite.active) continue;
+                        v.targetHab = hab.id;
+                        this._visitorReact(v);
+                        v.visitedHabs.add(hab.id);
                     }
                 }
-                s.sprite.x = nx; s.sprite.y = ny;
-                s.sprite.setFlipX(dx < 0);
-            } else {
-                if (s.type === 'guide') {
-                    const t = this.randomOpenTile(); s.tx = t.x; s.ty = t.y;
+            }
+        } else if (s.phase === 'showing') {
+            s.workTimer += sDelta;
+            this._guideUpdateFollowers(s, sDelta);
+            if (s.workTimer >= 3000) {
+                s.visitedHabs.add(s.targetHab);
+                s.habsToShow--;
+                s.followers = s.followers.filter(v => v.sprite && v.sprite.active && v.guidedBy === s.id);
+                if (s.habsToShow <= 0 || s.followers.length === 0) {
+                    this._guideReleaseFollowers(s);
+                    s.phase = 'idle';
+                    s.idleTimer = 0;
+                    s.targetHab = null;
                 } else {
-                    s.tx = Phaser.Math.Between(4, COLS - 5) * TILE;
-                    s.ty = MAP_Y + Phaser.Math.Between(4, ROWS - 5) * TILE;
+                    s.phase = 'leading';
+                    this._guideSeekNextHabitat(s);
                 }
             }
         }
     }
 
-    staffWork() {
-        if (this.state.rescuePaused || this.state.settingsPaused || this._habSelectMode) return;
-        for (const s of this.state.staff) {
-            if (s.type === 'caretaker') {
-                this.state.animals.forEach(a => { a.hunger = Math.min(100, a.hunger + 8); });
-            } else if (s.type === 'volunteer') {
-                if (this.state.habitats.length > 0) {
-                    const hab = Phaser.Utils.Array.GetRandom(this.state.habitats);
-                    this.state.animals.filter(a => a.habitatId === hab.id)
-                        .forEach(a => { a.hunger = Math.min(100, a.hunger + 12); });
-                }
-            } else if (s.type === 'vet') {
-                this.state.animals.forEach(a => {
-                    a.health = Math.min(100, a.health + 5);
-                    if (a.health < 50) a.health = Math.min(100, a.health + 10);
-                });
+    _guideSeekNextHabitat(s) {
+        const hab = this._guidePickHabitat(s);
+        if (!hab) {
+            this._guideReleaseFollowers(s);
+            s.phase = 'idle'; s.idleTimer = 0;
+            return;
+        }
+        s.targetHab = hab.id;
+        const spot = this.findViewingSpot(hab, { sprite: s.sprite }) || this.randomOpenTile();
+        s.tx = spot.x; s.ty = spot.y;
+        this._setStaffPath(s);
+    }
+
+    _guideUpdateFollowers(s, sDelta) {
+        for (let i = 0; i < s.followers.length; i++) {
+            const v = s.followers[i];
+            if (!v.sprite || !v.sprite.active) continue;
+            const offsetX = ((i % 2 === 0) ? -1 : 1) * (8 + Math.floor(i / 2) * 6);
+            const offsetY = 14 + i * 10;
+            const goalX = s.sprite.x + offsetX;
+            const goalY = s.sprite.y + offsetY;
+            const dx = goalX - v.sprite.x, dy = goalY - v.sprite.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist > 4) {
+                const spd = 30 * sDelta / 1000;
+                v.sprite.x += (dx / dist) * Math.min(spd, dist);
+                v.sprite.y += (dy / dist) * Math.min(spd, dist);
+                if (Math.abs(dx) > 1) v.sprite.setFlipX(dx < 0);
             }
+            if (v._bubble) v._bubble.setPosition(v.sprite.x, v.sprite.y - 22);
         }
     }
 
@@ -2416,6 +2828,7 @@ export default class GameScene extends Phaser.Scene {
             this.game.events.emit('notification', "Can't afford salaries! Staff leaving.");
             while (this.state.staff.length > 0 && this.state.coins < total) {
                 const last = this.state.staff.pop();
+                if (last.type === 'guide') this._guideReleaseFollowers(last);
                 last.sprite.destroy();
                 total -= STAFF_TYPES[last.type].salary;
             }
@@ -2722,8 +3135,9 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== SAVE / LOAD ========== */
-    // Serialize state to localStorage. Sets become arrays; load rebuilds habitats, animals, staff,
-    // missions, decorations, and facilities (including per-item garden produce regrow state).
+    // Serialize state to localStorage. Sets become arrays; load rebuilds habitats, animals, staff
+    // (with position and phase), visitors, missions, decorations, and facilities (including per-item
+    // garden produce regrow state). Guided/confused visitors are reset to seeking on load.
 
     saveGame() {
         const data = {
@@ -2748,7 +3162,7 @@ export default class GameScene extends Phaser.Scene {
                 mateTrait: a.mateTrait, mateName: a.mateName, mateGeneration: a.mateGeneration,
                 generation: a.generation,
             })),
-            staff: this.state.staff.map(s => ({ id: s.id, type: s.type })),
+            staff: this.state.staff.map(s => ({ id: s.id, type: s.type, x: s.sprite.x, y: s.sprite.y, phase: s.phase || 'idle' })),
             discoveries: [...this.state.discoveries],
             seenVariants: [...this.state.seenVariants],
             rescuedVariants: [...this.state.rescuedVariants],
@@ -2849,24 +3263,27 @@ export default class GameScene extends Phaser.Scene {
                 });
             }
             if (d.staff) {
-                for (const s of d.staff) {
-                    const sprite = this.add.image(15 * TILE, MAP_Y + (ROWS - 2) * TILE, `staff_${s.type}`).setDepth(32).setAlpha(0.9);
-                    this.state.staff.push({
-                        id: s.id, type: s.type, sprite,
-                        tx: Phaser.Math.Between(4, COLS - 5) * TILE,
-                        ty: MAP_Y + Phaser.Math.Between(4, ROWS - 5) * TILE, wTimer: 0
-                    });
+                for (const sd of d.staff) {
+                    const sx = sd.x || 15 * TILE, sy = sd.y || MAP_Y + (ROWS - 2) * TILE;
+                    const sprite = this.add.image(sx, sy, `staff_${sd.type}`).setDepth(32).setAlpha(0.9);
+                    const s = {
+                        id: sd.id, type: sd.type, sprite,
+                        tx: sx, ty: sy, wTimer: 0
+                    };
+                    this._initStaffState(s);
+                    this.state.staff.push(s);
                 }
             }
             if (d.visitors) {
                 for (const sv of d.visitors) {
                     const vType = VISITOR_TYPES[sv.visitorType] || VISITOR_TYPES.family;
                     const sprite = this.add.image(sv.x, sv.y, `visitor_${vType.spriteIdx}`).setDepth(30).setAlpha(0.85);
+                    const loadedPhase = (sv.phase === 'guided' || sv.phase === 'confused') ? 'seeking' : sv.phase;
                     const v = {
                         sprite, visitorType: sv.visitorType,
                         tx: sv.tx, ty: sv.ty, speed: sv.speed,
                         timer: sv.timer, maxTime: sv.maxTime,
-                        phase: sv.phase, targetHab: sv.targetHab,
+                        phase: loadedPhase, targetHab: sv.targetHab,
                         visitedHabs: new Set(sv.visitedHabs || []),
                         habsToVisit: sv.habsToVisit, viewTimer: sv.viewTimer || 0,
                         satisfaction: sv.satisfaction || 0,
@@ -2915,7 +3332,8 @@ export default class GameScene extends Phaser.Scene {
     /* ========== UPDATE ========== */
     // Main loop: time, animals, visitors, staff, missions, ambient sound, rescue timing, auto-save.
     // Skipped entirely while rescuePaused, settingsPaused, movingHabitat, or habSelectMode is set.
-    // Timer-based callbacks (updateBonds, checkAutoBreed, checkIllness, staffWork, checkAchievements)
+    // Visitors are skipped during buildMode; staff update even during buildMode (phase-based work).
+    // Timer-based callbacks (updateBonds, checkAutoBreed, checkIllness, checkAchievements)
     // run on independent Phaser timers and have their own pause guards for the same conditions.
 
     update(time, delta) {
@@ -2924,8 +3342,8 @@ export default class GameScene extends Phaser.Scene {
         this.updateAnimals(delta, time);
         if (!this.state.buildMode) {
             this.updateVisitors(delta);
-            this.updateStaff(delta);
         }
+        this.updateStaff(delta);
         this.updateMissions(delta);
         this.updateGardens(delta);
         this.sfx.updateAmbient(delta, this.state.time);
