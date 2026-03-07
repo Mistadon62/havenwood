@@ -7,11 +7,12 @@
  * viewing spots and routes, "?" confused pause when leaving path network for off-path
  * habitats, react with speech bubbles, reputation per visit, paths recalculate on build changes),
  * phase-based staff AI (volunteers/caretakers/vets walk into habitats via A* pathfinding,
- * perform localized work with heart animations; tour guides wait at the entrance, grab
- * arriving visitors one at a time into a waiting group, then lead the group through all
- * habitats with individual viewing spots using direct staff-walkable routes, and return
- * the group to the entrance with a donation bonus — followers always trail behind the
- * guide based on movement direction), automatic breeding (trait inheritance, generation
+ * perform localized work with heart animations; tour guides are player-placed anywhere
+ * on the map and wait at their post — ~50% of visitors want a tour and walk to the guide,
+ * the guide accumulates a group then leads them through all habitats with individual
+ * viewing spots using direct staff-walkable routes, then returns the group to its post
+ * and releases them to explore on their own — followers always trail behind the guide
+ * based on movement direction), automatic breeding (trait inheritance, generation
  * tracking, name inheritance from same-gender parent, breed-only variant recipes with
  * fixed names), missions, research, time, seasons, rescue events (game-time driven,
  * fully modal with time-pause — spawning suppressed, persisted across save/load),
@@ -200,6 +201,20 @@ export default class GameScene extends Phaser.Scene {
                 const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
                 const isDecor = this.state.buildMode.startsWith('decor_');
                 const isFacility = this.state.buildMode.startsWith('facility_');
+
+                if (this.state.buildMode === '_place_guide') {
+                    const ok = this._canPlaceGuide(gx, gy);
+                    const c = ok ? 0x00ff00 : 0xff0000;
+                    if (this._guidePreview) {
+                        this._guidePreview.setPosition(gx * TILE + TILE / 2, MAP_Y + gy * TILE + TILE / 2).setVisible(true);
+                    }
+                    this.preview.clear().setVisible(true);
+                    this.preview.fillStyle(c, 0.25);
+                    this.preview.fillRect(gx * TILE, MAP_Y + gy * TILE, TILE, TILE);
+                    this.preview.lineStyle(2, c, 0.7);
+                    this.preview.strokeRect(gx * TILE, MAP_Y + gy * TILE, TILE, TILE);
+                    return;
+                }
 
                 if (isDecor) {
                     if (ptr.isDown && this.canPlaceDecor(gx, gy)) {
@@ -464,7 +479,9 @@ export default class GameScene extends Phaser.Scene {
             if (hud && hud.hasOpenPanel()) return;
             if (this.state.buildMode) {
                 const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
-                if (this.state.buildMode.startsWith('decor_')) {
+                if (this.state.buildMode === '_place_guide') {
+                    if (this._canPlaceGuide(gx, gy)) this._finishGuidePlacement(gx, gy);
+                } else if (this.state.buildMode.startsWith('decor_')) {
                     if (this.canPlaceDecor(gx, gy)) {
                         this._lastDecorTile = `${gx},${gy}`;
                         this.placeDecor(this.state.buildMode.replace('decor_', ''), gx, gy);
@@ -735,6 +752,7 @@ export default class GameScene extends Phaser.Scene {
         this._movingHabitat = null; this._moveOrigin = null; this._moveTracked = null;
         this.state.buildMode = null; this.preview.setVisible(false);
         if (this._decorPreview) { this._decorPreview.destroy(); this._decorPreview = null; }
+        if (this._guidePreview) { this._guidePreview.destroy(); this._guidePreview = null; }
         this.game.events.emit('buildModeChanged', null);
         this.sfx.build();
     }
@@ -750,6 +768,7 @@ export default class GameScene extends Phaser.Scene {
     // with a green/red tint for placement validation. Habitats and facilities use multi-tile
     // previews (gfx + decor at 70% opacity); decorations use a single-tile sprite preview
     // (_decorPreview) at 70% opacity and support click-and-drag for rapid multi-tile placement.
+    // Tour guide hiring uses '_place_guide' build mode with a sprite preview on any staff-walkable tile.
     // Path decorations can be placed on entrance tiles (including the gate row).
     // All placements show a floating gold cost indicator (_showFloatingCost) that rises and fades.
     // Seasonal cost discounts apply to habitats. exitBuild recalculates visitor and staff paths.
@@ -776,6 +795,7 @@ export default class GameScene extends Phaser.Scene {
         this.preview.setVisible(false);
         this._destroyBuildPreview();
         if (this._decorPreview) { this._decorPreview.destroy(); this._decorPreview = null; }
+        if (this._guidePreview) { this._guidePreview.destroy(); this._guidePreview = null; }
         this._showNPCs();
         this._recalcVisitorPaths();
         this._recalcStaffPaths();
@@ -822,7 +842,7 @@ export default class GameScene extends Phaser.Scene {
 
     _showFloatingCost(px, py, amount) {
         const txt = this.add.text(px, py - 8, `-${amount}g`, {
-            fontFamily: 'monospace', fontSize: '14px', color: '#FFD700',
+            fontFamily: 'monospace', fontSize: '14px', color: '#ff4444',
             stroke: '#000000', strokeThickness: 2,
         }).setDepth(100).setOrigin(0.5);
         this.tweens.add({
@@ -1984,7 +2004,9 @@ export default class GameScene extends Phaser.Scene {
 
     /* ========== VISITORS ========== */
     // Goal-driven AI: visitors enter (admission fee collected silently), then visit habitats one by one.
-    // Phases: entering → seeking → [confused →] seeking → viewing → seeking/leaving.
+    // ~50% of visitors have wantsTour=true and will walk to the tour guide's post (seekingGuide phase)
+    // instead of exploring independently. If no guide is available they fall back to normal seeking.
+    // Phases: entering → [seekingGuide →] seeking → [confused →] seeking → viewing → seeking/leaving.
     // Visitors prefer path tiles (dec_path/entrance) for both routes and viewing spots. If a habitat
     // is not connected to the path network, they walk on paths as far as possible, pause with a "?"
     // bubble for 2 seconds (confused phase), then walk on grass. Short grass gaps (≤2 tiles) are
@@ -2116,6 +2138,7 @@ export default class GameScene extends Phaser.Scene {
             habsToVisit: Math.min(this.state.habitats.length, Phaser.Math.Between(1, Math.max(1, this.state.habitats.length))),
             viewTimer: 0,
             satisfaction: 0,
+            wantsTour: Math.random() < 0.5,
         };
         this._setVisitorPath(v);
         this.visitors.push(v);
@@ -2273,7 +2296,7 @@ export default class GameScene extends Phaser.Scene {
 
     _recalcVisitorPaths() {
         for (const v of this.visitors) {
-            if (v.phase === 'viewing' || v.phase === 'confused' || v.phase === 'guided') continue;
+            if (v.phase === 'viewing' || v.phase === 'confused' || v.phase === 'guided' || v.phase === 'seekingGuide') continue;
             if (v.phase === 'seeking' && v.targetHab) {
                 const hab = this.state.habitats.find(h => h.id === v.targetHab);
                 if (hab) {
@@ -2302,6 +2325,15 @@ export default class GameScene extends Phaser.Scene {
                     v.phase = 'seeking';
                 }
                 continue;
+            }
+            if (v.phase === 'seekingGuide') {
+                const tg = this.state.staff.find(s => s.id === v._targetGuideId);
+                if (!tg || (tg.phase !== 'idle' && tg.phase !== 'waiting')) {
+                    v.phase = 'seeking';
+                    v._targetGuideId = null;
+                    this._visitorSeekHabitat(v);
+                    continue;
+                }
             }
 
             let wpx, wpy;
@@ -2334,9 +2366,30 @@ export default class GameScene extends Phaser.Scene {
             }
 
             if (v.phase === 'entering') {
-                v.phase = 'seeking';
                 this.visitorAdmission(v);
-                this._visitorSeekHabitat(v);
+                if (v.wantsTour) {
+                    const guide = this._findAvailableGuide();
+                    if (guide) {
+                        v.phase = 'seekingGuide';
+                        v._targetGuideId = guide.id;
+                        v.tx = guide.homeX;
+                        v.ty = guide.homeY;
+                        this._setVisitorPath(v);
+                    } else {
+                        v.phase = 'seeking';
+                        this._visitorSeekHabitat(v);
+                    }
+                } else {
+                    v.phase = 'seeking';
+                    this._visitorSeekHabitat(v);
+                }
+            } else if (v.phase === 'seekingGuide') {
+                const guide = this.state.staff.find(s => s.id === v._targetGuideId);
+                if (!guide || (guide.phase !== 'idle' && guide.phase !== 'waiting')) {
+                    v.phase = 'seeking';
+                    v._targetGuideId = null;
+                    this._visitorSeekHabitat(v);
+                }
             } else if (v.phase === 'seeking') {
                 v.phase = 'viewing';
                 v.viewTimer = 0;
@@ -2491,12 +2544,13 @@ export default class GameScene extends Phaser.Scene {
     // Phase-based goal-driven AI with A* pathfinding. Work effects are localized (per-habitat).
     // All staff (including guides) use _isStaffWalkable for direct routes across grass/paths/habitats.
     // Volunteer/caretaker/vet: idle → walking → working (inside habitat, heart animation) → idle.
-    // Tour guide: idle (wait at entrance) → grabs visitors one at a time (_guideGrabOne) →
-    // waiting (accumulates group, starts tour when 4 gathered, or 2+ after 10s, or any after 18s)
-    // → leading (direct route to habitat) → showing (followers spread to individual viewing spots,
-    // react) → leading → ... → returning (lead group back to entrance, release followers with
-    // +50% donation bonus). Followers trail behind the guide based on movement direction
-    // (perpendicular lateral spread), so they never appear to lead.
+    // Tour guide: hired via placement mode (player clicks a walkable tile to set the guide's post).
+    // homeX/homeY store the post position. idle (wait at post) → grabs seekingGuide visitors one
+    // at a time (_guideGrabOne) → waiting (accumulates group, starts tour when 4 gathered, or
+    // 2+ after 10s, or any after 18s) → leading (direct route to habitat) → showing (followers
+    // spread to individual viewing spots, react) → leading → ... → returning (lead group back
+    // to post, release followers as seeking with +50% donation bonus). Followers trail behind
+    // the guide based on movement direction (perpendicular lateral spread).
 
     _initStaffState(s) {
         s.phase = 'idle';
@@ -2510,6 +2564,10 @@ export default class GameScene extends Phaser.Scene {
         s.visitedHabs = new Set();
         s.followers = [];
         s.habsToShow = 0;
+        if (s.type === 'guide' && s.homeX == null) {
+            s.homeX = s.sprite.x;
+            s.homeY = s.sprite.y;
+        }
     }
 
     _setStaffPath(s) {
@@ -2598,35 +2656,33 @@ export default class GameScene extends Phaser.Scene {
         this.heartEffect(target.sprite.x, target.sprite.y);
     }
 
-    _guideIsNearEntrance(s) {
-        const gy = Math.floor((s.sprite.y - MAP_Y) / TILE);
-        return gy >= ROWS - 4;
+    _findAvailableGuide() {
+        return this.state.staff.find(s => s.type === 'guide' && (s.phase === 'idle' || s.phase === 'waiting'));
     }
 
-    _guideEntrancePos() {
-        return { x: Phaser.Math.Between(13, 16) * TILE + TILE / 2, y: MAP_Y + (ROWS - 2) * TILE + TILE / 2 };
+    _guideIsNearHome(s) {
+        const dx = Math.abs(s.sprite.x - s.homeX);
+        const dy = Math.abs(s.sprite.y - s.homeY);
+        return dx < TILE * 2 && dy < TILE * 2;
+    }
+
+    _guideHomePos(s) {
+        return { x: s.homeX, y: s.homeY };
     }
 
     _guideGrabOne(s) {
         if (s.followers.length >= 4) return false;
-        const range = TILE * 6;
-        const entranceThreshold = MAP_Y + (ROWS - 4) * TILE;
-        const eligible = (v) => {
-            if (v.guidedBy) return false;
-            if (v.phase === 'entering') return true;
-            if ((v.phase === 'seeking' || v.phase === 'confused') && v.sprite.y >= entranceThreshold) return true;
-            return false;
-        };
+        const range = TILE * 3;
         let best = null, bestDist = Infinity;
         for (const v of this.visitors) {
-            if (!eligible(v)) continue;
+            if (v.guidedBy) continue;
+            if (v.phase !== 'seekingGuide') continue;
             const d = Math.abs(v.sprite.x - s.sprite.x) + Math.abs(v.sprite.y - s.sprite.y);
-            if (d < range * 2 && d < bestDist) { bestDist = d; best = v; }
+            if (d < range && d < bestDist) { bestDist = d; best = v; }
         }
         if (!best) return false;
         best.guidedBy = s.id;
         best._guidedTour = true;
-        if (best.phase === 'entering') this.visitorAdmission(best);
         best._grassPath = null;
         best._needsConfused = false;
         best.phase = 'guided';
@@ -2634,15 +2690,14 @@ export default class GameScene extends Phaser.Scene {
         return true;
     }
 
-    _guideReleaseAtEntrance(s) {
+    _guideReleaseAtHome(s) {
         for (const v of s.followers) {
             if (!v.sprite || !v.sprite.active) continue;
             v.guidedBy = null;
             v._showingSpot = null;
-            v.phase = 'leaving';
-            v.tx = Phaser.Math.Between(13, 16) * TILE + TILE / 2;
-            v.ty = MAP_Y + (ROWS - 1) * TILE;
-            this._setVisitorPath(v);
+            v._guidedTour = true;
+            v.phase = 'seeking';
+            this._visitorSeekHabitat(v);
         }
         s.followers = [];
     }
@@ -2671,6 +2726,10 @@ export default class GameScene extends Phaser.Scene {
             this.game.events.emit('notification', 'Not enough coins!');
             this.sfx.error(); return false;
         }
+        if (typeId === 'guide') {
+            this.enterGuidePlacement();
+            return true;
+        }
         this.spendCoins(st.hireCost);
         const sprite = this.add.image(15 * TILE, MAP_Y + (ROWS - 2) * TILE, `staff_${typeId}`).setDepth(32).setAlpha(0.9);
         const s = {
@@ -2685,11 +2744,49 @@ export default class GameScene extends Phaser.Scene {
         return true;
     }
 
+    enterGuidePlacement() {
+        const hud = this.scene.get('HUDScene');
+        if (hud && hud.hasOpenPanel()) hud.closeAllPanels(true);
+        if (this.state.viewingHabitat || this.state.viewingFacility || this.cameras.main.zoom > 1) this.zoomOut();
+        this.state.buildMode = '_place_guide';
+        this._guidePreview = this.add.image(0, 0, 'staff_guide').setDepth(56).setAlpha(0.7).setVisible(false);
+        this._hideNPCs();
+        this.game.events.emit('buildModeChanged', this.state.buildMode);
+    }
+
+    _canPlaceGuide(gx, gy) {
+        if (gx < 1 || gy < 1 || gx >= COLS - 1 || gy >= ROWS - 1) return false;
+        return this._isStaffWalkable(gx, gy);
+    }
+
+    _finishGuidePlacement(gx, gy) {
+        const st = STAFF_TYPES.guide;
+        this.spendCoins(st.hireCost);
+        const px = gx * TILE + TILE / 2, py = MAP_Y + gy * TILE + TILE / 2;
+        this._showFloatingCost(px, py, st.hireCost);
+        const postSprite = this.add.image(px, py, 'guide_post').setDepth(12);
+        const sprite = this.add.image(px, py, 'staff_guide').setDepth(32).setAlpha(0.9);
+        const s = {
+            id: genId('staff'), type: 'guide', sprite,
+            tx: px, ty: py, wTimer: 0
+        };
+        s.postSprite = postSprite;
+        this._initStaffState(s);
+        s.homeX = px;
+        s.homeY = py;
+        this.state.staff.push(s);
+        this.sfx.build();
+        this.game.events.emit('notification', `${st.name} hired!`);
+        this.game.events.emit('staffUpdate', this.state.staff);
+        this.exitBuild();
+    }
+
     fireStaff(staffId) {
         const idx = this.state.staff.findIndex(s => s.id === staffId);
         if (idx === -1) return;
         const s = this.state.staff[idx];
         if (s.type === 'guide') this._guideReleaseFollowers(s);
+        if (s.postSprite) { s.postSprite.destroy(); s.postSprite = null; }
         s.sprite.destroy();
         this.state.staff.splice(idx, 1);
         this.game.events.emit('staffUpdate', this.state.staff);
@@ -2769,9 +2866,9 @@ export default class GameScene extends Phaser.Scene {
 
     _updateGuide(s, sDelta) {
         if (s.phase === 'idle') {
-            if (!this._guideIsNearEntrance(s)) {
-                const ep = this._guideEntrancePos();
-                s.tx = ep.x; s.ty = ep.y;
+            if (!this._guideIsNearHome(s)) {
+                const hp = this._guideHomePos(s);
+                s.tx = hp.x; s.ty = hp.y;
                 this._setStaffPath(s);
                 s.phase = 'returning';
                 return;
@@ -2801,7 +2898,7 @@ export default class GameScene extends Phaser.Scene {
             this._guideUpdateFollowers(s, sDelta);
             if (arrived) {
                 if (s.followers.length > 0) {
-                    this._guideReleaseAtEntrance(s);
+                    this._guideReleaseAtHome(s);
                 }
                 s.phase = 'idle';
                 s.idleTimer = 0;
@@ -2823,8 +2920,8 @@ export default class GameScene extends Phaser.Scene {
                 s.followers = s.followers.filter(v => v.sprite && v.sprite.active && v.guidedBy === s.id);
                 const unvisited = this.state.habitats.filter(h => !s.visitedHabs.has(h.id));
                 if (unvisited.length === 0 || s.followers.length === 0) {
-                    const ep = this._guideEntrancePos();
-                    s.tx = ep.x; s.ty = ep.y;
+                    const hp = this._guideHomePos(s);
+                    s.tx = hp.x; s.ty = hp.y;
                     this._setStaffPath(s);
                     s.phase = 'returning';
                     s.targetHab = null;
@@ -2845,8 +2942,8 @@ export default class GameScene extends Phaser.Scene {
     _guideSeekNextHabitat(s) {
         const unvisited = this.state.habitats.filter(h => !s.visitedHabs.has(h.id));
         if (unvisited.length === 0) {
-            const ep = this._guideEntrancePos();
-            s.tx = ep.x; s.ty = ep.y;
+            const hp = this._guideHomePos(s);
+            s.tx = hp.x; s.ty = hp.y;
             this._setStaffPath(s);
             s.phase = 'returning';
             return;
@@ -2933,6 +3030,7 @@ export default class GameScene extends Phaser.Scene {
             while (this.state.staff.length > 0 && this.state.coins < total) {
                 const last = this.state.staff.pop();
                 if (last.type === 'guide') this._guideReleaseFollowers(last);
+                if (last.postSprite) { last.postSprite.destroy(); last.postSprite = null; }
                 last.sprite.destroy();
                 total -= STAFF_TYPES[last.type].salary;
             }
@@ -3266,7 +3364,7 @@ export default class GameScene extends Phaser.Scene {
                 mateTrait: a.mateTrait, mateName: a.mateName, mateGeneration: a.mateGeneration,
                 generation: a.generation,
             })),
-            staff: this.state.staff.map(s => ({ id: s.id, type: s.type, x: s.sprite.x, y: s.sprite.y, phase: s.phase || 'idle' })),
+            staff: this.state.staff.map(s => ({ id: s.id, type: s.type, x: s.sprite.x, y: s.sprite.y, phase: s.phase || 'idle', homeX: s.homeX, homeY: s.homeY })),
             discoveries: [...this.state.discoveries],
             seenVariants: [...this.state.seenVariants],
             rescuedVariants: [...this.state.rescuedVariants],
@@ -3298,6 +3396,7 @@ export default class GameScene extends Phaser.Scene {
                 maxTime: v.maxTime, phase: v.phase, targetHab: v.targetHab,
                 visitedHabs: [...v.visitedHabs], habsToVisit: v.habsToVisit,
                 viewTimer: v.viewTimer, satisfaction: v.satisfaction,
+                wantsTour: v.wantsTour || false,
             })),
         };
         localStorage.setItem('havenwood_save', JSON.stringify(data));
@@ -3374,6 +3473,10 @@ export default class GameScene extends Phaser.Scene {
                         id: sd.id, type: sd.type, sprite,
                         tx: sx, ty: sy, wTimer: 0
                     };
+                    if (sd.homeX != null) { s.homeX = sd.homeX; s.homeY = sd.homeY; }
+                    if (sd.type === 'guide' && s.homeX != null) {
+                        s.postSprite = this.add.image(s.homeX, s.homeY, 'guide_post').setDepth(12);
+                    }
                     this._initStaffState(s);
                     this.state.staff.push(s);
                 }
@@ -3382,7 +3485,7 @@ export default class GameScene extends Phaser.Scene {
                 for (const sv of d.visitors) {
                     const vType = VISITOR_TYPES[sv.visitorType] || VISITOR_TYPES.family;
                     const sprite = this.add.image(sv.x, sv.y, `visitor_${vType.spriteIdx}`).setDepth(30).setAlpha(0.85);
-                    const loadedPhase = (sv.phase === 'guided' || sv.phase === 'confused') ? 'seeking' : sv.phase;
+                    const loadedPhase = (sv.phase === 'guided' || sv.phase === 'confused' || sv.phase === 'seekingGuide') ? 'seeking' : sv.phase;
                     const v = {
                         sprite, visitorType: sv.visitorType,
                         tx: sv.tx, ty: sv.ty, speed: sv.speed,
@@ -3391,6 +3494,7 @@ export default class GameScene extends Phaser.Scene {
                         visitedHabs: new Set(sv.visitedHabs || []),
                         habsToVisit: sv.habsToVisit, viewTimer: sv.viewTimer || 0,
                         satisfaction: sv.satisfaction || 0,
+                        wantsTour: sv.wantsTour || false,
                     };
                     this._setVisitorPath(v);
                     this.visitors.push(v);

@@ -1132,7 +1132,14 @@ export default class HUDScene extends Phaser.Scene {
                 ct.add(this.txt(pw - 14, yy + 10, 'MAX', 6, '#666666').setOrigin(1, 0));
             } else if (canAfford) {
                 const hireBtn = this.txt(pw - 14, yy + 10, 'HIRE', 6, '#44CC44').setOrigin(1, 0).setInteractive({ useHandCursor: true });
-                hireBtn.on('pointerdown', () => { this.gs.hireStaff(st.id); this.showStaffPanel(); });
+                hireBtn.on('pointerdown', () => {
+                    if (st.id === 'guide') {
+                        ct.destroy(); this.staffPanel = null; this._activePanel = null;
+                        this.gs.hireStaff('guide');
+                    } else {
+                        this.gs.hireStaff(st.id); this.showStaffPanel();
+                    }
+                });
                 hireBtn.on('pointerover', () => hireBtn.setColor('#88FF88'));
                 hireBtn.on('pointerout', () => hireBtn.setColor('#44CC44'));
                 ct.add(hireBtn);

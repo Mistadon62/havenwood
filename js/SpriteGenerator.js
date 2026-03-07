@@ -42,6 +42,7 @@ export class SpriteGenerator {
         this.visitor(scene);
         this.particles(scene);
         this.staff(scene);
+        this.guidePost(scene);
         this.enrichments(scene);
         this.decorations(scene);
     }
@@ -524,7 +525,7 @@ export class SpriteGenerator {
                 g.beginPath();
                 for (let x = 6; x <= 14; x++) {
                     const nx = (x - 10) / 4;
-                    const y = 14 - bend * (1 - nx * nx);
+                    const y = 14 + bend * (1 - nx * nx);
                     if (x === 5) g.moveTo(x, y); else g.lineTo(x, y);
                 }
                 g.strokePath();
@@ -770,6 +771,24 @@ export class SpriteGenerator {
                 g.fillStyle(0xFFEE88);
                 g.fillCircle(fx, fy, 1);
             }
+        });
+    }
+
+    // Guide post marker: small signpost placed where the tour guide is stationed.
+    static guidePost(scene) {
+        tex(scene, 'guide_post', TILE, TILE, g => {
+            g.fillStyle(0x6B4226);
+            g.fillRect(15, 8, 3, 20);
+            g.fillStyle(0xAA8855);
+            g.fillRect(8, 6, 16, 10);
+            g.lineStyle(1, 0x7A5C33);
+            g.strokeRect(8, 6, 16, 10);
+            g.fillStyle(0xFFFFFF);
+            g.fillRect(11, 9, 2, 1);
+            g.fillRect(14, 9, 1, 1);
+            g.fillRect(16, 9, 1, 1);
+            g.fillRect(19, 9, 2, 1);
+            g.fillRect(12, 12, 8, 1);
         });
     }
 
