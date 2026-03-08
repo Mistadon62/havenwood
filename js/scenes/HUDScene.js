@@ -290,7 +290,7 @@ export default class HUDScene extends Phaser.Scene {
         this._refreshToolBtns();
         this._buildCategory = null;
 
-        this._buildDismiss = this.add.rectangle(W / 2, H / 2, W, H, 0, 0)
+        this._buildDismiss = this.add.rectangle(W / 2, barY / 2, W, barY, 0, 0)
             .setInteractive().setDepth(259);
         this._buildDismiss.on('pointerdown', () => this.closeBuildPopup());
 
@@ -843,6 +843,7 @@ export default class HUDScene extends Phaser.Scene {
         }
 
         this.animalPanel = ct;
+        this._animalPanelBounds = { x: px, y: py, w: pw, h: ph };
     }
 
     // Draws a labeled stat bar (label + fill + value) into container.
@@ -975,6 +976,7 @@ export default class HUDScene extends Phaser.Scene {
 
         this._backBarElements = [backBar, bbBg, bbBtn];
         this.habitatPanel = ct;
+        this._habitatPanelBounds = { x: px, y: py, w: pw, h: ph };
     }
 
     showFacilityBackBar() {
@@ -1042,7 +1044,9 @@ export default class HUDScene extends Phaser.Scene {
 
     hideBuildHint() {
         this.destroyBuildHint();
-        this.showToolbar();
+        if (!this.gs.state.viewingHabitat && !this.gs.state.viewingFacility) {
+            this.showToolbar();
+        }
     }
 
     destroyBuildHint() {
@@ -1593,6 +1597,19 @@ export default class HUDScene extends Phaser.Scene {
 
     // True if any management panel (upgrades, staff, missions, research, journal) or settings menu is open.
     hasOpenPanel() { return !!(this.upgradePanel || this.staffPanel || this.missionPanel || this.journalPanel || this.researchPanel || this.settingsPanel); }
+
+    isPointerOverPanel(screenX, screenY) {
+        const barY = H - 62;
+        if (screenY >= barY) return true;
+        const checks = [
+            this.animalPanel && this._animalPanelBounds,
+            this.habitatPanel && this._habitatPanelBounds,
+        ];
+        for (const b of checks) {
+            if (b && screenX >= b.x && screenX <= b.x + b.w && screenY >= b.y && screenY <= b.y + b.h) return true;
+        }
+        return false;
+    }
 
     // Destroys all open panels and mission refresh timer. keepZoom=true preserves the
     // camera zoom and back bar (used by rescue events so they don't interrupt the zoomed view).

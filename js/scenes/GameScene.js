@@ -309,6 +309,12 @@ export default class GameScene extends Phaser.Scene {
                 return;
             }
             if (this.state.viewingHabitat || this.state.viewingFacility) {
+                const hud1 = this.scene.get('HUDScene');
+                if (hud1 && hud1.isPointerOverPanel(ptr.x, ptr.y)) {
+                    this.hoverOutline.setVisible(false);
+                    this.game.canvas.style.cursor = 'default';
+                    return;
+                }
                 if (this.state.viewingFacility) {
                     const fac = this.state.facilities.find(f => f.id === this.state.viewingFacility);
                     if (fac && fac.produce) {
@@ -409,10 +415,12 @@ export default class GameScene extends Phaser.Scene {
                 }
                 return;
             }
-            if (ptr.rightButtonDown()) { if (this._movingHabitat) { this.cancelMove(); } else { this.exitBuild(); } return; }
+            if (ptr.rightButtonDown()) { if (this._movingHabitat) { this.cancelMove(); } else if (this.state.buildMode) { this.exitBuild(); } return; }
             if (this._skipPointerDown) { this._skipPointerDown = false; return; }
             if (this.state.rescuePaused) return;
             if (this.state.viewingFacility) {
+                const hud0 = this.scene.get('HUDScene');
+                if (hud0 && hud0.isPointerOverPanel(ptr.x, ptr.y)) return;
                 const fac = this.state.facilities.find(f => f.id === this.state.viewingFacility);
                 if (fac && fac.produce) {
                     const wx = ptr.worldX, wy = ptr.worldY;
@@ -450,6 +458,8 @@ export default class GameScene extends Phaser.Scene {
                 return;
             }
             if (this.state.viewingHabitat) {
+                const hud0 = this.scene.get('HUDScene');
+                if (hud0 && hud0.isPointerOverPanel(ptr.x, ptr.y)) return;
                 const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
                 if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
                     const cell = this.grid[gy]?.[gx];
@@ -573,6 +583,11 @@ export default class GameScene extends Phaser.Scene {
         if (this.state.viewingHabitat) {
             this.state.viewingHabitat = null;
             this.clearSelectedAnimal();
+            const hud = this.scene.get('HUDScene');
+            if (hud) {
+                if (hud.habitatPanel) { hud.habitatPanel.destroy(); hud.habitatPanel = null; }
+                if (hud.animalPanel) { hud.animalPanel.destroy(); hud.animalPanel = null; hud._viewedAnimal = null; }
+            }
         }
         if (this.state.viewingFacility) {
             const oldFac = this.state.facilities.find(f => f.id === this.state.viewingFacility);
@@ -2164,6 +2179,12 @@ export default class GameScene extends Phaser.Scene {
         return false;
     }
 
+    _isGuideWalkable(gx, gy) {
+        if (gy < 0 || gy >= ROWS || gx < 0 || gx >= COLS) return false;
+        const cell = this.grid[gy]?.[gx];
+        return cell === null || cell === 'entrance' || cell === 'dec_path';
+    }
+
     _findPath(sx, sy, ex, ey, walkFn) {
         const canWalk = walkFn || ((gx, gy) => this._isWalkable(gx, gy));
         const sgx = Math.floor(sx / TILE), sgy = Math.floor((sy - MAP_Y) / TILE);
@@ -2571,7 +2592,9 @@ export default class GameScene extends Phaser.Scene {
     }
 
     _setStaffPath(s) {
-        const walkFn = (gx, gy) => this._isStaffWalkable(gx, gy);
+        const walkFn = s.type === 'guide'
+            ? (gx, gy) => this._isGuideWalkable(gx, gy)
+            : (gx, gy) => this._isStaffWalkable(gx, gy);
         const path = this._findPath(s.sprite.x, s.sprite.y, s.tx, s.ty, walkFn);
         if (path === null) {
             s._path = [];
@@ -2756,7 +2779,7 @@ export default class GameScene extends Phaser.Scene {
 
     _canPlaceGuide(gx, gy) {
         if (gx < 1 || gy < 1 || gx >= COLS - 1 || gy >= ROWS - 1) return false;
-        return this._isStaffWalkable(gx, gy);
+        return this._isGuideWalkable(gx, gy);
     }
 
     _finishGuidePlacement(gx, gy) {
@@ -3010,7 +3033,10 @@ export default class GameScene extends Phaser.Scene {
             const dx = goalX - v.sprite.x, dy = goalY - v.sprite.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
             if (dist > 4) {
-                const spd = 30 * sDelta / 1000;
+                const toFX = v.sprite.x - s.sprite.x, toFY = v.sprite.y - s.sprite.y;
+                const ahead = toFX * fwdX + toFY * fwdY;
+                const baseSpeed = ahead > 0 ? 12 : Math.min(50, 26 + dist * 0.5);
+                const spd = baseSpeed * sDelta / 1000;
                 v.sprite.x += (dx / dist) * Math.min(spd, dist);
                 v.sprite.y += (dy / dist) * Math.min(spd, dist);
                 if (Math.abs(dx) > 1) v.sprite.setFlipX(dx < 0);
@@ -3024,6 +3050,9 @@ export default class GameScene extends Phaser.Scene {
         if (total <= 0) return;
         if (this.state.coins >= total) {
             this.spendCoins(total);
+            for (const s of this.state.staff) {
+                this._showFloatingCost(s.sprite.x, s.sprite.y, STAFF_TYPES[s.type].salary);
+            }
             this.game.events.emit('notification', `Paid ${total}g in salaries.`);
         } else {
             this.game.events.emit('notification', "Can't afford salaries! Staff leaving.");
@@ -3034,7 +3063,12 @@ export default class GameScene extends Phaser.Scene {
                 last.sprite.destroy();
                 total -= STAFF_TYPES[last.type].salary;
             }
-            if (total > 0 && this.state.coins >= total) this.spendCoins(total);
+            if (total > 0 && this.state.coins >= total) {
+                this.spendCoins(total);
+                for (const s of this.state.staff) {
+                    this._showFloatingCost(s.sprite.x, s.sprite.y, STAFF_TYPES[s.type].salary);
+                }
+            }
             this.game.events.emit('staffUpdate', this.state.staff);
         }
     }
