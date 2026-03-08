@@ -20,6 +20,8 @@ export default class HUDScene extends Phaser.Scene {
     constructor() { super('HUDScene'); }
 
     create() {
+        // IMPORTANT: roundPixels must be set on BOTH GameScene and HUDScene cameras.
+        // See GameScene.create() for the full explanation of the sub-pixel rendering glitch.
         this.cameras.main.setRoundPixels(true);
         this.gs = this.scene.get('GameScene');
         this.animalPanel = null;
@@ -271,6 +273,10 @@ export default class HUDScene extends Phaser.Scene {
     showToolbar() { if (this.toolbarElements) this.toolbarElements.forEach(e => e.setVisible(true)); }
     destroyBackBar() { if (this._backBarElements) { this._backBarElements.forEach(e => e.destroy()); this._backBarElements = null; } }
 
+    // Pre-created and toggled via setVisible instead of created/destroyed each time.
+    // Creating and destroying Graphics objects on every build mode enter/exit causes
+    // display list churn that produces a one-frame pixel jump in the UI. Pre-creating
+    // avoids this. Apply the same pattern for any UI bar that toggles frequently.
     createBuildHintBar() {
         const barY = H - 62;
         const bar = this.add.graphics().setDepth(250);
