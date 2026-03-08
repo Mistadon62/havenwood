@@ -792,12 +792,13 @@ export class SpriteGenerator {
         });
     }
 
-    // Staff sprites: volunteer, vet, guide (color-coded with role-specific details).
+    // Staff sprites: volunteer, vet, guide, gardener (color-coded with role-specific details).
     static staff(scene) {
         const types = {
             volunteer: 0x55AA55,
             vet: 0xAA5555,
-            guide: 0xAA8855
+            guide: 0xAA8855,
+            gardener: 0x66AA44
         };
         Object.entries(types).forEach(([id, c]) => {
             tex(scene, `staff_${id}`, TILE, TILE, g => {
@@ -815,6 +816,10 @@ export class SpriteGenerator {
                 if (id === 'guide') {
                     rect(g, 11, 3, 10, 3, c);
                     rect(g, 12, 2, 8, 2, c);
+                }
+                if (id === 'gardener') {
+                    rect(g, 20, 10, 2, 12, 0x6B4226);
+                    rect(g, 19, 8, 4, 3, 0x888888);
                 }
             });
         });

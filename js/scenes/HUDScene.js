@@ -35,6 +35,7 @@ export default class HUDScene extends Phaser.Scene {
 
         this.createTopBar();
         this.createToolbar();
+        this.createBuildHintBar();
         this.listenEvents();
 
         this.time.delayedCall(0, () => this.syncState());
@@ -203,6 +204,7 @@ export default class HUDScene extends Phaser.Scene {
     // Bottom bar: Build (opens two-level build menu: categories → items) and management toggles
     // (Missions, Upgrades, Staff, Research, Journal).
     // All elements stored in toolbarElements for hide/show during habitat/facility zoom.
+    // Build hint bar (pre-created in createBuildHintBar) replaces toolbar during build mode.
     createToolbar() {
         const barY = H - 62;
         this.toolbarElements = [];
@@ -268,6 +270,18 @@ export default class HUDScene extends Phaser.Scene {
     hideToolbar() { if (this.toolbarElements) this.toolbarElements.forEach(e => e.setVisible(false)); }
     showToolbar() { if (this.toolbarElements) this.toolbarElements.forEach(e => e.setVisible(true)); }
     destroyBackBar() { if (this._backBarElements) { this._backBarElements.forEach(e => e.destroy()); this._backBarElements = null; } }
+
+    createBuildHintBar() {
+        const barY = H - 62;
+        const bar = this.add.graphics().setDepth(250);
+        bar.fillStyle(CLR.uiBg, 0.9); bar.fillRect(0, barY, W, 62);
+        bar.lineStyle(1, CLR.uiBorder); bar.lineBetween(0, barY, W, barY);
+        const label = this.txt(W / 2, barY + 31, 'Left Click to Place, Right Click to Exit Build Mode', 8, '#FFFFFF').setOrigin(0.5).setDepth(250);
+        this._buildHintBar = bar;
+        this._buildHintLabel = label;
+        bar.setVisible(false);
+        label.setVisible(false);
+    }
 
     // Draws a single toolbar button with active/hover state.
     drawToolBtn(bg, x, y, color, active, gap = 88) {
@@ -479,6 +493,7 @@ export default class HUDScene extends Phaser.Scene {
         ev.on('habitatViewClosed', () => {
             if (this.habitatPanel) { this.habitatPanel.destroy(); this.habitatPanel = null; }
             if (this.animalPanel) { this.animalPanel.destroy(); this.animalPanel = null; this._viewedAnimal = null; }
+            if (this.facilityPanel) { this.facilityPanel.destroy(); this.facilityPanel = null; }
             this.destroyBackBar();
             this.showToolbar();
         });
@@ -754,8 +769,11 @@ export default class HUDScene extends Phaser.Scene {
         }
 
         if (animal.isPregnant) {
-            const pctLeft = Math.max(0, Math.round(animal.pregnancyTimer / 720));
-            ct.add(this.txt(8, yy + 4, `Due in ~${pctLeft} days`, 6, '#FF88CC'));
+            const daysLeft = animal.pregnancyTimer / 720;
+            const dueLabel = daysLeft < 1
+                ? `Due in ~${Math.max(1, Math.round(daysLeft * 24))} hours`
+                : `Due in ~${Math.round(daysLeft)} days`;
+            ct.add(this.txt(8, yy + 4, dueLabel, 6, '#FF88CC'));
             yy += 22;
         } else if (animal.breedCooldown > 0) {
             const dLeft = Math.max(0, Math.ceil(animal.breedCooldown / 720));
@@ -944,6 +962,21 @@ export default class HUDScene extends Phaser.Scene {
         ct.add(moveBtn);
         yy += 30;
 
+        const isEmpty = hab.animals.length === 0;
+        const destroyBg = this.add.graphics();
+        destroyBg.fillStyle(isEmpty ? 0x773333 : 0x333333, 0.5);
+        destroyBg.fillRoundedRect(6, yy, pw - 12, 24, 3);
+        ct.add(destroyBg);
+        const destroyBtn = this.txt(pw / 2, yy + 12, 'Destroy', 5, isEmpty ? '#DD6666' : '#666666').setOrigin(0.5);
+        if (isEmpty) {
+            destroyBtn.setInteractive({ useHandCursor: true });
+            destroyBtn.on('pointerdown', () => { this.gs.destroyHabitat(hab.id); });
+            destroyBtn.on('pointerover', () => destroyBtn.setColor('#FF8888'));
+            destroyBtn.on('pointerout', () => destroyBtn.setColor('#DD6666'));
+        }
+        ct.add(destroyBtn);
+        yy += 30;
+
         const ph = yy + 8;
         const bg = this.add.graphics();
         bg.fillStyle(0x1a0e04, 0.94); bg.fillRoundedRect(0, 0, pw, ph, 6);
@@ -979,9 +1012,55 @@ export default class HUDScene extends Phaser.Scene {
         this._habitatPanelBounds = { x: px, y: py, w: pw, h: ph };
     }
 
-    showFacilityBackBar() {
+    showFacilityBackBar(fac) {
         this.destroyBackBar();
+        if (this.facilityPanel) { this.facilityPanel.destroy(); this.facilityPanel = null; }
         this.hideToolbar();
+
+        const ft = FACILITIES[fac.type];
+        const pw = 200, px = 8, py = 48;
+        const ct = this.add.container(px, py).setDepth(250);
+
+        ct.add(this.txt(pw / 2, 12, ft.name, 10, CLR.gold).setOrigin(0.5));
+        const descTxt = this.txt(8, 30, ft.desc, 5, '#AAAAAA').setWordWrapWidth(pw - 16);
+        ct.add(descTxt);
+
+        let yy = 30 + descTxt.height + 10;
+        const moveBg = this.add.graphics();
+        moveBg.fillStyle(0x335577, 0.5); moveBg.fillRoundedRect(6, yy, pw - 12, 24, 3);
+        ct.add(moveBg);
+        const moveBtn = this.txt(pw / 2, yy + 12, 'Move Facility', 5, '#88BBDD').setOrigin(0.5).setInteractive({ useHandCursor: true });
+        moveBtn.on('pointerdown', () => { this.gs.enterFacilityMoveMode(fac); });
+        moveBtn.on('pointerover', () => moveBtn.setColor('#AADDFF'));
+        moveBtn.on('pointerout', () => moveBtn.setColor('#88BBDD'));
+        ct.add(moveBtn);
+        yy += 30;
+
+        const destroyBg = this.add.graphics();
+        destroyBg.fillStyle(0x773333, 0.5);
+        destroyBg.fillRoundedRect(6, yy, pw - 12, 24, 3);
+        ct.add(destroyBg);
+        const destroyBtn = this.txt(pw / 2, yy + 12, 'Destroy', 5, '#DD6666').setOrigin(0.5).setInteractive({ useHandCursor: true });
+        destroyBtn.on('pointerdown', () => { this.gs.destroyFacility(fac.id); });
+        destroyBtn.on('pointerover', () => destroyBtn.setColor('#FF8888'));
+        destroyBtn.on('pointerout', () => destroyBtn.setColor('#DD6666'));
+        ct.add(destroyBtn);
+        yy += 30;
+
+        const ph = yy + 8;
+        const bg = this.add.graphics();
+        bg.fillStyle(0x1a0e04, 0.94); bg.fillRoundedRect(0, 0, pw, ph, 6);
+        bg.lineStyle(2, ft.stroke); bg.strokeRoundedRect(0, 0, pw, ph, 6);
+        ct.addAt(bg, 0);
+
+        const closeBtn = this.txt(pw - 8, 6, 'X', 8, '#CC4444').setOrigin(1, 0).setInteractive({ useHandCursor: true });
+        closeBtn.on('pointerdown', () => { if (!this.gs.state.rescuePaused) this.gs.zoomOut(); });
+        closeBtn.on('pointerover', () => closeBtn.setColor('#FF6666'));
+        closeBtn.on('pointerout', () => closeBtn.setColor('#CC4444'));
+        ct.add(closeBtn);
+
+        this.facilityPanel = ct;
+        this._facilityPanelBounds = { x: px, y: py, w: pw, h: ph };
 
         const barY = H - 62;
         const backBar = this.add.graphics().setDepth(250);
@@ -1029,30 +1108,16 @@ export default class HUDScene extends Phaser.Scene {
     }
 
     showBuildHint() {
-        this.destroyBuildHint();
         this.hideToolbar();
-
-        const barY = H - 62;
-        const bar = this.add.graphics().setDepth(250);
-        bar.fillStyle(CLR.uiBg, 0.9); bar.fillRect(0, barY, W, 62);
-        bar.lineStyle(1, CLR.uiBorder); bar.lineBetween(0, barY, W, barY);
-
-        const label = this.txt(W / 2, barY + 31, 'Left Click to Place, Right Click to Exit Build Mode', 8, '#FFFFFF').setOrigin(0.5).setDepth(250);
-
-        this._buildHintElements = [bar, label];
+        if (this._buildHintBar) this._buildHintBar.setVisible(true);
+        if (this._buildHintLabel) this._buildHintLabel.setVisible(true);
     }
 
     hideBuildHint() {
-        this.destroyBuildHint();
+        if (this._buildHintBar) this._buildHintBar.setVisible(false);
+        if (this._buildHintLabel) this._buildHintLabel.setVisible(false);
         if (!this.gs.state.viewingHabitat && !this.gs.state.viewingFacility) {
             this.showToolbar();
-        }
-    }
-
-    destroyBuildHint() {
-        if (this._buildHintElements) {
-            this._buildHintElements.forEach(e => e.destroy());
-            this._buildHintElements = null;
         }
     }
 
@@ -1604,6 +1669,7 @@ export default class HUDScene extends Phaser.Scene {
         const checks = [
             this.animalPanel && this._animalPanelBounds,
             this.habitatPanel && this._habitatPanelBounds,
+            this.facilityPanel && this._facilityPanelBounds,
         ];
         for (const b of checks) {
             if (b && screenX >= b.x && screenX <= b.x + b.w && screenY >= b.y && screenY <= b.y + b.h) return true;
@@ -1615,7 +1681,7 @@ export default class HUDScene extends Phaser.Scene {
     // camera zoom and back bar (used by rescue events so they don't interrupt the zoomed view).
     closeAllPanels(keepZoom = false) {
         if (!keepZoom && (this.gs.state.viewingHabitat || this.gs.state.viewingFacility)) { this.gs.zoomOut(); this.showToolbar(); }
-        ['animalPanel', 'upgradePanel', 'staffPanel', 'missionPanel', 'journalPanel', 'habitatPanel', 'researchPanel'].forEach(k => {
+        ['animalPanel', 'upgradePanel', 'staffPanel', 'missionPanel', 'journalPanel', 'habitatPanel', 'researchPanel', 'facilityPanel'].forEach(k => {
             if (this[k]) { this[k].destroy(); this[k] = null; }
         });
         if (!keepZoom) this.destroyBackBar();

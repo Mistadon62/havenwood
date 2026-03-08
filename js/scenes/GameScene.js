@@ -7,12 +7,14 @@
  * viewing spots and routes, "?" confused pause when leaving path network for off-path
  * habitats, react with speech bubbles, reputation per visit, paths recalculate on build changes),
  * phase-based staff AI (volunteers/vets walk into habitats via A* pathfinding,
- * perform localized work with heart animations; tour guides are player-placed anywhere
- * on the map and wait at their post — ~50% of visitors want a tour and walk to the guide,
- * the guide accumulates a group then leads them through all habitats with individual
- * viewing spots using direct staff-walkable routes, then returns the group to its post
- * and releases them to explore on their own — followers always trail behind the guide
- * based on movement direction), automatic breeding (trait inheritance, generation
+ * perform localized work with heart animations; gardeners walk to adjacent tiles of
+ * gardens and auto-harvest ready crops one by one, wandering around the garden when
+ * idle; tour guides are player-placed anywhere on the map and wait at their post —
+ * ~50% of visitors want a tour and walk to the guide, the guide accumulates a group
+ * then leads them through all habitats with individual viewing spots using direct
+ * staff-walkable routes, then returns the group to its post and releases them to
+ * explore on their own — followers always trail behind the guide based on movement
+ * direction), automatic breeding (trait inheritance, generation
  * tracking, name inheritance from same-gender parent, breed-only variant recipes with
  * fixed names), missions, research, time, seasons, rescue events (game-time driven,
  * fully modal with time-pause — spawning suppressed, persisted across save/load),
@@ -45,6 +47,14 @@ export default class GameScene extends Phaser.Scene {
     init(data) { this.isNewGame = data?.newGame !== false; }
 
     create() {
+        // IMPORTANT: roundPixels must be set on BOTH GameScene and HUDScene cameras.
+        // Without this, per-frame work (e.g. garden regrow timers) causes slight frame-timing
+        // variations that expose sub-pixel rendering jitter. Because the HUD bars are
+        // semi-transparent (alpha 0.9), any sub-pixel shifts in the GameScene layer underneath
+        // bleed through, making HUD icons/text appear to gain/lose a pixel every ~500ms.
+        // Phaser's pixelArt:true only sets roundPixels on the renderer config, not on individual
+        // scene cameras — each camera needs setRoundPixels(true) explicitly.
+        this.cameras.main.setRoundPixels(true);
         this.sfx = new SoundManager();
         this.sfx.init();
         this.input.on('pointerdown', () => this.sfx.resume());
@@ -259,6 +269,28 @@ export default class GameScene extends Phaser.Scene {
                     return;
                 }
 
+                if (this.state.buildMode.startsWith('_movefac_')) {
+                    const facType = this.state.buildMode.replace('_movefac_', '');
+                    const ft = FACILITIES[facType];
+                    const fgx = gx - Math.floor(ft.w / 2), fgy = gy - Math.floor(ft.h / 2);
+                    const ok = this.canPlaceFacilityMove(facType, fgx, fgy);
+                    const c = ok ? 0x00ff00 : 0xff0000;
+                    if (this._facMoveTracked) {
+                        const dx = (fgx - this._facMoveOrigin.gx) * TILE;
+                        const dy = (fgy - this._facMoveOrigin.gy) * TILE;
+                        for (const t of this._facMoveTracked) {
+                            if (t.isGfx) t.obj.setPosition(t.origX + dx, t.origY + dy);
+                            else { t.obj.x = t.origX + dx; t.obj.y = t.origY + dy; }
+                        }
+                    }
+                    this.preview.clear().setVisible(true);
+                    this.preview.fillStyle(c, 0.25);
+                    this.preview.fillRect(fgx * TILE, MAP_Y + fgy * TILE, ft.w * TILE, ft.h * TILE);
+                    this.preview.lineStyle(2, c, 0.7);
+                    this.preview.strokeRect(fgx * TILE, MAP_Y + fgy * TILE, ft.w * TILE, ft.h * TILE);
+                    return;
+                }
+
                 const isMove = this.state.buildMode.startsWith('_move_');
                 const habType = isMove ? this.state.buildMode.replace('_move_', '') : this.state.buildMode;
                 const ht = HABITATS[habType];
@@ -417,7 +449,7 @@ export default class GameScene extends Phaser.Scene {
                 }
                 return;
             }
-            if (ptr.rightButtonDown()) { if (this._movingHabitat) { this.cancelMove(); } else if (this.state.buildMode) { this.exitBuild(); } return; }
+            if (ptr.rightButtonDown()) { if (this._movingHabitat) { this.cancelMove(); } else if (this._movingFacility) { this.cancelFacilityMove(); } else if (this.state.buildMode) { this.exitBuild(); } return; }
             if (this._skipPointerDown) { this._skipPointerDown = false; return; }
             if (this.state.rescuePaused) return;
             if (this.state.viewingFacility) {
@@ -503,6 +535,11 @@ export default class GameScene extends Phaser.Scene {
                     const ft = FACILITIES[facId];
                     const fgx = gx - Math.floor(ft.w / 2), fgy = gy - Math.floor(ft.h / 2);
                     if (this.canPlaceFacility(facId, fgx, fgy)) { this.placeFacility(facId, fgx, fgy); this.exitBuild(); }
+                } else if (this._movingFacility) {
+                    const facType = this.state.buildMode.replace('_movefac_', '');
+                    const ft = FACILITIES[facType];
+                    const fgx = gx - Math.floor(ft.w / 2), fgy = gy - Math.floor(ft.h / 2);
+                    if (this.canPlaceFacilityMove(facType, fgx, fgy)) this.finishFacilityMove(fgx, fgy);
                 } else if (this._movingHabitat) {
                     const habType = this.state.buildMode.replace('_move_', '');
                     const ht = HABITATS[habType];
@@ -553,6 +590,7 @@ export default class GameScene extends Phaser.Scene {
                 return;
             }
             if (this._movingHabitat) { this.cancelMove(); return; }
+            if (this._movingFacility) { this.cancelFacilityMove(); return; }
             if (hud && hud.hasOpenPanel()) { hud.closeAllPanels(); return; }
             if (this.state.viewingHabitat || this.state.viewingFacility || this.cameras.main.zoom > 1) this.zoomOut();
             else if (this.state.buildMode) this.exitBuild();
@@ -576,6 +614,8 @@ export default class GameScene extends Phaser.Scene {
             const oldFac = this.state.facilities.find(f => f.id === this.state.viewingFacility);
             if (oldFac && oldFac.type === 'garden') this.hideGardenMiniBars(oldFac);
             this.state.viewingFacility = null;
+            const hud = this.scene.get('HUDScene');
+            if (hud && hud.facilityPanel) { hud.facilityPanel.destroy(); hud.facilityPanel = null; }
         }
         const ht = HABITATS[hab.type];
         const cx = hab.gx * TILE + (ht.w * TILE) / 2;
@@ -788,6 +828,167 @@ export default class GameScene extends Phaser.Scene {
         this.finishMove(o.gx, o.gy);
     }
 
+    enterFacilityMoveMode(fac) {
+        this._movingFacility = fac;
+        this._facMoveOrigin = { gx: fac.gx, gy: fac.gy };
+
+        this.state.viewingHabitat = null;
+        this.state.viewingFacility = null;
+        if (fac.type === 'garden') this.hideGardenMiniBars(fac);
+        this.game.events.emit('habitatViewClosed');
+        this._hideNPCs();
+
+        const cam = this.cameras.main;
+        cam.pan(W / 2, H / 2, 350, 'Quad.easeInOut', true);
+        cam.zoomTo(1, 350, 'Quad.easeInOut', true, (_cam, progress) => {
+            if (progress === 1) {
+                cam.scrollX = 0;
+                cam.scrollY = 0;
+
+                const ft = FACILITIES[fac.type];
+                for (let dy = 0; dy < ft.h; dy++)
+                    for (let dx = 0; dx < ft.w; dx++)
+                        this.grid[fac.gy + dy][fac.gx + dx] = null;
+
+                if (fac.gfx) fac.gfx.setDepth(55);
+                if (fac.decor) fac.decor.forEach(d => d.setDepth(56));
+
+                const tracked = [];
+                if (fac.gfx) tracked.push({ obj: fac.gfx, origX: fac.gfx.x || 0, origY: fac.gfx.y || 0, isGfx: true });
+                if (fac.decor) {
+                    for (const d of fac.decor)
+                        tracked.push({ obj: d, origX: d.x || 0, origY: d.y || 0, isGfx: d.type === 'Graphics' });
+                }
+                if (fac.produce) {
+                    for (const slot of fac.produce) {
+                        if (slot.sprite) {
+                            slot.sprite.setDepth(57);
+                            tracked.push({ obj: slot.sprite, origX: slot.sprite.x, origY: slot.sprite.y, isGfx: false });
+                        }
+                    }
+                    if (fac._produceGfx) {
+                        fac._produceGfx.setDepth(57);
+                        tracked.push({ obj: fac._produceGfx, origX: fac._produceGfx.x || 0, origY: fac._produceGfx.y || 0, isGfx: true });
+                    }
+                    if (fac._miniBarGfx) {
+                        fac._miniBarGfx.setVisible(false);
+                    }
+                }
+
+                this._facMoveTracked = tracked;
+                this.state.buildMode = `_movefac_${fac.type}`;
+                this.game.events.emit('buildModeChanged', this.state.buildMode);
+            }
+        });
+    }
+
+    canPlaceFacilityMove(type, gx, gy) {
+        const ft = FACILITIES[type];
+        if (gx < 1 || gy < 1 || gx + ft.w > COLS - 1 || gy + ft.h > ROWS - 1) return false;
+        for (let dy = 0; dy < ft.h; dy++)
+            for (let dx = 0; dx < ft.w; dx++)
+                if (this.grid[gy + dy][gx + dx] !== null) return false;
+        return true;
+    }
+
+    finishFacilityMove(gx, gy) {
+        const fac = this._movingFacility;
+        if (!fac) return;
+        const ft = FACILITIES[fac.type];
+        const orig = this._facMoveOrigin;
+        const offsetX = (gx - orig.gx) * TILE;
+        const offsetY = (gy - orig.gy) * TILE;
+
+        fac.gx = gx; fac.gy = gy;
+        for (let dy = 0; dy < ft.h; dy++)
+            for (let dx = 0; dx < ft.w; dx++)
+                this.grid[gy + dy][gx + dx] = fac.id;
+
+        if (fac.gfx) {
+            fac.gfx.setPosition(0, 0).setDepth(10);
+            const px = gx * TILE, py = MAP_Y + gy * TILE, pw = ft.w * TILE, ph = ft.h * TILE;
+            fac.gfx.clear(); fac.gfx.fillStyle(ft.fill, 0.4); fac.gfx.fillRect(px, py, pw, ph);
+            fac.gfx.lineStyle(2, ft.stroke, 0.9); fac.gfx.strokeRect(px + 1, py + 1, pw - 2, ph - 2);
+        }
+        if (fac.decor) fac.decor.forEach(d => d.destroy());
+        fac.decor = this.addFacilityDecor(fac.type, gx, gy, ft);
+        if (fac.produce) {
+            for (const slot of fac.produce) {
+                slot.x += offsetX;
+                slot.y += offsetY;
+                if (slot.sprite) { slot.sprite.x += offsetX; slot.sprite.y += offsetY; slot.sprite.setDepth(13); }
+            }
+            if (fac._produceGfx) {
+                fac._produceGfx.setPosition(0, 0).setDepth(13);
+                this._redrawAllProduce(fac);
+            }
+            if (fac._miniBarGfx) {
+                fac._miniBarGfx.setPosition(0, 0).setDepth(14).setVisible(false);
+                this._redrawAllMiniBars(fac);
+            }
+        }
+
+        this._showNPCs();
+        this._movingFacility = null; this._facMoveOrigin = null; this._facMoveTracked = null;
+        this.state.buildMode = null; this.preview.setVisible(false);
+        this.game.events.emit('buildModeChanged', null);
+        this.sfx.build();
+        this._recalcVisitorPaths();
+        this._recalcStaffPaths();
+    }
+
+    cancelFacilityMove() {
+        if (!this._movingFacility) return;
+        const o = this._facMoveOrigin;
+        this.finishFacilityMove(o.gx, o.gy);
+    }
+
+    destroyFacility(facId) {
+        const idx = this.state.facilities.findIndex(f => f.id === facId);
+        if (idx === -1) return;
+        const fac = this.state.facilities[idx];
+        const ft = FACILITIES[fac.type];
+        for (let dy = 0; dy < ft.h; dy++)
+            for (let dx = 0; dx < ft.w; dx++)
+                this.grid[fac.gy + dy][fac.gx + dx] = null;
+        if (fac.type === 'garden') this.hideGardenMiniBars(fac);
+        if (fac.gfx) fac.gfx.destroy();
+        if (fac.decor) fac.decor.forEach(d => d.destroy());
+        if (fac._produceGfx) fac._produceGfx.destroy();
+        if (fac._miniBarGfx) fac._miniBarGfx.destroy();
+        if (fac.produce) {
+            for (const slot of fac.produce) {
+                if (slot.sprite) slot.sprite.destroy();
+            }
+        }
+        this.state.facilities.splice(idx, 1);
+        this.facilitySprites = this.facilitySprites.filter(f => f.id !== facId);
+        this.zoomOut();
+        this._recalcVisitorPaths();
+        this._recalcStaffPaths();
+        this.sfx.build();
+        this.game.events.emit('notification', `${ft.name} demolished.`);
+    }
+
+    destroyHabitat(habId) {
+        const idx = this.state.habitats.findIndex(h => h.id === habId);
+        if (idx === -1) return;
+        const hab = this.state.habitats[idx];
+        if (hab.animals.length > 0) return;
+        const ht = HABITATS[hab.type];
+        for (let dy = 0; dy < ht.h; dy++)
+            for (let dx = 0; dx < ht.w; dx++)
+                this.grid[hab.gy + dy][hab.gx + dx] = null;
+        if (hab.gfx) hab.gfx.destroy();
+        if (hab.decor) hab.decor.forEach(d => d.destroy());
+        this.state.habitats.splice(idx, 1);
+        this.zoomOut();
+        this._recalcVisitorPaths();
+        this._recalcStaffPaths();
+        this.sfx.build();
+        this.game.events.emit('notification', `${ht.name} demolished.`);
+    }
+
     /* ========== BUILD ========== */
     // Habitat/decoration/facility placement with live preview that follows the cursor, overlaid
     // with a green/red tint for placement validation. Habitats and facilities use multi-tile
@@ -907,9 +1108,10 @@ export default class GameScene extends Phaser.Scene {
     // Facilities are multi-tile buildings placed like habitats but without animals.
     // Garden: 4×4 tiles, contains 12 produce items (3 rows × 4 columns). Produce starts unripe
     // on fresh placement, grows over GARDEN_REGROW_TIME (480 min / 8 hours), and can be clicked
-    // while zoomed in to harvest for food. Each item shows a mini progress bar (visible only when
-    // zoomed in) while regrowing. Facility grid cells use 'fac_' prefix IDs, blocking walkability.
-    // Facilities are persisted in save/load including per-item produce regrow state.
+    // while zoomed in to harvest for food (or auto-harvested by gardener staff). Each item shows
+    // a mini progress bar (visible only when zoomed in) while regrowing. Facility grid cells use
+    // 'fac_' prefix IDs, blocking walkability. Facilities are persisted in save/load including
+    // per-item produce regrow state.
 
     enterFacilityBuild(facId) {
         const hud = this.scene.get('HUDScene');
@@ -1019,7 +1221,6 @@ export default class GameScene extends Phaser.Scene {
             }
         }
         this._redrawAllProduce(fac);
-        this._redrawAllMiniBars(fac);
     }
 
     _redrawAllProduce(fac) {
@@ -2581,8 +2782,13 @@ export default class GameScene extends Phaser.Scene {
 
     /* ========== STAFF ========== */
     // Phase-based goal-driven AI with A* pathfinding. Work effects are localized (per-habitat).
-    // All staff (including guides) use _isStaffWalkable for direct routes across grass/paths/habitats.
+    // Volunteer/vet use _isStaffWalkable (can walk through habitats). Guide/gardener use
+    // _isGuideWalkable (paths, grass, entrance only — no walking through habitats/facilities).
     // Volunteer/vet: idle → walking → working (inside habitat, heart animation) → idle.
+    // Gardener: idle → walking (to adjacent tile of garden) → working (harvests one crop every
+    //   1.2s until all picked) → idle. When no crops are ready, wanders around a garden:
+    //   idle → wandering (walks to adjacent tile) → wanderPause (waits 2-5s, checks for
+    //   ready crops) → wandering/idle. Targets gardens with ready crops first.
     // Tour guide: hired via placement mode (player clicks a walkable tile to set the guide's post).
     // homeX/homeY store the post position. idle (wait at post) → grabs seekingGuide visitors one
     // at a time (_guideGrabOne) → waiting (accumulates group, starts tour when 4 gathered, or
@@ -2601,6 +2807,7 @@ export default class GameScene extends Phaser.Scene {
         s._path = [];
         s._pathIdx = 0;
         s.visitedHabs = new Set();
+        s._targetFac = null;
         s.followers = [];
         s.habsToShow = 0;
         if (s.type === 'guide' && s.homeX == null) {
@@ -2610,7 +2817,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     _setStaffPath(s) {
-        const walkFn = s.type === 'guide'
+        const walkFn = (s.type === 'guide' || s.type === 'gardener')
             ? (gx, gy) => this._isGuideWalkable(gx, gy)
             : (gx, gy) => this._isStaffWalkable(gx, gy);
         const path = this._findPath(s.sprite.x, s.sprite.y, s.tx, s.ty, walkFn);
@@ -2627,7 +2834,7 @@ export default class GameScene extends Phaser.Scene {
 
     _recalcStaffPaths() {
         for (const s of this.state.staff) {
-            if (s.phase === 'working' || s.phase === 'showing' || s.phase === 'idle' || s.phase === 'waiting') continue;
+            if (s.phase === 'working' || s.phase === 'showing' || s.phase === 'idle' || s.phase === 'waiting' || s.phase === 'wanderPause') continue;
             this._setStaffPath(s);
         }
     }
@@ -2667,7 +2874,15 @@ export default class GameScene extends Phaser.Scene {
         if (animals.length === 0) return;
 
         if (s.type === 'volunteer') {
-            animals.forEach(a => { a.hunger = Math.min(100, a.hunger + 12); });
+            animals.forEach(a => {
+                const cost = SPECIES[a.speciesId]?.foodCost || 5;
+                if (this.state.food >= cost) {
+                    this.state.food -= cost;
+                    a.hunger = Math.min(100, a.hunger + 12);
+                }
+                a.happiness = Math.min(100, a.happiness + 8);
+            });
+            this.game.events.emit('foodUpdate', this.state.food);
         } else if (s.type === 'vet') {
             const vetChance = this.hasResearch('super_vet') ? 1.0 : 0.3;
             animals.forEach(a => {
@@ -2829,6 +3044,8 @@ export default class GameScene extends Phaser.Scene {
 
             if (s.type === 'guide') {
                 this._updateGuide(s, sDelta);
+            } else if (s.type === 'gardener') {
+                this._updateGardener(s, sDelta);
             } else {
                 this._updateWorker(s, sDelta);
             }
@@ -2889,6 +3106,130 @@ export default class GameScene extends Phaser.Scene {
                 s.phase = 'idle';
                 s.workTimer = 0;
                 s.targetHab = null;
+            }
+        }
+    }
+
+    _findGardenWithReadyCrops() {
+        for (const fac of this.state.facilities) {
+            if (fac.type !== 'garden' || !fac.produce) continue;
+            if (fac.produce.some(slot => !slot.picked)) return fac;
+        }
+        return null;
+    }
+
+    _gardenAdjacentTile(fac) {
+        const ft = FACILITIES[fac.type];
+        const candidates = [];
+        for (let dx = 0; dx < ft.w; dx++) {
+            candidates.push({ gx: fac.gx + dx, gy: fac.gy - 1 });
+            candidates.push({ gx: fac.gx + dx, gy: fac.gy + ft.h });
+        }
+        for (let dy = 0; dy < ft.h; dy++) {
+            candidates.push({ gx: fac.gx - 1, gy: fac.gy + dy });
+            candidates.push({ gx: fac.gx + ft.w, gy: fac.gy + dy });
+        }
+        const walkable = candidates.filter(c => this._isGuideWalkable(c.gx, c.gy));
+        if (walkable.length === 0) return null;
+        return Phaser.Utils.Array.GetRandom(walkable);
+    }
+
+    _findAnyGarden() {
+        const gardens = this.state.facilities.filter(f => f.type === 'garden');
+        return gardens.length > 0 ? Phaser.Utils.Array.GetRandom(gardens) : null;
+    }
+
+    _updateGardener(s, sDelta) {
+        if (s.phase === 'idle') {
+            s.idleTimer += sDelta;
+            if (s.idleTimer >= 3000) {
+                s.idleTimer = 0;
+                const garden = this._findGardenWithReadyCrops();
+                if (garden) {
+                    s._targetFac = garden.id;
+                    const tile = this._gardenAdjacentTile(garden);
+                    if (tile) {
+                        s.tx = tile.gx * TILE + TILE / 2;
+                        s.ty = MAP_Y + tile.gy * TILE + TILE / 2;
+                        s.phase = 'walking';
+                        this._setStaffPath(s);
+                    }
+                } else {
+                    const garden2 = this._findAnyGarden();
+                    if (garden2) {
+                        s._targetFac = garden2.id;
+                        const tile = this._gardenAdjacentTile(garden2);
+                        if (tile) {
+                            s.tx = tile.gx * TILE + TILE / 2;
+                            s.ty = MAP_Y + tile.gy * TILE + TILE / 2;
+                            s.phase = 'wandering';
+                            this._setStaffPath(s);
+                        }
+                    }
+                }
+            }
+        } else if (s.phase === 'wandering') {
+            const arrived = this._staffMoveAlongPath(s, sDelta);
+            if (arrived) {
+                s._wanderTimer = 0;
+                s._wanderWait = 2000 + Math.random() * 3000;
+                s.phase = 'wanderPause';
+            }
+        } else if (s.phase === 'wanderPause') {
+            s._wanderTimer += sDelta;
+            if (s._wanderTimer >= s._wanderWait) {
+                const garden = this._findGardenWithReadyCrops();
+                if (garden) {
+                    s._targetFac = garden.id;
+                    const tile = this._gardenAdjacentTile(garden);
+                    if (tile) {
+                        s.tx = tile.gx * TILE + TILE / 2;
+                        s.ty = MAP_Y + tile.gy * TILE + TILE / 2;
+                        s.phase = 'walking';
+                        this._setStaffPath(s);
+                        return;
+                    }
+                }
+                const fac = this.state.facilities.find(f => f.id === s._targetFac);
+                if (fac) {
+                    const tile = this._gardenAdjacentTile(fac);
+                    if (tile) {
+                        s.tx = tile.gx * TILE + TILE / 2;
+                        s.ty = MAP_Y + tile.gy * TILE + TILE / 2;
+                        s.phase = 'wandering';
+                        this._setStaffPath(s);
+                        return;
+                    }
+                }
+                s.phase = 'idle';
+                s.idleTimer = 0;
+                s._targetFac = null;
+            }
+        } else if (s.phase === 'walking') {
+            const arrived = this._staffMoveAlongPath(s, sDelta);
+            if (arrived) {
+                s.phase = 'working';
+                s.workTimer = 0;
+            }
+        } else if (s.phase === 'working') {
+            s.workTimer += sDelta;
+            if (s.workTimer >= 1200) {
+                const fac = this.state.facilities.find(f => f.id === s._targetFac);
+                if (fac && fac.produce) {
+                    const ready = fac.produce.filter(slot => !slot.picked);
+                    if (ready.length > 0) {
+                        this.pickProduce(fac, ready[0]);
+                        this.heartEffect(s.sprite.x, s.sprite.y);
+                    }
+                    const moreReady = fac.produce.some(slot => !slot.picked);
+                    if (moreReady) {
+                        s.workTimer = 0;
+                        return;
+                    }
+                }
+                s.phase = 'idle';
+                s.workTimer = 0;
+                s._targetFac = null;
             }
         }
     }
@@ -3578,29 +3919,31 @@ export default class GameScene extends Phaser.Scene {
     }
 
     /* ========== UPDATE ========== */
-    // Main loop: time, animals, visitors, staff, missions, ambient sound, rescue timing, auto-save.
-    // Skipped entirely while rescuePaused, settingsPaused, movingHabitat, or habSelectMode is set.
-    // Visitors are skipped during buildMode; staff update even during buildMode (phase-based work).
+    // Main loop: time, animals, visitors, staff, missions, gardens, ambient sound, rescue timing,
+    // auto-save. Skipped entirely while rescuePaused, settingsPaused, movingHabitat, habSelectMode,
+    // or buildMode is set (game time pauses during build/place/move modes).
     // Timer-based callbacks (updateBonds, checkAutoBreed, checkIllness, checkAchievements)
     // run on independent Phaser timers and have their own pause guards for the same conditions.
 
     update(time, delta) {
-        if (this.state.rescuePaused || this.state.settingsPaused || this._movingHabitat || this._habSelectMode) return;
+        if (this.state.rescuePaused || this.state.settingsPaused || this._movingHabitat || this._habSelectMode || this.state.buildMode) return;
         this.updateTime(delta);
         this.updateAnimals(delta, time);
-        if (!this.state.buildMode) {
-            this.updateVisitors(delta);
-        }
+        this.updateVisitors(delta);
         this.updateStaff(delta);
         this.updateMissions(delta);
         this.updateGardens(delta);
         this.sfx.updateAmbient(delta, this.state.time);
 
-        this._rescueAccum += delta * this.timeSpeedMult;
+        if (!this.state.buildMode && !this._habSelectMode) {
+            this._rescueAccum += delta * this.timeSpeedMult;
+        }
         if (this._rescueAccum >= this.rescueInterval) {
-            this._rescueAccum -= this.rescueInterval;
-            if (this._firstRescue) { this._firstRescue = false; this.triggerRescue('cat'); }
-            else this.triggerRescue();
+            if (!this.state.buildMode && !this._habSelectMode) {
+                this._rescueAccum -= this.rescueInterval;
+                if (this._firstRescue) { this._firstRescue = false; this.triggerRescue('cat'); }
+                else this.triggerRescue();
+            }
         }
 
         if (this.state.autoSave) {

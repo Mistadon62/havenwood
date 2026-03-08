@@ -252,12 +252,13 @@ export const UPGRADES = {
     conservation:   { id: 'conservation', name: 'Conservation', cost: 800, desc: 'Rescues arrive 30% faster' },
 };
 
-// Staff types — 3 hirable roles (volunteer, vet, guide) with costs and effects.
+// Staff types — 4 hirable roles (volunteer, vet, guide, gardener) with costs and effects.
 // Volunteers are free (0g hire, 0g salary) but limited to 1.
 export const STAFF_TYPES = {
-    volunteer:  { id: 'volunteer', name: 'Volunteer', hireCost: 0, salary: 0, maxCount: 1, desc: 'Auto-feeds one habitat', color: 0x55AA55 },
+    volunteer:  { id: 'volunteer', name: 'Volunteer', hireCost: 0, salary: 0, maxCount: 1, desc: 'Keeps animals fed and happy', color: 0x55AA55 },
     vet:        { id: 'vet', name: 'Veterinarian', hireCost: 200, salary: 40, desc: 'Keeps animals healthy', color: 0xAA5555 },
     guide:      { id: 'guide', name: 'Tour Guide', hireCost: 100, salary: 25, desc: '+25% visitor income', color: 0xAA8855 },
+    gardener:   { id: 'gardener', name: 'Gardener', hireCost: 120, salary: 20, desc: 'Auto-harvests garden crops', color: 0x66AA44 },
 };
 
 // Research tree — 4 branches x 4 tiers; unlock dependencies and effect keys drive gameplay
