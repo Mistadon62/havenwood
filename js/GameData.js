@@ -252,11 +252,10 @@ export const UPGRADES = {
     conservation:   { id: 'conservation', name: 'Conservation', cost: 800, desc: 'Rescues arrive 30% faster' },
 };
 
-// Staff types — 4 hirable roles (volunteer, caretaker, vet, guide) with costs and effects.
+// Staff types — 3 hirable roles (volunteer, vet, guide) with costs and effects.
 // Volunteers are free (0g hire, 0g salary) but limited to 1.
 export const STAFF_TYPES = {
     volunteer:  { id: 'volunteer', name: 'Volunteer', hireCost: 0, salary: 0, maxCount: 1, desc: 'Auto-feeds one habitat', color: 0x55AA55 },
-    caretaker:  { id: 'caretaker', name: 'Caretaker', hireCost: 150, salary: 30, desc: 'Auto-feeds all animals', color: 0x5566AA },
     vet:        { id: 'vet', name: 'Veterinarian', hireCost: 200, salary: 40, desc: 'Keeps animals healthy', color: 0xAA5555 },
     guide:      { id: 'guide', name: 'Tour Guide', hireCost: 100, salary: 25, desc: '+25% visitor income', color: 0xAA8855 },
 };

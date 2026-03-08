@@ -792,11 +792,10 @@ export class SpriteGenerator {
         });
     }
 
-    // Staff sprites: volunteer, caretaker, vet, guide (color-coded with role-specific details).
+    // Staff sprites: volunteer, vet, guide (color-coded with role-specific details).
     static staff(scene) {
         const types = {
             volunteer: 0x55AA55,
-            caretaker: 0x5566AA,
             vet: 0xAA5555,
             guide: 0xAA8855
         };

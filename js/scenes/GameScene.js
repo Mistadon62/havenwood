@@ -6,7 +6,7 @@
  * goal-driven visitors (8-direction A* pathfinding, prefer dec_path/entrance tiles for
  * viewing spots and routes, "?" confused pause when leaving path network for off-path
  * habitats, react with speech bubbles, reputation per visit, paths recalculate on build changes),
- * phase-based staff AI (volunteers/caretakers/vets walk into habitats via A* pathfinding,
+ * phase-based staff AI (volunteers/vets walk into habitats via A* pathfinding,
  * perform localized work with heart animations; tour guides are player-placed anywhere
  * on the map and wait at their post — ~50% of visitors want a tour and walk to the guide,
  * the guide accumulates a group then leads them through all habitats with individual
@@ -240,10 +240,11 @@ export default class GameScene extends Phaser.Scene {
                 if (isFacility) {
                     const facId = this.state.buildMode.replace('facility_', '');
                     const ft = FACILITIES[facId];
-                    const ok = this.canPlaceFacility(facId, gx, gy);
+                    const fgx = gx - Math.floor(ft.w / 2), fgy = gy - Math.floor(ft.h / 2);
+                    const ok = this.canPlaceFacility(facId, fgx, fgy);
                     const c = ok ? 0x00ff00 : 0xff0000;
                     if (this._buildPreview) {
-                        const dx = gx * TILE, dy = gy * TILE;
+                        const dx = fgx * TILE, dy = fgy * TILE;
                         for (const t of this._buildPreview.tracked) {
                             t.obj.setVisible(true);
                             if (t.isGfx) t.obj.setPosition(t.origX + dx, t.origY + dy);
@@ -252,27 +253,28 @@ export default class GameScene extends Phaser.Scene {
                     }
                     this.preview.clear().setVisible(true);
                     this.preview.fillStyle(c, 0.25);
-                    this.preview.fillRect(gx * TILE, MAP_Y + gy * TILE, ft.w * TILE, ft.h * TILE);
+                    this.preview.fillRect(fgx * TILE, MAP_Y + fgy * TILE, ft.w * TILE, ft.h * TILE);
                     this.preview.lineStyle(2, c, 0.7);
-                    this.preview.strokeRect(gx * TILE, MAP_Y + gy * TILE, ft.w * TILE, ft.h * TILE);
+                    this.preview.strokeRect(fgx * TILE, MAP_Y + fgy * TILE, ft.w * TILE, ft.h * TILE);
                     return;
                 }
 
                 const isMove = this.state.buildMode.startsWith('_move_');
                 const habType = isMove ? this.state.buildMode.replace('_move_', '') : this.state.buildMode;
                 const ht = HABITATS[habType];
-                const ok = isMove ? this.canPlaceMove(habType, gx, gy) : this.canPlace(this.state.buildMode, gx, gy);
+                const hgx = gx - Math.floor(ht.w / 2), hgy = gy - Math.floor(ht.h / 2);
+                const ok = isMove ? this.canPlaceMove(habType, hgx, hgy) : this.canPlace(this.state.buildMode, hgx, hgy);
                 const c = ok ? 0x00ff00 : 0xff0000;
 
                 if (isMove && this._moveTracked) {
-                    const dx = (gx - this._moveOrigin.gx) * TILE;
-                    const dy = (gy - this._moveOrigin.gy) * TILE;
+                    const dx = (hgx - this._moveOrigin.gx) * TILE;
+                    const dy = (hgy - this._moveOrigin.gy) * TILE;
                     for (const t of this._moveTracked) {
                         if (t.isGfx) t.obj.setPosition(t.origX + dx, t.origY + dy);
                         else { t.obj.x = t.origX + dx; t.obj.y = t.origY + dy; }
                     }
                 } else if (!isMove && this._buildPreview) {
-                    const dx = gx * TILE, dy = gy * TILE;
+                    const dx = hgx * TILE, dy = hgy * TILE;
                     for (const t of this._buildPreview.tracked) {
                         t.obj.setVisible(true);
                         if (t.isGfx) t.obj.setPosition(t.origX + dx, t.origY + dy);
@@ -282,9 +284,9 @@ export default class GameScene extends Phaser.Scene {
 
                 this.preview.clear().setVisible(true);
                 this.preview.fillStyle(c, 0.25);
-                this.preview.fillRect(gx * TILE, MAP_Y + gy * TILE, ht.w * TILE, ht.h * TILE);
+                this.preview.fillRect(hgx * TILE, MAP_Y + hgy * TILE, ht.w * TILE, ht.h * TILE);
                 this.preview.lineStyle(2, c, 0.7);
-                this.preview.strokeRect(gx * TILE, MAP_Y + gy * TILE, ht.w * TILE, ht.h * TILE);
+                this.preview.strokeRect(hgx * TILE, MAP_Y + hgy * TILE, ht.w * TILE, ht.h * TILE);
                 return;
             }
             this.preview.setVisible(false);
@@ -498,12 +500,20 @@ export default class GameScene extends Phaser.Scene {
                     }
                 } else if (this.state.buildMode.startsWith('facility_')) {
                     const facId = this.state.buildMode.replace('facility_', '');
-                    if (this.canPlaceFacility(facId, gx, gy)) { this.placeFacility(facId, gx, gy); this.exitBuild(); }
+                    const ft = FACILITIES[facId];
+                    const fgx = gx - Math.floor(ft.w / 2), fgy = gy - Math.floor(ft.h / 2);
+                    if (this.canPlaceFacility(facId, fgx, fgy)) { this.placeFacility(facId, fgx, fgy); this.exitBuild(); }
                 } else if (this._movingHabitat) {
                     const habType = this.state.buildMode.replace('_move_', '');
-                    if (this.canPlaceMove(habType, gx, gy)) this.finishMove(gx, gy);
+                    const ht = HABITATS[habType];
+                    const hgx = gx - Math.floor(ht.w / 2), hgy = gy - Math.floor(ht.h / 2);
+                    if (this.canPlaceMove(habType, hgx, hgy)) this.finishMove(hgx, hgy);
                 } else {
-                    if (this.canPlace(this.state.buildMode, gx, gy)) { this.placeHabitat(this.state.buildMode, gx, gy); this.exitBuild(); }
+                    const ht = HABITATS[this.state.buildMode];
+                    if (ht) {
+                        const hgx = gx - Math.floor(ht.w / 2), hgy = gy - Math.floor(ht.h / 2);
+                        if (this.canPlace(this.state.buildMode, hgx, hgy)) { this.placeHabitat(this.state.buildMode, hgx, hgy); this.exitBuild(); }
+                    }
                 }
             } else {
                 const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
@@ -2266,6 +2276,14 @@ export default class GameScene extends Phaser.Scene {
         v._grassPath = null;
         v._needsConfused = false;
 
+        const hasPlacedPaths = this.state.decorations.some(d => d.type === 'path');
+        if (!hasPlacedPaths) {
+            const full = this._findPath(v.sprite.x, v.sprite.y, v.tx, v.ty);
+            v._path = full || [];
+            v._pathIdx = 0;
+            return;
+        }
+
         const pathWalk = (gx, gy) => this._isPathWalkable(gx, gy);
 
         const vgx = Math.floor(v.sprite.x / TILE);
@@ -2564,7 +2582,7 @@ export default class GameScene extends Phaser.Scene {
     /* ========== STAFF ========== */
     // Phase-based goal-driven AI with A* pathfinding. Work effects are localized (per-habitat).
     // All staff (including guides) use _isStaffWalkable for direct routes across grass/paths/habitats.
-    // Volunteer/caretaker/vet: idle → walking → working (inside habitat, heart animation) → idle.
+    // Volunteer/vet: idle → walking → working (inside habitat, heart animation) → idle.
     // Tour guide: hired via placement mode (player clicks a walkable tile to set the guide's post).
     // homeX/homeY store the post position. idle (wait at post) → grabs seekingGuide visitors one
     // at a time (_guideGrabOne) → waiting (accumulates group, starts tour when 4 gathered, or
@@ -2619,16 +2637,6 @@ export default class GameScene extends Phaser.Scene {
         if (s.type === 'volunteer') {
             return Phaser.Utils.Array.GetRandom(this.state.habitats);
         }
-        if (s.type === 'caretaker') {
-            let best = null, worstHunger = Infinity;
-            for (const hab of this.state.habitats) {
-                const animals = this.state.animals.filter(a => a.habitatId === hab.id);
-                if (animals.length === 0) continue;
-                const avgHunger = animals.reduce((sum, a) => sum + a.hunger, 0) / animals.length;
-                if (avgHunger < worstHunger) { worstHunger = avgHunger; best = hab; }
-            }
-            return best || Phaser.Utils.Array.GetRandom(this.state.habitats);
-        }
         if (s.type === 'vet') {
             const sick = this.state.habitats.filter(h =>
                 this.state.animals.some(a => a.habitatId === h.id && (a.illness || a.health < 60))
@@ -2660,8 +2668,6 @@ export default class GameScene extends Phaser.Scene {
 
         if (s.type === 'volunteer') {
             animals.forEach(a => { a.hunger = Math.min(100, a.hunger + 12); });
-        } else if (s.type === 'caretaker') {
-            animals.forEach(a => { a.hunger = Math.min(100, a.hunger + 8); });
         } else if (s.type === 'vet') {
             const vetChance = this.hasResearch('super_vet') ? 1.0 : 0.3;
             animals.forEach(a => {
@@ -2841,7 +2847,7 @@ export default class GameScene extends Phaser.Scene {
         const dx = wpx - s.sprite.x, dy = wpy - s.sprite.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist > 3) {
-            const speed = s.type === 'guide' ? 28 : 22;
+            const speed = s.type === 'guide' ? 36 : 32;
             const spd = speed * sDelta / 1000;
             s.sprite.x += (dx / dist) * spd;
             s.sprite.y += (dy / dist) * spd;
