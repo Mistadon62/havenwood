@@ -202,6 +202,7 @@ export default class GameScene extends Phaser.Scene {
     // checked first so garden picking still works. Hovering an animal sprite while zoomed into a
     // habitat shows the pointer cursor. World clicks are otherwise suppressed while zoomed
     // (viewingHabitat/viewingFacility) or while a HUD management panel is open.
+    // Wheel: scroll up over habitat/facility zooms in; scroll down when zoomed zooms out.
     // Right-click is intercepted at the DOM level (capture-phase mousedown) so Phaser never
     // processes it — no game object pointerdown handlers fire. _handleRightClick() then exits
     // build/move mode or closes open HUD panels. ESC priority: close settings → open settings
@@ -586,6 +587,31 @@ export default class GameScene extends Phaser.Scene {
             }
         });
 
+        this.input.on('wheel', (pointer, _go, _dx, deltaY) => {
+            if (this.state.buildMode || this._habSelectMode || this._movingHabitat || this._movingFacility || this.state.rescuePaused) return;
+            const hud = this.scene.get('HUDScene');
+            if (hud && hud.isPointerOverPanel(pointer.x, pointer.y)) return;
+
+            const worldPt = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+            const gx = Math.floor(worldPt.x / TILE), gy = Math.floor((worldPt.y - MAP_Y) / TILE);
+
+            if (deltaY < 0) {
+                if (!this.state.viewingHabitat && !this.state.viewingFacility && gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
+                    const cell = this.grid[gy]?.[gx];
+                    if (cell && typeof cell === 'string' && cell.startsWith('hab_')) {
+                        const hab = this.state.habitats.find(h => h.id === cell);
+                        if (hab) { this.sfx.click(); this.zoomToHabitat(hab); this.game.events.emit('showHabitatInfo', hab); }
+                    } else if (cell && typeof cell === 'string' && cell.startsWith('fac_')) {
+                        const fac = this.state.facilities.find(f => f.id === cell);
+                        if (fac) { this.sfx.click(); this.zoomToFacility(fac); }
+                    }
+                }
+            } else if (deltaY > 0 && (this.state.viewingHabitat || this.state.viewingFacility)) {
+                this.sfx.click();
+                this.zoomOut();
+            }
+        });
+
         this.input.keyboard.on('keydown-ESC', () => {
             const hud = this.scene.get('HUDScene');
             if (hud && hud.settingsPanel) { hud.closeSettingsMenu(); return; }
@@ -620,7 +646,8 @@ export default class GameScene extends Phaser.Scene {
         if (this._movingFacility) { this.cancelFacilityMove(); return; }
         if (this.state.buildMode) { this.exitBuild(); return; }
         const hud = this.scene.get('HUDScene');
-        if (hud && hud.hasOpenPanel()) hud.closeAllPanels();
+        if (hud && hud.hasOpenPanel()) { hud.closeAllPanels(); return; }
+        if (this.state.viewingHabitat || this.state.viewingFacility) this.zoomOut();
     }
 
     /* ========== HABITAT / FACILITY ZOOM ========== */
@@ -1010,6 +1037,62 @@ export default class GameScene extends Phaser.Scene {
         this._recalcStaffPaths();
         this.sfx.build();
         this.game.events.emit('notification', `${ht.name} demolished.`);
+    }
+
+    // True if every animal in the habitat can be relocated to another compatible habitat with space.
+    canAllAnimalsInHabitatBeRelocated(habId) {
+        const hab = this.state.habitats.find(h => h.id === habId);
+        if (!hab) return false;
+        const animals = this.state.animals.filter(a => a.habitatId === habId);
+        if (animals.length === 0) return true;
+
+        const occupancy = {};
+        for (const h of this.state.habitats) {
+            if (h.id === habId) continue;
+            const inH = this.state.animals.filter(a => a.habitatId === h.id);
+            occupancy[h.id] = inH.length + inH.filter(a => a.isPregnant).length;
+        }
+
+        for (const a of animals) {
+            const sp = SPECIES[a.speciesId];
+            const target = this.state.habitats.find(h => {
+                if (h.id === habId) return false;
+                if (!HABITATS[h.type].types.includes(sp.type)) return false;
+                return occupancy[h.id] < this.getHabitatCapacity(h);
+            });
+            if (!target) return false;
+            occupancy[target.id]++;
+        }
+        return true;
+    }
+
+    // Relocates all animals to compatible habitats, then destroys. Call only if canAllAnimalsInHabitatBeRelocated.
+    destroyHabitatWithAutoRelocate(habId) {
+        const hab = this.state.habitats.find(h => h.id === habId);
+        if (!hab || !this.canAllAnimalsInHabitatBeRelocated(habId)) return;
+
+        const animals = [...this.state.animals.filter(a => a.habitatId === habId)];
+        const occupancy = {};
+        for (const h of this.state.habitats) {
+            if (h.id === habId) continue;
+            const inH = this.state.animals.filter(a => a.habitatId === h.id);
+            occupancy[h.id] = inH.length + inH.filter(a => a.isPregnant).length;
+        }
+
+        for (const a of animals) {
+            const sp = SPECIES[a.speciesId];
+            const target = this.state.habitats.find(h => {
+                if (h.id === habId) return false;
+                if (!HABITATS[h.type].types.includes(sp.type)) return false;
+                return occupancy[h.id] < this.getHabitatCapacity(h);
+            });
+            if (target) {
+                occupancy[target.id]++;
+                this._relocateAnimalSilent(a, target);
+            }
+        }
+
+        this.destroyHabitat(habId);
     }
 
     /* ========== BUILD ========== */
@@ -3550,7 +3633,11 @@ export default class GameScene extends Phaser.Scene {
     findAllCompatibleHabitats(sp) {
         return this.state.habitats.filter(h => {
             const ht = HABITATS[h.type];
-            return ht.types.includes(sp.type) && h.animals.length < this.getHabitatCapacity(h);
+            if (!ht.types.includes(sp.type)) return false;
+            const animalsInHab = this.state.animals.filter(a => a.habitatId === h.id);
+            const pregnantCount = animalsInHab.filter(a => a.isPregnant).length;
+            const effectiveOccupancy = animalsInHab.length + pregnantCount;
+            return effectiveOccupancy < this.getHabitatCapacity(h);
         });
     }
 
@@ -3642,6 +3729,14 @@ export default class GameScene extends Phaser.Scene {
     }
 
     relocateAnimal(animal, targetHab) {
+        this._relocateAnimalSilent(animal, targetHab);
+        this.game.events.emit('notification', `${animal.name} relocated!`);
+        this.sfx.click();
+        this.zoomToHabitat(targetHab);
+        this.game.events.emit('showHabitatInfo', targetHab);
+    }
+
+    _relocateAnimalSilent(animal, targetHab) {
         const srcHab = this.state.habitats.find(h => h.id === animal.habitatId);
         const leftFriends = animal.bonds.filter(bid => {
             const f = this.state.animals.find(x => x.id === bid);
@@ -3665,12 +3760,6 @@ export default class GameScene extends Phaser.Scene {
         animal.tx = tx; animal.ty = ty;
         animal.sprite.x = Math.round(tx);
         animal.sprite.y = Math.round(ty);
-
-        this.game.events.emit('notification', `${animal.name} relocated!`);
-        this.sfx.click();
-
-        this.zoomToHabitat(targetHab);
-        this.game.events.emit('showHabitatInfo', targetHab);
     }
 
     /* ========== ACHIEVEMENTS ========== */

@@ -988,18 +988,25 @@ export default class HUDScene extends Phaser.Scene {
         yy += 30;
 
         const isEmpty = hab.animals.length === 0;
+        const canAutoRelocate = this.gs.canAllAnimalsInHabitatBeRelocated(hab.id);
+        const canDestroy = isEmpty || canAutoRelocate;
+        const destroyLabel = isEmpty ? 'Destroy' : (canAutoRelocate ? 'Destroy (Auto Relocate)' : 'Destroy');
         const destroyBg = this.add.graphics();
-        destroyBg.fillStyle(isEmpty ? 0x773333 : 0x333333, 0.5);
+        destroyBg.fillStyle(canDestroy ? 0x773333 : 0x333333, 0.5);
         destroyBg.fillRoundedRect(6, yy, pw - 12, 24, 3);
         ct.add(destroyBg);
-        const destroyBtn = this.txt(pw / 2, yy + 12, 'Destroy', 5, isEmpty ? '#DD6666' : '#666666').setOrigin(0.5);
-        if (isEmpty) {
-            destroyBtn.setInteractive({ useHandCursor: true });
-            destroyBtn.on('pointerdown', () => { this.gs.destroyHabitat(hab.id); });
-            destroyBtn.on('pointerover', () => destroyBtn.setColor('#FF8888'));
-            destroyBtn.on('pointerout', () => destroyBtn.setColor('#DD6666'));
+        const destroyTxt = this.txt(pw / 2, yy + 12, destroyLabel, 5, canDestroy ? '#DD6666' : '#666666').setOrigin(0.5);
+        ct.add(destroyTxt);
+        if (canDestroy) {
+            const destroyHit = this.add.rectangle(pw / 2, yy + 12, pw - 12, 24, 0, 0).setOrigin(0.5).setInteractive({ useHandCursor: true });
+            destroyHit.on('pointerdown', () => {
+                if (isEmpty) this.gs.destroyHabitat(hab.id);
+                else this.gs.destroyHabitatWithAutoRelocate(hab.id);
+            });
+            destroyHit.on('pointerover', () => destroyTxt.setColor('#FF8888'));
+            destroyHit.on('pointerout', () => destroyTxt.setColor('#DD6666'));
+            ct.add(destroyHit);
         }
-        ct.add(destroyBtn);
         yy += 30;
 
         const ph = yy + 8;
