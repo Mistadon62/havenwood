@@ -108,7 +108,6 @@ export default class MenuScene extends Phaser.Scene {
         };
 
         const layers = [
-            { y: 0.26, spacing: 14, jitterX: 8, jitterY: 6, scaleMin: 0.15, scaleMax: 0.28, dark: true, wave: true },
             { y: 0.33, spacing: 22, jitterX: 10, jitterY: 12, scaleMin: 0.3,  scaleMax: 0.45, dark: true, wave: true },
             { y: 0.38, spacing: 20, jitterX: 10, jitterY: 12, scaleMin: 0.4,  scaleMax: 0.55, dark: true, wave: true },
             { y: 0.43, spacing: 18, jitterX: 9,  jitterY: 10, scaleMin: 0.5,  scaleMax: 0.7,  dark: true, wave: true },
