@@ -31,16 +31,19 @@ export const HABITATS = {
     barn:   { id: 'barn', name: 'Barn', cost: 250, w: 4, h: 4, capacity: 5, types: ['domestic'], fill: 0xCD853F, stroke: 0x8B5A2B, desc: 'A warm barn for domestic animals.' },
 };
 
-// Bathroom dirtiness: accumulates over time, 0–1 scale. At 1, visitors get nauseous.
+// Restroom dirtiness: accumulates over time, 0–1 scale. At 1, visitors get nauseous.
 export const BATHROOM_DIRTY_RATE = 0.00003;
+
+// Visitor trash: chance to drop when leaving. Visitors show gross emoji when walking past trash.
+export const TRASH_DROP_CHANCE = 0.08;
 
 // Facilities — zoomable multi-tile buildings (no animals). Garden grows harvestable produce.
 // Gift shop: some visitors stop here before leaving; tour visitors go here then leave (no more habitats).
-// Bathroom: visitors may stop here before leaving; improves satisfaction.
+// Restroom: visitors may stop here before leaving; improves satisfaction.
 export const FACILITIES = {
     garden:    { id: 'garden', name: 'Garden', cost: 150, w: 3, h: 4, fill: 0x88CC66, stroke: 0x5A8A3A, desc: 'A tranquil garden that beautifies the sanctuary.' },
     gift_shop: { id: 'gift_shop', name: 'Gift Shop', cost: 200, w: 3, h: 3, fill: 0xCC8866, stroke: 0x8B5A3A, desc: 'Visitors stop here before leaving. Some will browse and spend.' },
-    bathroom:  { id: 'bathroom', name: 'Bathroom', cost: 80, w: 2, h: 2, fill: 0x88AAEE, stroke: 0x5A7ABB, desc: 'Restroom facilities. Visitors appreciate the convenience.' },
+    bathroom:  { id: 'bathroom', name: 'Restroom', cost: 80, w: 2, h: 2, fill: 0x88AAEE, stroke: 0x5A7ABB, desc: 'Restroom facilities. Visitors appreciate the convenience.' },
 };
 
 // Garden produce — 3 types × 4 each (12 total). Picked items give food and regrow after 8 hours (480 min).
@@ -52,13 +55,34 @@ export const GARDEN_PRODUCE = [
 ];
 export const GARDEN_REGROW_TIME = 480;
 
-// Decorations — single-tile placeable items that improve sanctuary aesthetics
+// Decorations — single-tile placeable items that improve sanctuary aesthetics.
+// Path-like decors (path, path_stone, path_brick, path_gravel) are walkable and placeable on entrance.
+// category: Flowers | Greenery | Flooring | Utilities (for filter dropdown)
 export const DECORATIONS = {
-    tree:     { id: 'tree',     name: 'Tree',     cost: 15, color: 0x2a5a2a },
-    path:     { id: 'path',     name: 'Path',     cost: 5,  color: 0xD4B87C },
-    trashcan: { id: 'trashcan', name: 'Trashcan', cost: 10, color: 0x888888 },
-    flowers:  { id: 'flowers',  name: 'Flowers',  cost: 10, color: 0xFF88AA },
+    tree:        { id: 'tree',        name: 'Tree',        cost: 15, color: 0x2a5a2a, category: 'Greenery' },
+    path:        { id: 'path',        name: 'Path',        cost: 5,  color: 0xD4B87C, isPath: true, category: 'Flooring' },
+    path_stone:  { id: 'path_stone',  name: 'Stone Path',  cost: 8,  color: 0x888888, isPath: true, category: 'Flooring' },
+    path_brick:  { id: 'path_brick',  name: 'Brick Path',  cost: 10, color: 0xB85C4A, isPath: true, category: 'Flooring' },
+    path_gravel: { id: 'path_gravel', name: 'Gravel Path', cost: 6,  color: 0x6B6B5A, isPath: true, category: 'Flooring' },
+    trashcan:    { id: 'trashcan',    name: 'Trashcan',    cost: 10, color: 0x888888, category: 'Utilities' },
+    flowers:     { id: 'flowers',     name: 'Flowers',     cost: 10, color: 0xFF88AA, category: 'Flowers' },
+    potted_plant:  { id: 'potted_plant',  name: 'Potted Plant',  cost: 12, color: 0x44AA44, category: 'Greenery' },
+    potted_flowers:{ id: 'potted_flowers',name: 'Potted Flowers',cost: 14, color: 0xFF88CC, category: 'Flowers' },
+    bush:        { id: 'bush',        name: 'Bush',        cost: 18, color: 0x2a5a2a, category: 'Greenery' },
+    hedge:       { id: 'hedge',       name: 'Hedge',       cost: 20, color: 0x3a6a3a, category: 'Greenery' },
+    planter:     { id: 'planter',     name: 'Planter',     cost: 16, color: 0x8B5A2B, category: 'Flowers' },
+    tulips:      { id: 'tulips',      name: 'Tulips',      cost: 11, color: 0xFF4466, category: 'Flowers' },
+    daisies:     { id: 'daisies',     name: 'Daisies',     cost: 9,  color: 0xFFFFFF, category: 'Flowers' },
+    sunflowers:  { id: 'sunflowers',  name: 'Sunflowers',  cost: 18, color: 0xFFCC00, category: 'Flowers' },
+    lavender:    { id: 'lavender',    name: 'Lavender',     cost: 13, color: 0x9966CC, category: 'Flowers' },
+    roses:       { id: 'roses',       name: 'Roses',       cost: 22, color: 0xCC2244, category: 'Flowers' },
+    lily:        { id: 'lily',        name: 'Lily',        cost: 15, color: 0xFFEEAA, category: 'Flowers' },
+    fern:        { id: 'fern',        name: 'Fern',        cost: 11, color: 0x3a7a3a, category: 'Greenery' },
+    flower_bed:  { id: 'flower_bed',  name: 'Flower Bed',  cost: 24, color: 0x88AA55, category: 'Flowers' },
+    marigolds:   { id: 'marigolds',   name: 'Marigolds',   cost: 10, color: 0xFF8800, category: 'Flowers' },
 };
+
+export const DECOR_CATEGORIES = ['All', 'Flowers', 'Greenery', 'Flooring', 'Utilities'];
 
 // Species — 14 animals with rarity, hunger rates; some are seasonal-only.
 // Each species has variants: { name, gender ('m'/'f'), color } for unique appearances per individual.
@@ -247,13 +271,12 @@ export const ACHIEVEMENTS = [
     { id: 'full_research', name: 'Genius', desc: 'Complete all research' },
 ];
 
-// Upgrades — 8 purchasable improvements (feed, enrichment, sign, medical, gift shop, etc.)
+// Upgrades — 7 purchasable improvements (feed, enrichment, sign, medical, etc.)
 export const UPGRADES = {
     better_feed:    { id: 'better_feed', name: 'Better Feed', cost: 200, desc: 'Feeding restores 45 hunger (+50%)' },
     enrichment_up:  { id: 'enrichment_up', name: 'Enrichment', cost: 300, desc: 'Happiness decays 50% slower' },
     sanctuary_sign: { id: 'sanctuary_sign', name: 'Sanctuary Sign', cost: 150, desc: '+20% visitor income' },
     medical_kit:    { id: 'medical_kit', name: 'Medical Kit', cost: 250, desc: 'Unlocks Heal action for animals' },
-    gift_shop:      { id: 'gift_shop', name: 'Gift Shop', cost: 400, desc: '+3 bonus coins per visitor' },
     habitat_plus:   { id: 'habitat_plus', name: 'Habitat Plus', cost: 500, desc: 'All habitats gain +1 capacity' },
     premium_food:   { id: 'premium_food', name: 'Premium Food', cost: 600, desc: 'Feed gives 60 hunger + 15 happy' },
     conservation:   { id: 'conservation', name: 'Conservation', cost: 800, desc: 'Rescues arrive 30% faster' },
@@ -266,7 +289,7 @@ export const STAFF_TYPES = {
     vet:        { id: 'vet', name: 'Veterinarian', hireCost: 200, salary: 40, desc: 'Keeps animals healthy', color: 0xAA5555 },
     guide:      { id: 'guide', name: 'Tour Guide', hireCost: 100, salary: 25, desc: '+25% visitor income', color: 0xAA8855 },
     gardener:   { id: 'gardener', name: 'Gardener', hireCost: 120, salary: 20, desc: 'Auto-harvests garden crops', color: 0x66AA44 },
-    janitor:    { id: 'janitor', name: 'Janitor', hireCost: 80, salary: 15, desc: 'Keeps bathrooms clean', color: 0x88AAEE },
+    janitor:    { id: 'janitor', name: 'Janitor', hireCost: 80, salary: 15, desc: 'Keeps restrooms clean', color: 0x88AAEE },
 };
 
 // Research tree — 4 branches x 4 tiers; unlock dependencies and effect keys drive gameplay

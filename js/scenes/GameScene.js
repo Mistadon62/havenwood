@@ -34,12 +34,15 @@
 import { TILE, COLS, ROWS, W, H, MAP_Y, TIME_SCALE, START_COINS, HABITATS, SPECIES, RARITY_WEIGHT, RESCUE_MSG, CLR,
     SEASONS, SEASON_ORDER, SEASON_LENGTH, SEASON_CYCLE, UPGRADES, STAFF_TYPES,
     TRAITS, TRAIT_IDS, ILLNESSES, ENRICHMENTS, MISSIONS, VISITOR_TYPES, ACHIEVEMENTS,
-    RESEARCH, RESEARCH_BRANCHES, DECORATIONS, FACILITIES, GARDEN_PRODUCE, GARDEN_REGROW_TIME, BATHROOM_DIRTY_RATE } from '../GameData.js';
+    RESEARCH, RESEARCH_BRANCHES, DECORATIONS, FACILITIES, GARDEN_PRODUCE, GARDEN_REGROW_TIME, BATHROOM_DIRTY_RATE, TRASH_DROP_CHANCE } from '../GameData.js';
 import { SoundManager } from '../SoundManager.js';
 
 let uid = 0;
-// Generates unique IDs for game entities (habitats, animals, staff, missions) to avoid collisions.
+// Generates unique IDs for game entities (habitats, animals, staff, missions, trash) to avoid collisions.
 function genId(prefix) { return `${prefix}_${Date.now().toString(36)}_${(uid++).toString(36)}`; }
+
+const TRASH_PICKUP_RADIUS = 18;
+const TRASH_GROSS_RADIUS = 28;
 
 export default class GameScene extends Phaser.Scene {
     constructor() { super('GameScene'); }
@@ -90,6 +93,7 @@ export default class GameScene extends Phaser.Scene {
         this.grid = [];
         this.habitatDecoObjects = [];
         this.enrichmentSprites = [];
+        this.trash = [];
         this._skipPointerDown = false;
         this.timeSpeedMult = 1;
 
@@ -407,6 +411,7 @@ export default class GameScene extends Phaser.Scene {
                     }
                 }
                 this.hoverOutline.setVisible(false);
+                if (this.getTrashAt(ptr.worldX, ptr.worldY)) { this.game.canvas.style.cursor = 'pointer'; return; }
                 const overAnimal = this.state.animals.some(a =>
                     a.sprite?.input?.enabled && a.sprite.getBounds().contains(ptr.worldX, ptr.worldY)
                 );
@@ -415,6 +420,7 @@ export default class GameScene extends Phaser.Scene {
             }
             const hud = this.scene.get('HUDScene');
             if (hud && hud.hasOpenPanel()) { this.hoverOutline.setVisible(false); this.game.canvas.style.cursor = 'default'; return; }
+            if (this.getTrashAt(ptr.worldX, ptr.worldY)) { this.hoverOutline.setVisible(false); this.game.canvas.style.cursor = 'pointer'; return; }
             const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
             if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
                 const cell = this.grid[gy]?.[gx];
@@ -466,6 +472,8 @@ export default class GameScene extends Phaser.Scene {
             if (this.state.viewingFacility) {
                 const hud0 = this.scene.get('HUDScene');
                 if (hud0 && hud0.isPointerOverPanel(ptr.x, ptr.y)) return;
+                const t0 = this.getTrashAt(ptr.worldX, ptr.worldY);
+                if (t0) { this.pickUpTrash(t0.id); return; }
                 const fac = this.state.facilities.find(f => f.id === this.state.viewingFacility);
                 if (fac && fac.produce) {
                     const wx = ptr.worldX, wy = ptr.worldY;
@@ -505,6 +513,8 @@ export default class GameScene extends Phaser.Scene {
             if (this.state.viewingHabitat) {
                 const hud0 = this.scene.get('HUDScene');
                 if (hud0 && hud0.isPointerOverPanel(ptr.x, ptr.y)) return;
+                const t1 = this.getTrashAt(ptr.worldX, ptr.worldY);
+                if (t1) { this.pickUpTrash(t1.id); return; }
                 const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
                 if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
                     const cell = this.grid[gy]?.[gx];
@@ -568,6 +578,11 @@ export default class GameScene extends Phaser.Scene {
                     }
                 }
             } else {
+                const t = this.getTrashAt(ptr.worldX, ptr.worldY);
+                if (t) {
+                    this.pickUpTrash(t.id);
+                    return;
+                }
                 const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
                 if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
                     const cell = this.grid[gy]?.[gx];
@@ -1295,7 +1310,7 @@ export default class GameScene extends Phaser.Scene {
         if (!dec || this.state.coins < dec.cost) return false;
         const cell = this.grid[gy]?.[gx];
         if (cell === null) return true;
-        if (cell === 'entrance' && decorId === 'path') return true;
+        if (cell === 'entrance' && dec?.isPath) return true;
         return false;
     }
 
@@ -2602,7 +2617,7 @@ export default class GameScene extends Phaser.Scene {
                 const gy = hab.gy + (side.dy === -1 ? -1 : side.dy === hab.h ? hab.h : s);
                 if (gx < 0 || gx >= COLS || gy < 0 || gy >= ROWS) continue;
                 const cell = this.grid[gy]?.[gx];
-                if (cell === 'dec_path' || cell === 'entrance') {
+                if ((cell && cell.startsWith('dec_path')) || cell === 'entrance') {
                     pathSpots.push({ x: gx * TILE + TILE / 2, y: MAP_Y + gy * TILE + TILE / 2 });
                 } else if (cell === null) {
                     grassSpots.push({ x: gx * TILE + TILE / 2, y: MAP_Y + gy * TILE + TILE / 2 });
@@ -2676,7 +2691,7 @@ export default class GameScene extends Phaser.Scene {
                 const gy = fac.gy + (side.dy === -1 ? -1 : side.dy === fac.h ? fac.h : s);
                 if (gx < 0 || gx >= COLS || gy < 0 || gy >= ROWS) continue;
                 const cell = this.grid[gy]?.[gx];
-                if (cell === 'dec_path' || cell === 'entrance') {
+                if ((cell && cell.startsWith('dec_path')) || cell === 'entrance') {
                     pathSpots.push({ x: gx * TILE + TILE / 2, y: MAP_Y + gy * TILE + TILE / 2 });
                 } else if (cell === null) {
                     grassSpots.push({ x: gx * TILE + TILE / 2, y: MAP_Y + gy * TILE + TILE / 2 });
@@ -2744,19 +2759,19 @@ export default class GameScene extends Phaser.Scene {
     _isWalkable(gx, gy) {
         if (gy < 0 || gy >= ROWS || gx < 0 || gx >= COLS) return false;
         const cell = this.grid[gy]?.[gx];
-        return cell === null || cell === 'entrance' || cell === 'dec_path';
+        return cell === null || cell === 'entrance' || (cell && cell.startsWith('dec_path'));
     }
 
     _isPathWalkable(gx, gy) {
         if (gy < 0 || gy >= ROWS || gx < 0 || gx >= COLS) return false;
         const cell = this.grid[gy]?.[gx];
-        return cell === 'entrance' || cell === 'dec_path';
+        return cell === 'entrance' || (cell && cell.startsWith('dec_path'));
     }
 
     _isStaffWalkable(gx, gy) {
         if (gy < 0 || gy >= ROWS || gx < 0 || gx >= COLS) return false;
         const cell = this.grid[gy]?.[gx];
-        if (cell === null || cell === 'entrance' || cell === 'dec_path') return true;
+        if (cell === null || cell === 'entrance' || (cell && cell.startsWith('dec_path'))) return true;
         if (typeof cell === 'string' && cell.startsWith('hab_')) return true;
         return false;
     }
@@ -2764,7 +2779,7 @@ export default class GameScene extends Phaser.Scene {
     _isGuideWalkable(gx, gy) {
         if (gy < 0 || gy >= ROWS || gx < 0 || gx >= COLS) return false;
         const cell = this.grid[gy]?.[gx];
-        return cell === null || cell === 'entrance' || cell === 'dec_path';
+        return cell === null || cell === 'entrance' || (cell && cell.startsWith('dec_path'));
     }
 
     _findPath(sx, sy, ex, ey, walkFn) {
@@ -2848,7 +2863,7 @@ export default class GameScene extends Phaser.Scene {
         v._grassPath = null;
         v._needsConfused = false;
 
-        const hasPlacedPaths = this.state.decorations.some(d => d.type === 'path');
+        const hasPlacedPaths = this.state.decorations.some(d => DECORATIONS[d.id]?.isPath);
         if (!hasPlacedPaths) {
             const full = this._findPath(v.sprite.x, v.sprite.y, v.tx, v.ty);
             v._path = full || [];
@@ -2975,6 +2990,12 @@ export default class GameScene extends Phaser.Scene {
                 v.sprite.y += (dy / dist) * spd;
                 if (Math.abs(dx) > 1) v.sprite.setFlipX(dx < 0);
                 if (v._bubble) v._bubble.setPosition(v.sprite.x, v.sprite.y - 22);
+                const nearTrash = this.getTrashNear(v.sprite.x, v.sprite.y);
+                if (nearTrash && !(v._grossedTrash && v._grossedTrash.has(nearTrash.id))) {
+                    this.showVisitorBubble(v, 'gross');
+                    if (!v._grossedTrash) v._grossedTrash = new Set();
+                    v._grossedTrash.add(nearTrash.id);
+                }
                 continue;
             }
 
@@ -3030,6 +3051,7 @@ export default class GameScene extends Phaser.Scene {
                         }
                     }
                     v.sprite.setVisible(true);
+                    this.dropTrashMaybe(v);
                     v.phase = 'leaving';
                     v.tx = Phaser.Math.Between(13, 16) * TILE + TILE / 2;
                     v.ty = MAP_Y + (ROWS - 1) * TILE;
@@ -3052,18 +3074,34 @@ export default class GameScene extends Phaser.Scene {
                         this.tweens.add({ targets: txt, y: txt.y - 20, alpha: 0, duration: 800, onComplete: () => txt.destroy() });
                     }
                     v.sprite.setVisible(true);
+                    this.dropTrashMaybe(v);
                     v.phase = 'leaving';
                     v.tx = Phaser.Math.Between(13, 16) * TILE + TILE / 2;
                     v.ty = MAP_Y + (ROWS - 1) * TILE;
                     this._setVisitorPath(v);
                 }
             } else if (v.phase === 'noBathroom') {
-                v._noBathroomTimer = (v._noBathroomTimer || 0) + sDelta;
-                if (v._noBathroomTimer >= 2000) {
-                    v.phase = 'leaving';
-                    v.tx = Phaser.Math.Between(13, 16) * TILE + TILE / 2;
-                    v.ty = MAP_Y + (ROWS - 1) * TILE;
-                    this._setVisitorPath(v);
+                const sub = v._noBathroomWanderPhase || 'waiting';
+                if (sub === 'walking') {
+                    v._noBathroomWanderPhase = 'waiting';
+                    v._noBathroomTimer = 0;
+                } else if (sub === 'waiting') {
+                    v._noBathroomTimer = (v._noBathroomTimer || 0) + sDelta;
+                    if (v._noBathroomTimer >= 2500) {
+                        this.showVisitorBubble(v, 'poopWorried');
+                        this.state.rep = Math.max(0, this.state.rep - 2);
+                        v._noBathroomWanderPhase = 'shown';
+                        v._noBathroomTimer = 0;
+                    }
+                } else {
+                    v._noBathroomTimer = (v._noBathroomTimer || 0) + sDelta;
+                    if (v._noBathroomTimer >= 2000) {
+                        this.dropTrashMaybe(v);
+                        v.phase = 'leaving';
+                        v.tx = Phaser.Math.Between(13, 16) * TILE + TILE / 2;
+                        v.ty = MAP_Y + (ROWS - 1) * TILE;
+                        this._setVisitorPath(v);
+                    }
                 }
             } else if (v.phase === 'seekingGuide') {
                 const guide = this.state.staff.find(s => s.id === v._targetGuideId);
@@ -3093,11 +3131,9 @@ export default class GameScene extends Phaser.Scene {
                         } else if (bathroom) {
                             this._visitorSeekBathroom(v, bathroom);
                         } else if (v.wantsBathroom) {
-                            v.phase = 'noBathroom';
-                            v._noBathroomTimer = 0;
-                            this.showVisitorBubble(v, 'toiletConfused');
-                            this.state.rep = Math.max(0, this.state.rep - 2);
+                            this._visitorSeekNoBathroom(v);
                         } else {
+                            this.dropTrashMaybe(v);
                             v.phase = 'leaving';
                             v.tx = Phaser.Math.Between(13, 16) * TILE + TILE / 2;
                             v.ty = MAP_Y + (ROWS - 1) * TILE;
@@ -3127,6 +3163,7 @@ export default class GameScene extends Phaser.Scene {
     _visitorSeekHabitat(v) {
         const hab = this.pickNextHabitat(v);
         if (!hab) {
+            this.dropTrashMaybe(v);
             v.phase = 'leaving';
             v.tx = Phaser.Math.Between(13, 16) * TILE + TILE / 2;
             v.ty = MAP_Y + (ROWS - 1) * TILE;
@@ -3159,6 +3196,16 @@ export default class GameScene extends Phaser.Scene {
         this._setVisitorPath(v);
     }
 
+    _visitorSeekNoBathroom(v) {
+        v.phase = 'noBathroom';
+        v._noBathroomWanderPhase = 'walking';
+        v._noBathroomTimer = 0;
+        const spot = this.randomOpenTile();
+        v.tx = spot.x;
+        v.ty = spot.y;
+        this._setVisitorPath(v);
+    }
+
     findGiftShopEntranceSpot(fac) {
         const ft = FACILITIES[fac.type];
         const w = fac.w ?? ft.w;
@@ -3166,11 +3213,44 @@ export default class GameScene extends Phaser.Scene {
         const entGy = fac.gy - 1;
         if (entGy < 0 || entGy >= ROWS || entGx < 0 || entGx >= COLS) return null;
         const cell = this.grid[entGy]?.[entGx];
-        if (cell !== null && cell !== 'entrance' && cell !== 'dec_path') return null;
+        if (cell !== null && cell !== 'entrance' && !(cell && cell.startsWith('dec_path'))) return null;
         return {
             x: entGx * TILE + TILE / 2,
             y: MAP_Y + entGy * TILE + TILE / 2,
         };
+    }
+
+    dropTrashMaybe(v) {
+        if (!v.sprite || !v.sprite.active) return;
+        if (Math.random() >= TRASH_DROP_CHANCE) return;
+        const id = genId('trash');
+        const sprite = this.add.image(v.sprite.x, v.sprite.y, 'particle_trash').setDepth(25).setScale(1.2);
+        this.trash.push({ id, x: v.sprite.x, y: v.sprite.y, sprite });
+    }
+
+    pickUpTrash(id) {
+        const idx = this.trash.findIndex(t => t.id === id);
+        if (idx === -1) return;
+        const t = this.trash[idx];
+        if (t.sprite) t.sprite.destroy();
+        this.trash.splice(idx, 1);
+        this.sfx.click();
+    }
+
+    getTrashAt(wx, wy) {
+        for (const t of this.trash) {
+            const dx = wx - t.x, dy = wy - t.y;
+            if (dx * dx + dy * dy < TRASH_PICKUP_RADIUS * TRASH_PICKUP_RADIUS) return t;
+        }
+        return null;
+    }
+
+    getTrashNear(x, y) {
+        for (const t of this.trash) {
+            const dx = x - t.x, dy = y - t.y;
+            if (dx * dx + dy * dy < TRASH_GROSS_RADIUS * TRASH_GROSS_RADIUS) return t;
+        }
+        return null;
     }
 
     _visitorReact(v) {
@@ -3221,7 +3301,6 @@ export default class GameScene extends Phaser.Scene {
         donation *= typeMult;
         const seasonBonus = SEASONS[this.state.season].bonuses;
         if (seasonBonus.income) donation *= seasonBonus.income;
-        if (this.state.upgrades.has('gift_shop')) donation += 3;
         if (v._guidedTour) donation *= 1.5;
 
         donation = Math.round(Math.max(0, donation));
@@ -3242,7 +3321,7 @@ export default class GameScene extends Phaser.Scene {
         const ct = this.add.container(v.sprite.x, v.sprite.y - 22).setDepth(56);
         const bubble = this.add.graphics();
         bubble.fillStyle(0xFFFFFF, 0.9);
-        const bw = (type === 'toiletConfused') ? 28 : 20;
+        const bw = (type === 'toiletConfused' || type === 'poopWorried') ? 28 : 20;
         bubble.fillRoundedRect(-bw / 2, -10, bw, 18, 4);
         bubble.fillTriangle(-3, 8, 3, 8, 0, 13);
         ct.add(bubble);
@@ -3258,10 +3337,16 @@ export default class GameScene extends Phaser.Scene {
             icon = this.add.image(0, -1, 'icon_nauseous').setScale(0.9);
         } else if (type === 'toilet') {
             icon = this.add.image(0, -1, 'icon_toilet').setScale(0.9);
+        } else if (type === 'gross') {
+            icon = this.add.image(0, -1, 'icon_gross').setScale(0.9);
         } else if (type === 'toiletConfused') {
             icon = this.add.container(0, -1);
             icon.add(this.add.image(-6, 0, 'icon_toilet').setScale(0.8));
             icon.add(this.add.image(6, 0, 'icon_confused').setScale(0.8));
+        } else if (type === 'poopWorried') {
+            icon = this.add.container(0, -1);
+            icon.add(this.add.image(-6, 0, 'icon_poop').setScale(1));
+            icon.add(this.add.image(6, 0, 'icon_worried').setScale(0.8));
         } else {
             icon = this.add.graphics();
             icon.fillStyle(0x888888);
@@ -3445,11 +3530,9 @@ export default class GameScene extends Phaser.Scene {
             } else if (bathroom) {
                 this._visitorSeekBathroom(v, bathroom);
             } else if (v.wantsBathroom) {
-                v.phase = 'noBathroom';
-                v._noBathroomTimer = 0;
-                this.showVisitorBubble(v, 'toiletConfused');
-                this.state.rep = Math.max(0, this.state.rep - 2);
+                this._visitorSeekNoBathroom(v);
             } else {
+                this.dropTrashMaybe(v);
                 v.phase = 'leaving';
                 v.tx = Phaser.Math.Between(13, 16) * TILE + TILE / 2;
                 v.ty = MAP_Y + (ROWS - 1) * TILE;
@@ -3471,11 +3554,9 @@ export default class GameScene extends Phaser.Scene {
             } else if (bathroom) {
                 this._visitorSeekBathroom(v, bathroom);
             } else if (v.wantsBathroom) {
-                v.phase = 'noBathroom';
-                v._noBathroomTimer = 0;
-                this.showVisitorBubble(v, 'toiletConfused');
-                this.state.rep = Math.max(0, this.state.rep - 2);
+                this._visitorSeekNoBathroom(v);
             } else {
+                this.dropTrashMaybe(v);
                 v.phase = 'leaving';
                 v.tx = Phaser.Math.Between(13, 16) * TILE + TILE / 2;
                 v.ty = MAP_Y + (ROWS - 1) * TILE;
@@ -4418,6 +4499,7 @@ export default class GameScene extends Phaser.Scene {
             } : null,
             rescueAccum: this._rescueAccum,
             decorations: this.state.decorations.map(d => ({ id: d.id, gx: d.gx, gy: d.gy })),
+            trash: this.trash.map(t => ({ id: t.id, x: t.x, y: t.y })),
             facilities: this.state.facilities.map(f => ({
                 id: f.id, type: f.type, gx: f.gx, gy: f.gy,
                 produce: f.produce ? f.produce.map(p => ({ type: p.type, picked: p.picked, regrowLeft: p.regrowLeft })) : undefined,
@@ -4465,6 +4547,12 @@ export default class GameScene extends Phaser.Scene {
                         const spr = this.add.image(px, py, `enrich_${eId}`).setDepth(11).setScale(0.9);
                         this.enrichmentSprites.push({ habitatId: hab.id, enrichId: eId, sprite: spr });
                     }
+                }
+            }
+            if (d.trash) {
+                for (const td of d.trash) {
+                    const sprite = this.add.image(td.x, td.y, 'particle_trash').setDepth(25).setScale(1.2);
+                    this.trash.push({ id: td.id, x: td.x, y: td.y, sprite });
                 }
             }
             if (d.decorations) {

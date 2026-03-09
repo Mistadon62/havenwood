@@ -515,6 +515,52 @@ export class SpriteGenerator {
             g.fillRect(4, 6, 4, 2);
         });
 
+        tex(scene, 'icon_poop', 12, 12, g => {
+            // Dark outline for clarity
+            g.fillStyle(0x442200);
+            g.fillCircle(6, 9, 4.5);
+            g.fillCircle(7, 6, 3.5);
+            g.fillCircle(5, 4, 3);
+            g.fillCircle(6, 2, 2);
+            // Main poop - rich brown
+            g.fillStyle(0xAA5500);
+            g.fillCircle(6, 9, 4);
+            g.fillCircle(7, 6, 3);
+            g.fillCircle(5, 4, 2.5);
+            g.fillCircle(6, 2, 1.5);
+            // Highlight
+            g.fillStyle(0xCC7700);
+            g.fillCircle(5, 3, 0.8);
+            // Eyes (like 💩)
+            g.fillStyle(0xFFFFFF);
+            g.fillCircle(4, 5, 1.4);
+            g.fillCircle(8, 5, 1.4);
+            g.fillStyle(0x000000);
+            g.fillCircle(4, 5, 0.7);
+            g.fillCircle(8, 5, 0.7);
+        });
+
+        tex(scene, 'icon_gross', 12, 12, g => {
+            g.fillStyle(0xFFCC44);
+            g.fillCircle(6, 6, 5);
+            g.fillStyle(0x000000);
+            g.fillRect(4, 4, 1, 1);
+            g.fillRect(8, 4, 1, 1);
+            g.fillStyle(0x663333);
+            g.fillRect(3, 7, 6, 2);
+            g.fillRect(4, 8, 1, 1);
+            g.fillRect(7, 8, 1, 1);
+        });
+
+        tex(scene, 'particle_trash', 10, 10, g => {
+            g.fillStyle(0x888888);
+            g.fillRect(2, 4, 6, 4);
+            g.fillStyle(0xAAAAAA);
+            g.fillRect(3, 3, 4, 2);
+            g.fillStyle(0x666666);
+            g.fillRect(4, 2, 2, 2);
+        });
+
         tex(scene, 'particle_coin', 10, 10, g => {
             g.fillStyle(0xFFD700);
             g.fillCircle(5, 5, 4);
@@ -772,6 +818,38 @@ export class SpriteGenerator {
                 g.fillRect(rng.between(4, 24), rng.between(4, 24), 3, 2);
             }
         });
+        tex(scene, 'decor_path_stone', TILE, TILE, g => {
+            g.fillStyle(0x7A7A72);
+            g.fillRect(0, 0, TILE, TILE);
+            const rng = new Phaser.Math.RandomDataGenerator(['st']);
+            for (let j = 0; j < 6; j++) {
+                const sx = rng.between(2, 26), sy = rng.between(2, 26);
+                g.fillStyle(rng.between(0, 1) ? 0x8A8A82 : 0x6A6A62);
+                g.fillRect(sx, sy, 6, 6);
+            }
+        });
+        tex(scene, 'decor_path_brick', TILE, TILE, g => {
+            g.fillStyle(0x6B3A32);
+            g.fillRect(0, 0, TILE, TILE);
+            g.fillStyle(0xB85C4A);
+            g.fillRect(2, 2, 12, 6);
+            g.fillRect(18, 2, 10, 6);
+            g.fillRect(10, 10, 12, 6);
+            g.fillRect(2, 18, 10, 6);
+            g.fillRect(18, 18, 12, 6);
+            g.fillStyle(dark(0xB85C4A, 20));
+            g.fillRect(4, 4, 8, 3);
+            g.fillRect(20, 4, 6, 3);
+        });
+        tex(scene, 'decor_path_gravel', TILE, TILE, g => {
+            g.fillStyle(0x5A5A52);
+            g.fillRect(0, 0, TILE, TILE);
+            const rng = new Phaser.Math.RandomDataGenerator(['gv']);
+            for (let j = 0; j < 12; j++) {
+                g.fillStyle(rng.between(0, 1) ? 0x6B6B5A : 0x4A4A42);
+                g.fillCircle(rng.between(4, 28), rng.between(4, 28), 2);
+            }
+        });
         tex(scene, 'decor_trashcan', TILE, TILE, g => {
             g.fillStyle(0x666666);
             g.fillRect(10, 10, 12, 16);
@@ -797,6 +875,216 @@ export class SpriteGenerator {
                 g.fillStyle(0xFFEE88);
                 g.fillCircle(fx, fy, 1);
             }
+        });
+        tex(scene, 'decor_potted_plant', TILE, TILE, g => {
+            g.fillStyle(0xC06040);
+            g.fillRect(10, 20, 12, 10);
+            g.fillStyle(0xA05030);
+            g.fillRect(11, 22, 10, 2);
+            g.fillStyle(0x3a7a3a);
+            g.fillCircle(16, 14, 6);
+            g.fillStyle(0x2a5a2a);
+            g.fillCircle(14, 12, 4);
+            g.fillStyle(0x4a8a4a);
+            g.fillCircle(18, 16, 3);
+        });
+        tex(scene, 'decor_potted_flowers', TILE, TILE, g => {
+            g.fillStyle(0xAA6644);
+            g.fillRect(9, 18, 14, 12);
+            g.fillStyle(0x885533);
+            g.fillRect(10, 20, 12, 2);
+            g.fillStyle(0x44AA44);
+            g.fillRect(12, 14, 1, 6);
+            g.fillRect(16, 12, 1, 8);
+            g.fillRect(20, 14, 1, 6);
+            g.fillStyle(0xFF6688);
+            g.fillCircle(12, 14, 3);
+            g.fillStyle(0xFFDD44);
+            g.fillCircle(16, 12, 3);
+            g.fillStyle(0xFF88CC);
+            g.fillCircle(20, 14, 3);
+        });
+        tex(scene, 'decor_bush', TILE, TILE, g => {
+            g.fillStyle(0x2a5a2a);
+            g.fillCircle(16, 18, 10);
+            g.fillStyle(0x3a7a3a);
+            g.fillCircle(12, 16, 6);
+            g.fillStyle(0x1a4a1a);
+            g.fillCircle(20, 17, 7);
+            g.fillStyle(0x4a8a4a);
+            g.fillCircle(16, 12, 5);
+        });
+        tex(scene, 'decor_hedge', TILE, TILE, g => {
+            g.fillStyle(0x2a5a2a);
+            g.fillRect(4, 12, 24, 14);
+            g.fillStyle(0x3a7a3a);
+            g.fillRect(6, 10, 20, 4);
+            g.fillRect(8, 24, 16, 4);
+            g.fillStyle(0x1a4a1a);
+            g.fillRect(10, 14, 12, 8);
+        });
+        tex(scene, 'decor_planter', TILE, TILE, g => {
+            g.fillStyle(0x8B5A2B);
+            g.fillRect(4, 20, 24, 8);
+            g.fillStyle(0x6B4226);
+            g.fillRect(6, 22, 20, 2);
+            g.fillStyle(0x44AA44);
+            g.fillRect(8, 14, 2, 6);
+            g.fillRect(14, 12, 2, 8);
+            g.fillRect(22, 14, 2, 6);
+            g.fillStyle(0xFF6688);
+            g.fillCircle(8, 14, 2);
+            g.fillStyle(0xFFDD44);
+            g.fillCircle(14, 12, 2);
+            g.fillStyle(0x88CCFF);
+            g.fillCircle(22, 14, 2);
+        });
+        tex(scene, 'decor_tulips', TILE, TILE, g => {
+            g.fillStyle(0x44AA44);
+            g.fillRect(10, 14, 2, 10);
+            g.fillRect(16, 12, 2, 12);
+            g.fillRect(22, 14, 2, 10);
+            g.fillStyle(0xFF4466);
+            g.fillRect(9, 10, 4, 6);
+            g.fillRect(15, 8, 4, 6);
+            g.fillRect(21, 10, 4, 6);
+            g.fillStyle(0xFF6688);
+            g.fillRect(10, 11, 2, 4);
+            g.fillRect(16, 9, 2, 4);
+            g.fillRect(22, 11, 2, 4);
+        });
+        tex(scene, 'decor_daisies', TILE, TILE, g => {
+            g.fillStyle(0x44AA44);
+            g.fillRect(8, 12, 1, 8);
+            g.fillRect(16, 10, 1, 10);
+            g.fillRect(24, 12, 1, 8);
+            g.fillStyle(0xFFDD44);
+            g.fillCircle(8, 12, 3);
+            g.fillCircle(16, 10, 3);
+            g.fillCircle(24, 12, 3);
+            g.fillStyle(0xFFFFFF);
+            g.fillRect(6, 11, 2, 2);
+            g.fillRect(8, 9, 2, 2);
+            g.fillRect(10, 11, 2, 2);
+            g.fillRect(14, 9, 2, 2);
+            g.fillRect(16, 7, 2, 2);
+            g.fillRect(18, 9, 2, 2);
+            g.fillRect(22, 11, 2, 2);
+            g.fillRect(24, 9, 2, 2);
+            g.fillRect(26, 11, 2, 2);
+        });
+        tex(scene, 'decor_sunflowers', TILE, TILE, g => {
+            g.fillStyle(0x44AA44);
+            g.fillRect(14, 12, 4, 14);
+            g.fillStyle(0x2a5a2a);
+            g.fillRect(15, 14, 2, 12);
+            g.fillStyle(0x554422);
+            g.fillCircle(16, 14, 6);
+            g.fillStyle(0xFFCC00);
+            g.fillRect(10, 10, 2, 4);
+            g.fillRect(24, 10, 2, 4);
+            g.fillRect(10, 20, 2, 4);
+            g.fillRect(24, 20, 2, 4);
+            g.fillRect(14, 8, 4, 2);
+            g.fillRect(14, 24, 4, 2);
+            g.fillStyle(0xFFDD44);
+            g.fillCircle(16, 14, 4);
+        });
+        tex(scene, 'decor_lavender', TILE, TILE, g => {
+            g.fillStyle(0x44AA44);
+            g.fillRect(12, 10, 2, 14);
+            g.fillRect(18, 8, 2, 16);
+            g.fillRect(24, 10, 2, 14);
+            g.fillStyle(0x9966CC);
+            for (let y = 0; y < 8; y++) {
+                g.fillRect(11, 10 + y * 2, 4, 2);
+                g.fillRect(17, 8 + y * 2, 4, 2);
+                g.fillRect(23, 10 + y * 2, 4, 2);
+            }
+            g.fillStyle(0xAA88DD);
+            g.fillRect(12, 8, 2, 2);
+            g.fillRect(18, 6, 2, 2);
+            g.fillRect(24, 8, 2, 2);
+        });
+        tex(scene, 'decor_roses', TILE, TILE, g => {
+            g.fillStyle(0x2a5a2a);
+            g.fillRect(14, 12, 2, 12);
+            g.fillRect(20, 14, 2, 10);
+            g.fillStyle(0xCC2244);
+            g.fillCircle(15, 12, 5);
+            g.fillCircle(21, 14, 4);
+            g.fillStyle(0xAA1133);
+            g.fillCircle(15, 12, 3);
+            g.fillCircle(21, 14, 2);
+            g.fillStyle(0x44AA44);
+            g.fillRect(13, 14, 2, 2);
+            g.fillRect(17, 13, 2, 2);
+            g.fillRect(19, 15, 2, 2);
+        });
+        tex(scene, 'decor_lily', TILE, TILE, g => {
+            g.fillStyle(0x44AA44);
+            g.fillRect(15, 10, 2, 14);
+            g.fillStyle(0xFFEEAA);
+            g.fillRect(12, 10, 2, 6);
+            g.fillRect(16, 8, 2, 8);
+            g.fillRect(20, 10, 2, 6);
+            g.fillStyle(0xFFDD88);
+            g.fillRect(14, 9, 4, 2);
+            g.fillRect(16, 7, 4, 2);
+            g.fillStyle(0xFFCC66);
+            g.fillRect(15, 8, 2, 4);
+        });
+        tex(scene, 'decor_fern', TILE, TILE, g => {
+            g.fillStyle(0x3a7a3a);
+            g.fillRect(14, 16, 4, 12);
+            g.fillStyle(0x2a5a2a);
+            g.fillRect(15, 18, 2, 10);
+            g.fillStyle(0x4a8a4a);
+            g.fillRect(8, 14, 8, 3);
+            g.fillRect(16, 12, 8, 3);
+            g.fillRect(4, 18, 10, 3);
+            g.fillRect(18, 18, 10, 3);
+            g.fillStyle(0x3a7a3a);
+            g.fillRect(6, 15, 6, 2);
+            g.fillRect(14, 13, 6, 2);
+            g.fillRect(2, 19, 8, 2);
+            g.fillRect(22, 19, 8, 2);
+        });
+        tex(scene, 'decor_flower_bed', TILE, TILE, g => {
+            g.fillStyle(0x6B5A3A);
+            g.fillRect(2, 22, 28, 6);
+            g.fillStyle(0x5A4A2A);
+            g.fillRect(4, 24, 24, 2);
+            g.fillStyle(0x88AA55);
+            g.fillRect(4, 16, 24, 8);
+            g.fillStyle(0xFF6688);
+            g.fillCircle(8, 18, 3);
+            g.fillStyle(0xFFDD44);
+            g.fillCircle(16, 16, 3);
+            g.fillStyle(0x9966CC);
+            g.fillCircle(24, 18, 3);
+            g.fillStyle(0xFF4466);
+            g.fillCircle(12, 20, 2);
+            g.fillStyle(0x88CCFF);
+            g.fillCircle(20, 20, 2);
+        });
+        tex(scene, 'decor_marigolds', TILE, TILE, g => {
+            g.fillStyle(0x44AA44);
+            g.fillRect(10, 12, 1, 8);
+            g.fillRect(16, 10, 1, 10);
+            g.fillRect(22, 12, 1, 8);
+            g.fillStyle(0xFF8800);
+            g.fillCircle(10, 12, 4);
+            g.fillCircle(16, 10, 4);
+            g.fillCircle(22, 12, 4);
+            g.fillStyle(0xFFAA22);
+            g.fillCircle(10, 12, 2);
+            g.fillCircle(16, 10, 2);
+            g.fillCircle(22, 12, 2);
+            g.fillStyle(0x44AA44);
+            g.fillRect(9, 14, 3, 1);
+            g.fillRect(15, 12, 3, 1);
+            g.fillRect(21, 14, 3, 1);
         });
     }
 

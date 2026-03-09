@@ -14,7 +14,7 @@
 // hasOpenPanel() lets GameScene suppress world clicks while a management panel or settings is visible.
 import { W, H, HABITATS, SPECIES, RARITY_COLOR, CLR, SEASONS, UPGRADES, STAFF_TYPES,
     TRAITS, ILLNESSES, ENRICHMENTS, MISSIONS, VISITOR_TYPES, ACHIEVEMENTS,
-    RESEARCH, RESEARCH_BRANCHES, DECORATIONS, FACILITIES } from '../GameData.js';
+    RESEARCH, RESEARCH_BRANCHES, DECORATIONS, DECOR_CATEGORIES, FACILITIES } from '../GameData.js';
 
 export default class HUDScene extends Phaser.Scene {
     constructor() { super('HUDScene'); }
@@ -356,6 +356,9 @@ export default class HUDScene extends Phaser.Scene {
     }
 
     _renderBuildMenu() {
+        if (this._buildDecorMaskGraphics) { this._buildDecorMaskGraphics.destroy(); this._buildDecorMaskGraphics = null; }
+        if (this._buildDecorWheelCleanup) { this._buildDecorWheelCleanup(); this._buildDecorWheelCleanup = null; }
+        this._buildPopupBounds = null;
         if (this.buildPopup) this.buildPopup.destroy();
         if (this._buildItemPopup) { this._buildItemPopup.destroy(); this._buildItemPopup = null; }
         const anchorX = this._buildAnchorX;
@@ -402,6 +405,8 @@ export default class HUDScene extends Phaser.Scene {
         });
 
         this.buildPopup = ct;
+        const catTop = menuBottom - (categories.length - 1) * (catH + catGap) - catH;
+        this._buildPopupBounds = { x: catX, y: catTop, w: 400, h: barY - catTop };
 
         if (cat) this._renderBuildItems(cat, catX, catW, menuBottom, catH, catGap, catColor[cat]);
     }
@@ -417,12 +422,14 @@ export default class HUDScene extends Phaser.Scene {
 
         const ct = this.add.container(0, 0).setDepth(260);
 
-        const ibg = this.add.graphics();
-        ibg.fillStyle(CLR.uiBg, 0.96);
-        ibg.fillRoundedRect(itemX, itemY, itemPw, itemPh, 6);
-        ibg.lineStyle(2, color);
-        ibg.strokeRoundedRect(itemX, itemY, itemPw, itemPh, 6);
-        ct.add(ibg);
+        if (cat !== 'decorations') {
+            const ibg = this.add.graphics();
+            ibg.fillStyle(CLR.uiBg, 0.96);
+            ibg.fillRoundedRect(itemX, itemY, itemPw, itemPh, 6);
+            ibg.lineStyle(2, color);
+            ibg.strokeRoundedRect(itemX, itemY, itemPw, itemPh, 6);
+            ct.add(ibg);
+        }
 
         if (cat === 'habitats') {
             items.forEach((h, i) => {
@@ -470,33 +477,190 @@ export default class HUDScene extends Phaser.Scene {
                 }
             });
         } else {
+            // Decorations: filter dropdown + vertical grid (3 cols), scrollable
+            const filter = this._buildDecorFilter || 'All';
+            const filteredItems = filter === 'All'
+                ? Object.values(DECORATIONS)
+                : Object.values(DECORATIONS).filter(d => (d.category || 'Greenery') === filter);
+            const items = filteredItems;
+
+            const DECOR_COLS = 3;
+            const DECOR_CELL_W = 88, DECOR_CELL_H = 56, DECOR_PAD = 10;
+            const DECOR_DROPDOWN_H = 28;
+            const DECOR_FILTER_OFFSET_Y = 2;
+            const DECOR_VISIBLE_ROWS = 3;
+            const DECOR_SCROLL_BTN_W = 24;
+            const DECOR_PANEL_W = DECOR_COLS * DECOR_CELL_W + DECOR_PAD * 2 + DECOR_SCROLL_BTN_W;
+            const DECOR_PANEL_H = DECOR_DROPDOWN_H + DECOR_VISIBLE_ROWS * DECOR_CELL_H + DECOR_PAD * 2;
+            const rows = Math.ceil(items.length / DECOR_COLS);
+            const contentH = rows * DECOR_CELL_H;
+            const maxScroll = Math.max(0, contentH - DECOR_VISIBLE_ROWS * DECOR_CELL_H);
+
+            const decorItemX = itemX;
+            const decorItemY = menuBottom - DECOR_PANEL_H - 10;
+
+            const ibgDecor = this.add.graphics();
+            ibgDecor.fillStyle(CLR.uiBg, 0.96);
+            ibgDecor.fillRoundedRect(decorItemX, decorItemY, DECOR_PANEL_W, DECOR_PANEL_H, 6);
+            ibgDecor.lineStyle(2, color);
+            ibgDecor.strokeRoundedRect(decorItemX, decorItemY, DECOR_PANEL_W, DECOR_PANEL_H, 6);
+            ct.add(ibgDecor);
+
+            const scrollAreaY = decorItemY + DECOR_DROPDOWN_H;
+            const scrollAreaH = DECOR_VISIBLE_ROWS * DECOR_CELL_H + DECOR_PAD;
+
+            const filterBarX = decorItemX + DECOR_PAD + 4;
+            const filterBarW = DECOR_COLS * DECOR_CELL_W - 8;
+            const filterBarY = decorItemY + 4 + DECOR_FILTER_OFFSET_Y;
+            const filterBarCenterY = decorItemY + DECOR_DROPDOWN_H / 2 + DECOR_FILTER_OFFSET_Y;
+
+            const dropdownBg = this.add.graphics();
+            dropdownBg.fillStyle(0x1a2435, 0.98);
+            dropdownBg.lineStyle(1, 0x6a7a8a, 0.9);
+            dropdownBg.fillRoundedRect(filterBarX, filterBarY, filterBarW, DECOR_DROPDOWN_H - 8, 3);
+            dropdownBg.strokeRoundedRect(filterBarX, filterBarY, filterBarW, DECOR_DROPDOWN_H - 8, 3);
+            ct.add(dropdownBg);
+
+            const arrow = this._buildDecorDropdownOpen ? '\u25B2' : '\u25BC';
+            const filterLabel = this.txt(filterBarX + 6, filterBarCenterY, `Filter: ${filter} ${arrow}`, 5, '#E8E8E8').setOrigin(0, 0.5);
+            ct.add(filterLabel);
+            const dropdownHit = this.add.rectangle(filterBarX + filterBarW / 2, filterBarCenterY, filterBarW, DECOR_DROPDOWN_H - 8, 0, 0).setOrigin(0.5).setInteractive({ useHandCursor: true });
+            dropdownHit.on('pointerdown', () => {
+                this._buildDecorDropdownOpen = !this._buildDecorDropdownOpen;
+                this._renderBuildMenu();
+            });
+            ct.add(dropdownHit);
+
+            const scrollContent = this.add.container(decorItemX + DECOR_PAD, scrollAreaY + DECOR_PAD);
+            ct.add(scrollContent);
+
+            const maskW = DECOR_COLS * DECOR_CELL_W + DECOR_PAD;
+            const maskH = DECOR_VISIBLE_ROWS * DECOR_CELL_H;
+            const maskGraphics = this.make.graphics({ add: false });
+            maskGraphics.fillStyle(0xFFFFFF, 1);
+            maskGraphics.fillRect(decorItemX + DECOR_PAD, scrollAreaY + DECOR_PAD, maskW, maskH);
+            const geomask = maskGraphics.createGeometryMask();
+            scrollContent.setMask(geomask);
+            this._buildDecorMaskGraphics = maskGraphics;
+
+            let scrollOffset = 0;
+            const updateScroll = (delta) => {
+                scrollOffset = Phaser.Math.Clamp(scrollOffset + delta, 0, maxScroll);
+                scrollContent.setPosition(decorItemX + DECOR_PAD, scrollAreaY + DECOR_PAD - scrollOffset);
+            };
+
             items.forEach((d, i) => {
-                const bx = itemX + pad + i * cellW + cellW / 2;
-                const by = itemY + itemPh / 2;
+                const col = i % DECOR_COLS, row = Math.floor(i / DECOR_COLS);
+                const lx = col * DECOR_CELL_W + DECOR_CELL_W / 2;
+                const ly = row * DECOR_CELL_H + DECOR_CELL_H / 2;
                 const canAfford = this.gs.state.coins >= d.cost;
-                const rx = bx - cellW / 2 + 4, ry = by - 26, rw = cellW - 8, rh = 52;
+                const rx = lx - DECOR_CELL_W / 2 + 4, ry = ly - DECOR_CELL_H / 2 + 4, rw = DECOR_CELL_W - 8, rh = DECOR_CELL_H - 8;
 
                 const btnBg = this.add.graphics();
                 btnBg.fillStyle(canAfford ? d.color : 0x444444, canAfford ? 0.3 : 0.25);
                 btnBg.fillRoundedRect(rx, ry, rw, rh, 4);
-                ct.add(btnBg);
-                ct.add(this.add.image(bx, by - 10, `decor_${d.id}`).setScale(0.8));
-                ct.add(this.txt(bx, by + 14, `${d.cost}g`, 6, canAfford ? CLR.gold : '#884444').setOrigin(0.5));
+                scrollContent.add(btnBg);
+                scrollContent.add(this.add.image(lx, ly - 8, `decor_${d.id}`).setScale(0.75));
+                scrollContent.add(this.txt(lx, ly + 18, `${d.cost}g`, 5, canAfford ? CLR.gold : '#884444').setOrigin(0.5));
 
                 if (canAfford) {
-                    const hit = this.add.rectangle(bx, by, rw, rh, 0, 0).setInteractive({ useHandCursor: true });
+                    const hit = this.add.rectangle(lx, ly, rw, rh, 0, 0).setInteractive({ useHandCursor: true });
                     hit.on('pointerover', () => { btnBg.clear(); btnBg.fillStyle(d.color, 0.55); btnBg.fillRoundedRect(rx, ry, rw, rh, 4); btnBg.lineStyle(1, d.color, 0.8); btnBg.strokeRoundedRect(rx, ry, rw, rh, 4); });
                     hit.on('pointerout', () => { btnBg.clear(); btnBg.fillStyle(d.color, 0.3); btnBg.fillRoundedRect(rx, ry, rw, rh, 4); });
                     hit.on('pointerdown', () => { if (this.gs.state.rescuePaused) return; this.closeBuildPopup(); this.gs.enterDecorBuild(d.id); });
-                    ct.add(hit);
+                    scrollContent.add(hit);
                 }
             });
+
+            if (maxScroll > 0) {
+                const btnX = decorItemX + DECOR_PANEL_W - DECOR_SCROLL_BTN_W / 2 - 4;
+                const btnY = decorItemY + DECOR_PANEL_H / 2;
+                const scrollAmt = 56;
+
+                const upBtn = this.txt(btnX, btnY - 20, '\u25B2', 10, '#AAAAAA').setOrigin(0.5).setInteractive({ useHandCursor: true });
+                upBtn.on('pointerover', () => upBtn.setColor('#FFFFFF'));
+                upBtn.on('pointerout', () => upBtn.setColor('#AAAAAA'));
+                upBtn.on('pointerdown', () => { updateScroll(-scrollAmt); });
+                ct.add(upBtn);
+
+                const downBtn = this.txt(btnX, btnY + 20, '\u25BC', 10, '#AAAAAA').setOrigin(0.5).setInteractive({ useHandCursor: true });
+                downBtn.on('pointerover', () => downBtn.setColor('#FFFFFF'));
+                downBtn.on('pointerout', () => downBtn.setColor('#AAAAAA'));
+                downBtn.on('pointerdown', () => { updateScroll(scrollAmt); });
+                ct.add(downBtn);
+
+                this._buildDecorScrollArea = { x: decorItemX, y: scrollAreaY, w: DECOR_PANEL_W - DECOR_SCROLL_BTN_W, h: scrollAreaH };
+                this._buildDecorUpdateScroll = updateScroll;
+                const wheelHandler = (ptr, dx, dy, dz) => {
+                    if (!this._buildItemPopup || this._buildCategory !== 'decorations' || !this._buildDecorScrollArea) return;
+                    const px = ptr.x, py = ptr.y;
+                    const a = this._buildDecorScrollArea;
+                    if (px >= a.x && px <= a.x + a.w && py >= a.y && py <= a.y + a.h) {
+                        this._buildDecorUpdateScroll(dy * 0.5);
+                    }
+                };
+                const domWheelHandler = (e) => {
+                    if (!this._buildItemPopup || this._buildCategory !== 'decorations' || !this._buildDecorScrollArea) return;
+                    const px = this.input.mousePointer.x, py = this.input.mousePointer.y;
+                    const a = this._buildDecorScrollArea;
+                    if (px >= a.x && px <= a.x + a.w && py >= a.y && py <= a.y + a.h) {
+                        this._buildDecorUpdateScroll(e.deltaY * 0.5);
+                        e.preventDefault();
+                    }
+                };
+                this.input.on('wheel', wheelHandler);
+                this.game.canvas.addEventListener('wheel', domWheelHandler, { passive: false });
+                this._buildDecorWheelCleanup = () => {
+                    this.input.off('wheel', wheelHandler);
+                    this.game.canvas.removeEventListener('wheel', domWheelHandler);
+                    this._buildDecorScrollArea = null;
+                    this._buildDecorUpdateScroll = null;
+                };
+            }
+
+            if (this._buildDecorDropdownOpen) {
+                const optY = decorItemY + DECOR_DROPDOWN_H + DECOR_FILTER_OFFSET_Y;
+                const dropdownOptsBg = this.add.graphics();
+                dropdownOptsBg.fillStyle(0x1a2230, 0.98);
+                dropdownOptsBg.lineStyle(1, 0x4a5a6a, 0.9);
+                dropdownOptsBg.fillRoundedRect(filterBarX, optY, filterBarW, DECOR_CATEGORIES.length * 22 + 4, 4);
+                dropdownOptsBg.strokeRoundedRect(filterBarX, optY, filterBarW, DECOR_CATEGORIES.length * 22 + 4, 4);
+                ct.add(dropdownOptsBg);
+                DECOR_CATEGORIES.forEach((cat, i) => {
+                    const oy = optY + 2 + i * 22;
+                    const rx = filterBarX + 4, rw = filterBarW - 8, rh = 20;
+                    const optBg = this.add.graphics();
+                    const baseColor = cat === filter ? 0x3a6a4a : 0x2a3542;
+                    const hoverColor = cat === filter ? 0x4a8a5a : 0x3a4555;
+                    const drawBg = (color) => {
+                        optBg.clear();
+                        optBg.fillStyle(color, 0.95);
+                        optBg.fillRoundedRect(rx, oy, rw, rh, 2);
+                    };
+                    drawBg(baseColor);
+                    ct.add(optBg);
+                    const optTxt = this.txt(rx + 4, oy + 10, cat, 5, '#FFFFFF').setOrigin(0, 0.5);
+                    ct.add(optTxt);
+                    const optHit = this.add.rectangle(filterBarX + filterBarW / 2, oy + 10, rw, rh, 0, 0).setOrigin(0.5).setInteractive({ useHandCursor: true });
+                    optHit.on('pointerover', () => { drawBg(hoverColor); optTxt.setColor('#E8F0FF'); });
+                    optHit.on('pointerout', () => { drawBg(baseColor); optTxt.setColor('#FFFFFF'); });
+                    optHit.on('pointerdown', () => {
+                        this._buildDecorFilter = cat;
+                        this._buildDecorDropdownOpen = false;
+                        this._renderBuildMenu();
+                    });
+                    ct.add(optHit);
+                });
+            }
         }
 
         this._buildItemPopup = ct;
     }
 
     closeBuildPopup() {
+        if (this._buildDecorMaskGraphics) { this._buildDecorMaskGraphics.destroy(); this._buildDecorMaskGraphics = null; }
+        if (this._buildDecorWheelCleanup) { this._buildDecorWheelCleanup(); this._buildDecorWheelCleanup = null; }
+        this._buildPopupBounds = null;
         if (this._buildDismiss) { this._buildDismiss.destroy(); this._buildDismiss = null; }
         if (this._buildItemPopup) { this._buildItemPopup.destroy(); this._buildItemPopup = null; }
         if (this.buildPopup) { this.buildPopup.destroy(); this.buildPopup = null; }
@@ -1791,6 +1955,7 @@ export default class HUDScene extends Phaser.Scene {
     isPointerOverPanel(screenX, screenY) {
         const barY = H - 62;
         if (screenY >= barY) return true;
+        if (this._buildPopupBounds && screenX >= this._buildPopupBounds.x && screenX <= this._buildPopupBounds.x + this._buildPopupBounds.w && screenY >= this._buildPopupBounds.y && screenY <= this._buildPopupBounds.y + this._buildPopupBounds.h) return true;
         const checks = [
             this.animalPanel && this._animalPanelBounds,
             this.habitatPanel && this._habitatPanelBounds,

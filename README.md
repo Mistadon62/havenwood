@@ -149,7 +149,7 @@ Visitors spawn during business hours (8 AM - 6 PM) and have goal-driven AI. Inst
 Income comes in two parts:
 
 - **Admission fee** (on entry): flat 5g base, scaled by visitor type multiplier and income upgrades/research (collected silently)
-- **Donation** (on exit): based on average animal happiness, total animal count, enrichment bonuses, per-visit satisfaction score, season bonuses, gift shop upgrade, and tour guide multipliers (shown as a floating popup)
+- **Donation** (on exit): based on average animal happiness, total animal count, enrichment bonuses, per-visit satisfaction score, season bonuses, and tour guide multipliers (shown as a floating popup)
 
 Visitor types: Family, Tourist, Photographer, School, VIP — each with different income multipliers and stay durations.
 
@@ -192,7 +192,7 @@ Place items in habitats to boost animal happiness:
 
 ### Upgrades
 
-8 one-time purchases that permanently improve the sanctuary:
+7 one-time purchases that permanently improve the sanctuary:
 
 | Upgrade | Cost | Effect |
 |---|---|---|
@@ -200,7 +200,6 @@ Place items in habitats to boost animal happiness:
 | Enrichment | 300g | Happiness decays 50% slower |
 | Sanctuary Sign | 150g | +20% visitor income |
 | Medical Kit | 250g | Unlocks manual Heal action |
-| Gift Shop | 400g | +3 coins per visitor |
 | Habitat Plus | 500g | All habitats +1 capacity |
 | Premium Food | 600g | Feed gives 60 hunger + 15 happy |
 | Conservation | 800g | Rescues arrive 30% faster |
