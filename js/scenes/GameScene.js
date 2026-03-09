@@ -105,6 +105,7 @@ export default class GameScene extends Phaser.Scene {
 
         if (!this.isNewGame) this.loadGame();
         this.updateSeason();
+        if (this.state.autoSave) this.saveGame();
 
         this.rescueInterval = 50000;
         this._rescueAccum = this.rescueInterval - 4000;
@@ -198,13 +199,23 @@ export default class GameScene extends Phaser.Scene {
     // Cross-navigation: while zoomed into any habitat or facility, hovering a *different* habitat
     // or facility shows a hover outline and pointer cursor; clicking navigates to it (pans camera,
     // updates panels). Clicking an animal in another habitat also navigates. Produce hover is
-    // checked first so garden picking still works. World clicks are otherwise suppressed while
-    // zoomed (viewingHabitat/viewingFacility) or while a HUD management panel is open.
-    // Right-click or ESC exits build mode. ESC priority: close settings → open settings during
-    // rescue → cancel habitat select → cancel move → close panels → zoom out → exit build → open settings.
-    // Browser context menu is suppressed on the canvas.
+    // checked first so garden picking still works. Hovering an animal sprite while zoomed into a
+    // habitat shows the pointer cursor. World clicks are otherwise suppressed while zoomed
+    // (viewingHabitat/viewingFacility) or while a HUD management panel is open.
+    // Right-click is intercepted at the DOM level (capture-phase mousedown) so Phaser never
+    // processes it — no game object pointerdown handlers fire. _handleRightClick() then exits
+    // build/move mode or closes open HUD panels. ESC priority: close settings → open settings
+    // during rescue → cancel habitat select → cancel move → close panels → zoom out → exit build →
+    // open settings. Browser context menu is suppressed on the canvas.
 
     setupInput() {
+        this.game.canvas.addEventListener('mousedown', (e) => {
+            if (e.button === 2) {
+                e.stopImmediatePropagation();
+                this._handleRightClick();
+            }
+        }, true);
+
         this.input.on('pointermove', ptr => {
             if (this.state.buildMode) {
                 this.hoverOutline.setVisible(false);
@@ -392,7 +403,10 @@ export default class GameScene extends Phaser.Scene {
                     }
                 }
                 this.hoverOutline.setVisible(false);
-                this.game.canvas.style.cursor = 'default';
+                const overAnimal = this.state.animals.some(a =>
+                    a.sprite?.input?.enabled && a.sprite.getBounds().contains(ptr.worldX, ptr.worldY)
+                );
+                this.game.canvas.style.cursor = overAnimal ? 'pointer' : 'default';
                 return;
             }
             const hud = this.scene.get('HUDScene');
@@ -429,12 +443,6 @@ export default class GameScene extends Phaser.Scene {
 
         this.input.on('pointerdown', ptr => {
             if (this._habSelectMode) {
-                if (ptr.rightButtonDown()) {
-                    const cancel = this._habSelectMode.onCancel;
-                    this._exitHabitatSelect();
-                    if (cancel) cancel();
-                    return;
-                }
                 const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
                 if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
                     const cell = this.grid[gy]?.[gx];
@@ -449,7 +457,6 @@ export default class GameScene extends Phaser.Scene {
                 }
                 return;
             }
-            if (ptr.rightButtonDown()) { if (this._movingHabitat) { this.cancelMove(); } else if (this._movingFacility) { this.cancelFacilityMove(); } else if (this.state.buildMode) { this.exitBuild(); } return; }
             if (this._skipPointerDown) { this._skipPointerDown = false; return; }
             if (this.state.rescuePaused) return;
             if (this.state.viewingFacility) {
@@ -598,6 +605,22 @@ export default class GameScene extends Phaser.Scene {
         });
 
         this.game.canvas.addEventListener('contextmenu', e => e.preventDefault());
+    }
+
+    // Consolidated right-click handler, invoked from a DOM capture-phase listener so that
+    // Phaser never sees the mousedown and no game object pointerdown handlers fire.
+    _handleRightClick() {
+        if (this._habSelectMode) {
+            const cancel = this._habSelectMode.onCancel;
+            this._exitHabitatSelect();
+            if (cancel) cancel();
+            return;
+        }
+        if (this._movingHabitat) { this.cancelMove(); return; }
+        if (this._movingFacility) { this.cancelFacilityMove(); return; }
+        if (this.state.buildMode) { this.exitBuild(); return; }
+        const hud = this.scene.get('HUDScene');
+        if (hud && hud.hasOpenPanel()) hud.closeAllPanels();
     }
 
     /* ========== HABITAT / FACILITY ZOOM ========== */

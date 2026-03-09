@@ -305,10 +305,12 @@ export const RESCUE_MSG = [
     '{name} the {species} was rescued from a storm.',
 ];
 
-// Color palette — grass, path, fence, UI, gold for consistent theming
+// Color palette — grass, path, fence, UI, gold for consistent theming.
+// In-game UI uses a navy/indigo palette. Title screen keeps its own styling.
 export const CLR = {
     grass1: 0x5B8C3E, grass2: 0x4E7A35, grass3: 0x6B9C4E, grass4: 0x558B3E,
     path: 0xD4B87C, fence: 0x8B7355, fenceLight: 0xA08060,
-    uiBg: 0x2D1B0E, uiBorder: 0x5C3A1E, uiText: '#FFF8DC',
-    gold: '#FFD700', goldHex: 0xFFD700,
+    uiBg: 0x252F40, uiBorder: 0x3D4F6B, uiText: '#FFF5E6',
+    uiPanelBg: 0x1A2438,
+    gold: '#E8B84A', goldHex: 0xE8B84A,
 };

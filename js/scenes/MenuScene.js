@@ -6,6 +6,13 @@ export default class MenuScene extends Phaser.Scene {
     constructor() { super('MenuScene'); }
 
     create() {
+        this.game.canvas.addEventListener('mousedown', (e) => {
+            if (e.button === 2) {
+                if (this.scene.isActive('GameScene')) return;
+                e.stopImmediatePropagation();
+            }
+        }, true);
+
         const bg = this.add.graphics();
 
         for (let y = 0; y < H; y++) {
@@ -168,11 +175,12 @@ export default class MenuScene extends Phaser.Scene {
             }
         });
 
+        // Title screen text — do not change; color (CLR.gold) and stroke (#2A1A0E) are intentional.
         this.add.text(W / 2, 140, 'HAVENWOOD', {
             fontFamily: '"Press Start 2P", monospace',
             fontSize: '44px',
             color: CLR.gold,
-            stroke: '#1a0e04',
+            stroke: '#2A1A0E',
             strokeThickness: 6
         }).setOrigin(0.5);
 
@@ -274,7 +282,7 @@ export default class MenuScene extends Phaser.Scene {
             fontFamily: '"Press Start 2P", monospace',
             fontSize: '16px',
             color: CLR.uiText,
-            stroke: '#1a0e04',
+            stroke: '#2A1A0E',
             strokeThickness: 3,
             padding: { x: 16, y: 8 }
         }).setOrigin(0.5).setInteractive({ useHandCursor: true });

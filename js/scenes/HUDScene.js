@@ -125,7 +125,7 @@ export default class HUDScene extends Phaser.Scene {
         ct.add(overlay);
 
         const bg = this.add.graphics();
-        bg.fillStyle(0x1a0e04, 0.97); bg.fillRoundedRect(0, 0, pw, ph, 8);
+        bg.fillStyle(CLR.uiPanelBg, 0.97); bg.fillRoundedRect(0, 0, pw, ph, 8);
         bg.lineStyle(2, CLR.uiBorder); bg.strokeRoundedRect(0, 0, pw, ph, 8);
         ct.add(bg);
 
@@ -573,7 +573,7 @@ export default class HUDScene extends Phaser.Scene {
         const n = this.add.text(W / 2, topY + 8, (icon ? '  ' : '') + text, {
             fontFamily: '"Press Start 2P", monospace', fontSize: '9px', color: CLR.uiText,
             stroke: '#000000', strokeThickness: 2,
-            backgroundColor: '#2D1B0EDD', padding: { x: 10, y: 8 }, wordWrap: { width: 420 }
+            backgroundColor: '#1A2438DD', padding: { x: 10, y: 8 }, wordWrap: { width: 420 }
         }).setOrigin(0.5, 0).setAlpha(0).setDepth(200);
 
         let iconImg = null;
@@ -611,17 +611,17 @@ export default class HUDScene extends Phaser.Scene {
         const cx = W / 2, cy = H / 2, pw = 420, ph = 260;
         const ct = this.add.container(cx, cy).setDepth(300);
         const bg = this.add.graphics();
-        bg.fillStyle(0x1a0e04, 0.96); bg.fillRoundedRect(-pw / 2, -ph / 2, pw, ph, 8);
+        bg.fillStyle(CLR.uiPanelBg, 0.96); bg.fillRoundedRect(-pw / 2, -ph / 2, pw, ph, 8);
         bg.lineStyle(2, rc); bg.strokeRoundedRect(-pw / 2, -ph / 2, pw, ph, 8);
         ct.add(bg);
         ct.add(this.txt(0, -ph / 2 + 18, 'RESCUE EVENT!', 12, CLR.gold).setOrigin(0.5));
         const rescueTex = ev.variantIdx != null ? `animal_${ev.speciesId}_${ev.variantIdx}` : `animal_${ev.speciesId}`;
-        ct.add(this.add.image(0, -22, rescueTex).setScale(1.5));
-        ct.add(this.txt(0, 16, `${ev.name} the ${sp.name}`, 9).setOrigin(0.5));
+        ct.add(this.add.image(0, -40, rescueTex).setScale(1.5));
+        ct.add(this.txt(0, -2, `${ev.name} the ${sp.name}`, 9).setOrigin(0.5));
         const rClr = '#' + rc.toString(16).padStart(6, '0');
-        ct.add(this.txt(0, 34, sp.rarity.toUpperCase(), 7, rClr).setOrigin(0.5));
-        if (sp.season) ct.add(this.txt(0, 50, `Seasonal: ${sp.season}`, 6, '#AABB99').setOrigin(0.5));
-        ct.add(this.txt(0, 64, ev.msg, 6, '#CCBBAA').setOrigin(0.5).setWordWrapWidth(380));
+        ct.add(this.txt(0, 16, sp.rarity.toUpperCase(), 7, rClr).setOrigin(0.5));
+        if (sp.season) ct.add(this.txt(0, 32, `Seasonal: ${sp.season}`, 6, '#AABB99').setOrigin(0.5));
+        ct.add(this.txt(0, 46, ev.msg, 6, '#CCBBAA').setOrigin(0.5).setWordWrapWidth(380));
 
         const dismissRescue = () => {
             tint.destroy(); ct.destroy(); this.rescuePopup = null; this._rescueTint = null;
@@ -637,8 +637,10 @@ export default class HUDScene extends Phaser.Scene {
             const accBg = this.add.graphics();
             accBg.fillStyle(0x228B22, 0.85); accBg.fillRoundedRect(btnLeft, 88, btnW, 30, 4);
             ct.add(accBg);
-            const accBtn = this.txt(btnLeft + btnW / 2, 103, 'Rescue!', 8).setOrigin(0.5).setInteractive({ useHandCursor: true });
-            accBtn.on('pointerdown', () => {
+            const accTxt = this.txt(btnLeft + btnW / 2, 103, 'Rescue!', 8).setOrigin(0.5);
+            ct.add(accTxt);
+            const accHit = this.add.rectangle(btnLeft + btnW / 2, 103, btnW, 30, 0x000000, 0).setOrigin(0.5).setInteractive({ useHandCursor: true });
+            accHit.on('pointerdown', () => {
                 if (compatHabs.length === 1) {
                     dismissRescue();
                     this.gs.acceptRescueInto(ev, compatHabs[0]);
@@ -654,23 +656,25 @@ export default class HUDScene extends Phaser.Scene {
                     }
                 }
             });
-            accBtn.on('pointerover', () => accBtn.setColor(CLR.gold));
-            accBtn.on('pointerout', () => accBtn.setColor(CLR.uiText));
-            ct.add(accBtn);
+            accHit.on('pointerover', () => accTxt.setColor(CLR.gold));
+            accHit.on('pointerout', () => accTxt.setColor(CLR.uiText));
+            ct.add(accHit);
 
             const decBg = this.add.graphics();
             decBg.fillStyle(0x8B2222, 0.85); decBg.fillRoundedRect(btnLeft + btnW + btnGap, 88, btnW, 30, 4);
             ct.add(decBg);
-            const decBtn = this.txt(btnLeft + btnW + btnGap + btnW / 2, 103, 'Pass', 8).setOrigin(0.5).setInteractive({ useHandCursor: true });
-            decBtn.on('pointerdown', () => { dismissRescue(); });
-            decBtn.on('pointerover', () => decBtn.setColor('#FF8888'));
-            decBtn.on('pointerout', () => decBtn.setColor(CLR.uiText));
-            ct.add(decBtn);
+            const decTxt = this.txt(btnLeft + btnW + btnGap + btnW / 2, 103, 'Pass', 8).setOrigin(0.5);
+            ct.add(decTxt);
+            const decHit = this.add.rectangle(btnLeft + btnW + btnGap + btnW / 2, 103, btnW, 30, 0x000000, 0).setOrigin(0.5).setInteractive({ useHandCursor: true });
+            decHit.on('pointerdown', () => { dismissRescue(); });
+            decHit.on('pointerover', () => decTxt.setColor('#FF8888'));
+            decHit.on('pointerout', () => decTxt.setColor(CLR.uiText));
+            ct.add(decHit);
         } else {
             const compatType = Object.values(HABITATS).find(h => h.types.includes(sp.type));
             const buildCost = compatType ? this.gs.getHabitatCost(compatType.id) : 0;
             const canBuild = compatType && this.gs.state.coins >= buildCost;
-            const bldW = 160, passW = 80;
+            const bldW = 190, passW = 80;
             const totalW = bldW + btnGap + passW;
             const btnLeft = -totalW / 2;
 
@@ -678,29 +682,32 @@ export default class HUDScene extends Phaser.Scene {
             bldBg.fillStyle(canBuild ? 0x1a6090 : 0x555555, 0.85); bldBg.fillRoundedRect(btnLeft, 88, bldW, 30, 4);
             ct.add(bldBg);
             const bldLabel = compatType ? `Build ${compatType.name} (${buildCost}g)` : 'No Habitat';
-            const bldBtn = this.txt(btnLeft + bldW / 2, 103, bldLabel, 7).setOrigin(0.5);
+            const bldTxt = this.txt(btnLeft + bldW / 2, 103, bldLabel, 7).setOrigin(0.5);
             if (canBuild) {
-                bldBtn.setInteractive({ useHandCursor: true });
-                bldBtn.on('pointerdown', () => {
+                ct.add(bldTxt);
+                const bldHit = this.add.rectangle(btnLeft + bldW / 2, 103, bldW, 30, 0x000000, 0).setOrigin(0.5).setInteractive({ useHandCursor: true });
+                bldHit.on('pointerdown', () => {
                     tint.destroy(); ct.destroy(); this.rescuePopup = null; this._rescueTint = null;
                     this.gs.state.rescuePaused = false;
                     this._pendingRescue = ev;
                     this.closeBuildPopup();
                     this.gs.enterBuild(compatType.id);
                 });
-                bldBtn.on('pointerover', () => bldBtn.setColor('#88CCFF'));
-                bldBtn.on('pointerout', () => bldBtn.setColor(CLR.uiText));
-            } else { bldBtn.setColor('#888888'); }
-            ct.add(bldBtn);
+                bldHit.on('pointerover', () => bldTxt.setColor('#88CCFF'));
+                bldHit.on('pointerout', () => bldTxt.setColor(CLR.uiText));
+                ct.add(bldHit);
+            } else { bldTxt.setColor('#888888'); ct.add(bldTxt); }
 
             const decBg = this.add.graphics();
             decBg.fillStyle(0x8B2222, 0.85); decBg.fillRoundedRect(btnLeft + bldW + btnGap, 88, passW, 30, 4);
             ct.add(decBg);
-            const decBtn = this.txt(btnLeft + bldW + btnGap + passW / 2, 103, 'Pass', 8).setOrigin(0.5).setInteractive({ useHandCursor: true });
-            decBtn.on('pointerdown', () => { dismissRescue(); });
-            decBtn.on('pointerover', () => decBtn.setColor('#FF8888'));
-            decBtn.on('pointerout', () => decBtn.setColor(CLR.uiText));
-            ct.add(decBtn);
+            const decTxt2 = this.txt(btnLeft + bldW + btnGap + passW / 2, 103, 'Pass', 8).setOrigin(0.5);
+            ct.add(decTxt2);
+            const decHit2 = this.add.rectangle(btnLeft + bldW + btnGap + passW / 2, 103, passW, 30, 0x000000, 0).setOrigin(0.5).setInteractive({ useHandCursor: true });
+            decHit2.on('pointerdown', () => { dismissRescue(); });
+            decHit2.on('pointerover', () => decTxt2.setColor('#FF8888'));
+            decHit2.on('pointerout', () => decTxt2.setColor(CLR.uiText));
+            ct.add(decHit2);
         }
 
         ct.setScale(0);
@@ -711,7 +718,9 @@ export default class HUDScene extends Phaser.Scene {
     /* ========== ANIMAL INFO PANEL ========== */
 
     // Selected animal: stats, trait, illness, pregnancy/cooldown status, bond level/XP bar, friendships, actions (Feed, Pet, Treat, Heal).
-    // Feed consumes food (species foodCost). Bond is level-based with increasing XP thresholds.
+    // Feed consumes food (species foodCost) and is disabled when hunger is full.
+    // Treat costs 20g and is disabled when the player can't afford it.
+    // Bond is level-based with increasing XP thresholds.
     // Only shown when zoomed into a habitat. Tracks _viewedAnimal for auto-refresh via animalUpdate event.
     // Navigation arrows below the panel cycle through habitat animals, transferring the glow highlight.
     showAnimal(animal) {
@@ -762,9 +771,11 @@ export default class HUDScene extends Phaser.Scene {
         yy += 64;
 
         const bw = Math.floor((pw - 24) / 3);
-        this.panelBtn(ct, 8, yy, bw, 'Feed', 0x44AA44, () => { this.gs.feedAnimal(animal.id); this.showAnimal(animal); });
+        const hungerFull = animal.hunger >= 100;
+        const cantAffordTreat = this.gs.state.coins < 20;
+        this.panelBtn(ct, 8, yy, bw, 'Feed', 0x44AA44, () => { this.gs.feedAnimal(animal.id); this.showAnimal(animal); }, hungerFull);
         this.panelBtn(ct, 8 + bw + 4, yy, bw, 'Pet', 0xCC6688, () => { this.gs.petAnimal(animal.id); this.showAnimal(animal); });
-        this.panelBtn(ct, 8 + (bw + 4) * 2, yy, bw, 'Treat', 0xCCAA33, () => { this.gs.treatAnimal(animal.id); this.showAnimal(animal); });
+        this.panelBtn(ct, 8 + (bw + 4) * 2, yy, bw, 'Treat', 0xCCAA33, () => { this.gs.treatAnimal(animal.id); this.showAnimal(animal); }, cantAffordTreat);
         ct.add(this.txt(8 + (bw + 4) * 2 + bw - 2, yy + 24, '20g', 5, CLR.gold).setOrigin(1, 0));
         yy += 32;
 
@@ -824,7 +835,7 @@ export default class HUDScene extends Phaser.Scene {
 
         const ph = yy + 8;
         const bg = this.add.graphics();
-        bg.fillStyle(0x1a0e04, 0.94); bg.fillRoundedRect(0, 0, pw, ph, 6);
+        bg.fillStyle(CLR.uiPanelBg, 0.94); bg.fillRoundedRect(0, 0, pw, ph, 6);
         bg.lineStyle(2, CLR.uiBorder); bg.strokeRoundedRect(0, 0, pw, ph, 6);
         ct.addAt(bg, 0);
 
@@ -839,7 +850,7 @@ export default class HUDScene extends Phaser.Scene {
             const curIdx = habAnimals.findIndex(a => a.id === animal.id);
             const navY = ph + 6;
             const navBg = this.add.graphics();
-            navBg.fillStyle(0x1a0e04, 0.9); navBg.fillRoundedRect(pw / 2 - 50, navY, 100, 24, 4);
+            navBg.fillStyle(CLR.uiPanelBg, 0.9); navBg.fillRoundedRect(pw / 2 - 50, navY, 100, 24, 4);
             navBg.lineStyle(1, CLR.uiBorder, 0.5); navBg.strokeRoundedRect(pw / 2 - 50, navY, 100, 24, 4);
             ct.add(navBg);
 
@@ -881,16 +892,24 @@ export default class HUDScene extends Phaser.Scene {
         ct.add(this.txt(x + w - 2, y + 1, Math.round(val).toString(), 6).setOrigin(1, 0));
     }
 
-    // Creates a colored action button inside a panel container.
-    panelBtn(ct, x, y, w, label, color, cb) {
+    // Creates a colored action button inside a panel container. Uses an invisible hit zone
+    // covering the full button area so clicks register anywhere on the button, not just the label.
+    // When disabled is true the button is greyed out and non-interactive.
+    panelBtn(ct, x, y, w, label, color, cb, disabled = false) {
         const bg = this.add.graphics();
-        bg.fillStyle(color, 0.55); bg.fillRoundedRect(x, y, w, 26, 3);
+        const fillColor = disabled ? 0x555555 : color;
+        bg.fillStyle(fillColor, disabled ? 0.35 : 0.55); bg.fillRoundedRect(x, y, w, 26, 3);
         ct.add(bg);
-        const btn = this.txt(x + w / 2, y + 13, label, 6).setOrigin(0.5).setInteractive({ useHandCursor: true });
-        btn.on('pointerdown', () => { if (!this.gs.state.rescuePaused) cb(); });
-        btn.on('pointerover', () => { bg.clear(); bg.fillStyle(color, 0.8); bg.fillRoundedRect(x, y, w, 26, 3); });
-        btn.on('pointerout', () => { bg.clear(); bg.fillStyle(color, 0.55); bg.fillRoundedRect(x, y, w, 26, 3); });
-        ct.add(btn);
+        const txtColor = disabled ? '#666666' : CLR.uiText;
+        ct.add(this.txt(x + w / 2, y + 13, label, 6, txtColor).setOrigin(0.5));
+        if (!disabled) {
+            const hit = this.add.rectangle(x + w / 2, y + 13, w, 26, 0x000000, 0).setOrigin(0.5);
+            hit.setInteractive({ useHandCursor: true });
+            hit.on('pointerdown', () => { if (!this.gs.state.rescuePaused) cb(); });
+            hit.on('pointerover', () => { bg.clear(); bg.fillStyle(color, 0.8); bg.fillRoundedRect(x, y, w, 26, 3); });
+            hit.on('pointerout', () => { bg.clear(); bg.fillStyle(color, 0.55); bg.fillRoundedRect(x, y, w, 26, 3); });
+            ct.add(hit);
+        }
     }
 
     /* ========== HABITAT INFO PANEL ========== */
@@ -985,7 +1004,7 @@ export default class HUDScene extends Phaser.Scene {
 
         const ph = yy + 8;
         const bg = this.add.graphics();
-        bg.fillStyle(0x1a0e04, 0.94); bg.fillRoundedRect(0, 0, pw, ph, 6);
+        bg.fillStyle(CLR.uiPanelBg, 0.94); bg.fillRoundedRect(0, 0, pw, ph, 6);
         bg.lineStyle(2, ht.stroke); bg.strokeRoundedRect(0, 0, pw, ph, 6);
         ct.addAt(bg, 0);
 
@@ -1055,7 +1074,7 @@ export default class HUDScene extends Phaser.Scene {
 
         const ph = yy + 8;
         const bg = this.add.graphics();
-        bg.fillStyle(0x1a0e04, 0.94); bg.fillRoundedRect(0, 0, pw, ph, 6);
+        bg.fillStyle(CLR.uiPanelBg, 0.94); bg.fillRoundedRect(0, 0, pw, ph, 6);
         bg.lineStyle(2, ft.stroke); bg.strokeRoundedRect(0, 0, pw, ph, 6);
         ct.addAt(bg, 0);
 
@@ -1137,7 +1156,7 @@ export default class HUDScene extends Phaser.Scene {
         const px = W / 2 - pw / 2, py = this.centerPanelY(ph);
         const ct = this.add.container(px, py).setDepth(280);
         const bg = this.add.graphics();
-        bg.fillStyle(0x1a0e04, 0.96); bg.fillRoundedRect(0, 0, pw, ph, 8);
+        bg.fillStyle(CLR.uiPanelBg, 0.96); bg.fillRoundedRect(0, 0, pw, ph, 8);
         bg.lineStyle(2, 0xCCAA33); bg.strokeRoundedRect(0, 0, pw, ph, 8);
         ct.add(bg);
         ct.add(this.txt(pw / 2, 14, 'UPGRADES', 12, CLR.gold).setOrigin(0.5));
@@ -1181,7 +1200,7 @@ export default class HUDScene extends Phaser.Scene {
         const px = W / 2 - pw / 2, py = this.centerPanelY(ph);
         const ct = this.add.container(px, py).setDepth(280);
         const bg = this.add.graphics();
-        bg.fillStyle(0x1a0e04, 0.96); bg.fillRoundedRect(0, 0, pw, ph, 8);
+        bg.fillStyle(CLR.uiPanelBg, 0.96); bg.fillRoundedRect(0, 0, pw, ph, 8);
         bg.lineStyle(2, 0x5588BB); bg.strokeRoundedRect(0, 0, pw, ph, 8);
         ct.add(bg);
         ct.add(this.txt(pw / 2, 14, 'STAFF', 12, CLR.gold).setOrigin(0.5));
@@ -1251,7 +1270,7 @@ export default class HUDScene extends Phaser.Scene {
         const px = W / 2 - pw / 2, py = this.centerPanelY(ph);
         const ct = this.add.container(px, py).setDepth(280);
         const bg = this.add.graphics();
-        bg.fillStyle(0x1a0e04, 0.96); bg.fillRoundedRect(0, 0, pw, ph, 8);
+        bg.fillStyle(CLR.uiPanelBg, 0.96); bg.fillRoundedRect(0, 0, pw, ph, 8);
         bg.lineStyle(2, 0x66AA66); bg.strokeRoundedRect(0, 0, pw, ph, 8);
         ct.add(bg);
         ct.add(this.txt(pw / 2, 14, 'RESCUE MISSIONS', 11, CLR.gold).setOrigin(0.5));
@@ -1320,7 +1339,7 @@ export default class HUDScene extends Phaser.Scene {
         const px = W / 2 - pw / 2, py = this.centerPanelY(ph);
         const ct = this.add.container(px, py).setDepth(290);
         const bg = this.add.graphics();
-        bg.fillStyle(0x1a0e04, 0.97); bg.fillRoundedRect(0, 0, pw, ph, 8);
+        bg.fillStyle(CLR.uiPanelBg, 0.97); bg.fillRoundedRect(0, 0, pw, ph, 8);
         bg.lineStyle(2, 0x44DDAA); bg.strokeRoundedRect(0, 0, pw, ph, 8);
         ct.add(bg);
 
@@ -1427,7 +1446,7 @@ export default class HUDScene extends Phaser.Scene {
         const px = W / 2 - pw / 2, py = this.centerPanelY(ph);
         const ct = this.add.container(px, py).setDepth(290);
         const bg = this.add.graphics();
-        bg.fillStyle(0x1a0e04, 0.97); bg.fillRoundedRect(0, 0, pw, ph, 8);
+        bg.fillStyle(CLR.uiPanelBg, 0.97); bg.fillRoundedRect(0, 0, pw, ph, 8);
         bg.lineStyle(2, 0xAA77CC); bg.strokeRoundedRect(0, 0, pw, ph, 8);
         ct.add(bg);
 
@@ -1666,8 +1685,8 @@ export default class HUDScene extends Phaser.Scene {
     // Returns a y position that vertically centers a panel of given height between the top and bottom bars.
     centerPanelY(ph) { return Math.max(46, 42 + (H - 104 - ph) / 2); }
 
-    // True if any management panel (upgrades, staff, missions, research, journal) or settings menu is open.
-    hasOpenPanel() { return !!(this.upgradePanel || this.staffPanel || this.missionPanel || this.journalPanel || this.researchPanel || this.settingsPanel); }
+    // True if any management panel (upgrades, staff, missions, research, journal), build popup, or settings menu is open.
+    hasOpenPanel() { return !!(this.upgradePanel || this.staffPanel || this.missionPanel || this.journalPanel || this.researchPanel || this.settingsPanel || this.buildPopup); }
 
     isPointerOverPanel(screenX, screenY) {
         const barY = H - 62;
