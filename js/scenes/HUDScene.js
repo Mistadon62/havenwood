@@ -282,7 +282,7 @@ export default class HUDScene extends Phaser.Scene {
         const bar = this.add.graphics().setDepth(250);
         bar.fillStyle(CLR.uiBg, 0.9); bar.fillRect(0, barY, W, 62);
         bar.lineStyle(1, CLR.uiBorder); bar.lineBetween(0, barY, W, barY);
-        const label = this.txt(W / 2, barY + 31, 'Left Click to Place, Right Click to Exit Build Mode', 8, '#FFFFFF').setOrigin(0.5).setDepth(250);
+        const label = this.txt(W / 2, barY + 31, '', 8, '#FFFFFF').setOrigin(0.5).setDepth(250);
         this._buildHintBar = bar;
         this._buildHintLabel = label;
         bar.setVisible(false);
@@ -312,7 +312,7 @@ export default class HUDScene extends Phaser.Scene {
 
         this._buildDismiss = this.add.rectangle(W / 2, barY / 2, W, barY, 0, 0)
             .setInteractive().setDepth(259);
-        this._buildDismiss.on('pointerdown', () => this.closeBuildPopup());
+        this._buildDismiss.on('pointerdown', () => { if (!this.gs.state.rescuePaused) this.closeBuildPopup(); });
 
         this._buildAnchorX = anchorX;
         this._buildBarY = barY;
@@ -353,6 +353,7 @@ export default class HUDScene extends Phaser.Scene {
             hit.on('pointerover', () => { if (cid !== this._buildCategory) { bg.clear(); bg.fillStyle(cc, 0.7); bg.fillRoundedRect(catX, cy, catW, catH, 4); bg.lineStyle(1, cc, 1); bg.strokeRoundedRect(catX, cy, catW, catH, 4); } });
             hit.on('pointerout', () => { if (cid !== this._buildCategory) { bg.clear(); bg.fillStyle(cc, 0.55); bg.fillRoundedRect(catX, cy, catW, catH, 4); bg.lineStyle(1, cc, 0.85); bg.strokeRoundedRect(catX, cy, catW, catH, 4); } });
             hit.on('pointerdown', () => {
+                if (this.gs.state.rescuePaused) return;
                 if (this._buildCategory === cid) {
                     this._buildCategory = null;
                     this._renderBuildMenu();
@@ -406,7 +407,7 @@ export default class HUDScene extends Phaser.Scene {
                     const hit = this.add.rectangle(bx, by, rw, rh, 0, 0).setInteractive({ useHandCursor: true });
                     hit.on('pointerover', () => { btnBg.clear(); btnBg.fillStyle(h.fill, 0.55); btnBg.fillRoundedRect(rx, ry, rw, rh, 4); btnBg.lineStyle(1, h.fill, 0.8); btnBg.strokeRoundedRect(rx, ry, rw, rh, 4); });
                     hit.on('pointerout', () => { btnBg.clear(); btnBg.fillStyle(h.fill, 0.3); btnBg.fillRoundedRect(rx, ry, rw, rh, 4); });
-                    hit.on('pointerdown', () => { this.closeBuildPopup(); this.gs.enterBuild(h.id); });
+                    hit.on('pointerdown', () => { if (this.gs.state.rescuePaused) return; this.closeBuildPopup(); this.gs.enterBuild(h.id); });
                     ct.add(hit);
                 }
             });
@@ -428,7 +429,7 @@ export default class HUDScene extends Phaser.Scene {
                     const hit = this.add.rectangle(bx, by, rw, rh, 0, 0).setInteractive({ useHandCursor: true });
                     hit.on('pointerover', () => { btnBg.clear(); btnBg.fillStyle(f.fill, 0.55); btnBg.fillRoundedRect(rx, ry, rw, rh, 4); btnBg.lineStyle(1, f.fill, 0.8); btnBg.strokeRoundedRect(rx, ry, rw, rh, 4); });
                     hit.on('pointerout', () => { btnBg.clear(); btnBg.fillStyle(f.fill, 0.3); btnBg.fillRoundedRect(rx, ry, rw, rh, 4); });
-                    hit.on('pointerdown', () => { this.closeBuildPopup(); this.gs.enterFacilityBuild(f.id); });
+                    hit.on('pointerdown', () => { if (this.gs.state.rescuePaused) return; this.closeBuildPopup(); this.gs.enterFacilityBuild(f.id); });
                     ct.add(hit);
                 }
             });
@@ -450,7 +451,7 @@ export default class HUDScene extends Phaser.Scene {
                     const hit = this.add.rectangle(bx, by, rw, rh, 0, 0).setInteractive({ useHandCursor: true });
                     hit.on('pointerover', () => { btnBg.clear(); btnBg.fillStyle(d.color, 0.55); btnBg.fillRoundedRect(rx, ry, rw, rh, 4); btnBg.lineStyle(1, d.color, 0.8); btnBg.strokeRoundedRect(rx, ry, rw, rh, 4); });
                     hit.on('pointerout', () => { btnBg.clear(); btnBg.fillStyle(d.color, 0.3); btnBg.fillRoundedRect(rx, ry, rw, rh, 4); });
-                    hit.on('pointerdown', () => { this.closeBuildPopup(); this.gs.enterDecorBuild(d.id); });
+                    hit.on('pointerdown', () => { if (this.gs.state.rescuePaused) return; this.closeBuildPopup(); this.gs.enterDecorBuild(d.id); });
                     ct.add(hit);
                 }
             });
@@ -601,6 +602,7 @@ export default class HUDScene extends Phaser.Scene {
     showRescue(ev) {
         if (this.rescuePopup) this.rescuePopup.destroy();
         if (this._rescueTint) this._rescueTint.destroy();
+        this.closeBuildPopup();
         this.gs.state.rescuePaused = true;
 
         this._rescueTint = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.45).setDepth(295);
@@ -1142,7 +1144,10 @@ export default class HUDScene extends Phaser.Scene {
     showBuildHint() {
         this.hideToolbar();
         if (this._buildHintBar) this._buildHintBar.setVisible(true);
-        if (this._buildHintLabel) this._buildHintLabel.setVisible(true);
+        if (this._buildHintLabel) {
+            this._buildHintLabel.setVisible(true);
+            this._buildHintLabel.setText('Left Click to Place • Right Click to Exit');
+        }
     }
 
     hideBuildHint() {

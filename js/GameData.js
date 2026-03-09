@@ -32,8 +32,10 @@ export const HABITATS = {
 };
 
 // Facilities — zoomable multi-tile buildings (no animals). Garden grows harvestable produce.
+// Gift shop: some visitors stop here before leaving; tour visitors go here then leave (no more habitats).
 export const FACILITIES = {
-    garden: { id: 'garden', name: 'Garden', cost: 150, w: 4, h: 4, fill: 0x88CC66, stroke: 0x5A8A3A, desc: 'A tranquil garden that beautifies the sanctuary.' },
+    garden:    { id: 'garden', name: 'Garden', cost: 150, w: 3, h: 4, fill: 0x88CC66, stroke: 0x5A8A3A, desc: 'A tranquil garden that beautifies the sanctuary.' },
+    gift_shop: { id: 'gift_shop', name: 'Gift Shop', cost: 200, w: 3, h: 3, fill: 0xCC8866, stroke: 0x8B5A3A, desc: 'Visitors stop here before leaving. Some will browse and spend.' },
 };
 
 // Garden produce — 3 types × 4 each (12 total). Picked items give food and regrow after 8 hours (480 min).
