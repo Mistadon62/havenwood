@@ -99,7 +99,16 @@ export default class MenuScene extends Phaser.Scene {
             }
         };
 
+        const fireX = W / 2, fireY = H * 0.65;
+        const tentX = fireX - 90, tentY = fireY + 2;
+        const inCampZone = (tx, ty) => {
+            const dx = tx - (tentX + fireX) / 2;
+            const dy = ty - fireY;
+            return dx * dx + dy * dy < 75 * 75;
+        };
+
         const layers = [
+            { y: 0.26, spacing: 14, jitterX: 8, jitterY: 6, scaleMin: 0.15, scaleMax: 0.28, dark: true, wave: true },
             { y: 0.33, spacing: 22, jitterX: 10, jitterY: 12, scaleMin: 0.3,  scaleMax: 0.45, dark: true, wave: true },
             { y: 0.38, spacing: 20, jitterX: 10, jitterY: 12, scaleMin: 0.4,  scaleMax: 0.55, dark: true, wave: true },
             { y: 0.43, spacing: 18, jitterX: 9,  jitterY: 10, scaleMin: 0.5,  scaleMax: 0.7,  dark: true, wave: true },
@@ -115,6 +124,7 @@ export default class MenuScene extends Phaser.Scene {
                 if (l.wave) {
                     ty += 14 * Math.sin(tx / 70) + 6 * Math.sin(tx / 28);
                 }
+                if (inCampZone(tx, ty)) continue;
                 drawTree(tx, ty, rng.realInRange(l.scaleMin, l.scaleMax), l.dark);
             }
         }
@@ -123,8 +133,19 @@ export default class MenuScene extends Phaser.Scene {
             if (rng.frac() > 0.6) continue;
             const tx = x + rng.between(-20, 20);
             const ty = H * 0.67 + rng.between(0, 10);
+            if (inCampZone(tx, ty)) continue;
             drawTree(tx, ty, rng.realInRange(0.7, 0.95), false);
         }
+
+        // Lake in the gap behind the campsite
+        const lakeX = (tentX + fireX) / 2;
+        const lakeY = fireY - 45;
+        bg.fillStyle(0x1a3045, 0.95);
+        bg.fillEllipse(lakeX, lakeY, 95, 52);
+        bg.fillStyle(0x2a4060, 0.6);
+        bg.fillEllipse(lakeX - 6, lakeY - 4, 68, 36);
+        bg.fillStyle(0x3a5080, 0.4);
+        bg.fillEllipse(lakeX - 12, lakeY - 10, 34, 20);
 
         for (let i = 0; i < 24; i++) {
             const fx = rng.between(30, W - 30);
@@ -154,7 +175,6 @@ export default class MenuScene extends Phaser.Scene {
         }
 
         // Campfire at the forest edge
-        const fireX = W / 2, fireY = H * 0.65;
         const stones = [[-10, 3], [10, 3], [-7, -5], [7, -5], [0, 6], [-12, 0], [12, 0]];
         for (const [ox, oy] of stones) {
             bg.fillStyle(rng.pick([0x666666, 0x777777, 0x555555, 0x606060]));
@@ -172,7 +192,6 @@ export default class MenuScene extends Phaser.Scene {
         drawBench(fireX + 30, fireY + 6);
 
         // Orange tent to the left
-        const tentX = fireX - 90, tentY = fireY + 2;
         bg.fillStyle(0xCC6622);
         bg.fillTriangle(tentX, tentY - 30, tentX - 22, tentY + 8, tentX + 22, tentY + 8);
         bg.fillStyle(0xDD7733, 0.7);
