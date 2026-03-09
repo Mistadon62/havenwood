@@ -107,6 +107,21 @@ export default class MenuScene extends Phaser.Scene {
             return dx * dx + dy * dy < 75 * 75;
         };
 
+        // Shrubs and undergrowth at forest-meadow edge (drawn before trees so trees render on top)
+        const shrubColors = [0x2a5e30, 0x1d4a24, 0x3a6a3a, 0x4a7a4a, 0x5a8a5a, 0x3d6b3d];
+        for (let i = 0; i < 45; i++) {
+            const sx = rng.between(0, W);
+            const sy = H * 0.64 + rng.between(0, H * 0.08);
+            if (inCampZone(sx, sy)) continue;
+            const sz = rng.realInRange(2, 6);
+            bg.fillStyle(rng.pick(shrubColors), 0.85);
+            bg.fillCircle(sx, sy, sz);
+            if (sz >= 4) {
+                bg.fillStyle(rng.pick(shrubColors), 0.6);
+                bg.fillCircle(sx + rng.between(-2, 2), sy - 1, sz * 0.6);
+            }
+        }
+
         const layers = [
             { y: 0.33, spacing: 22, jitterX: 10, jitterY: 12, scaleMin: 0.3,  scaleMax: 0.45, dark: true, wave: true },
             { y: 0.38, spacing: 20, jitterX: 10, jitterY: 12, scaleMin: 0.4,  scaleMax: 0.55, dark: true, wave: true },
@@ -239,6 +254,29 @@ export default class MenuScene extends Phaser.Scene {
             strokeThickness: 6
         }).setOrigin(0.5);
 
+        // Pre-Alpha badge (top-left can overlap bottom-right of D)
+        const badgeX = W / 2 + 160, badgeY = 180;
+        const badge = this.add.container(badgeX, badgeY);
+        const badgeBg = this.add.graphics();
+        badgeBg.fillStyle(0x3a4a2a, 0.9);
+        badgeBg.lineStyle(1, 0x5a6a4a, 0.8);
+        badgeBg.fillRoundedRect(-52, -11, 104, 22, 4);
+        badgeBg.strokeRoundedRect(-52, -11, 104, 22, 4);
+        const badgeTxt = this.add.text(0, 0, 'Pre-Alpha', {
+            fontFamily: '"Press Start 2P", monospace',
+            fontSize: '10px',
+            color: '#AACC88'
+        }).setOrigin(0.5);
+        badge.add([badgeBg, badgeTxt]);
+        this.tweens.add({
+            targets: badge,
+            y: badgeY - 5,
+            duration: 2000,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut'
+        });
+
         this.btn(W / 2, 280, 'New Game', () => {
             this.scene.start('GameScene', { newGame: true });
         });
@@ -249,7 +287,7 @@ export default class MenuScene extends Phaser.Scene {
             });
         }
 
-        this.add.text(W / 2, H - 30, 'v0.1 MVP', {
+        this.add.text(W / 2, H - 30, 'v0.1', {
             fontFamily: '"Press Start 2P", monospace',
             fontSize: '8px',
             color: '#556644'
