@@ -24,12 +24,46 @@ export default class MenuScene extends Phaser.Scene {
             bg.fillRect(0, y, W, 1);
         }
 
+        const rng = new Phaser.Math.RandomDataGenerator(['menu']);
+
+        // Forest floor — solid ground so trees don't look floating
+        const floorTop = H * 0.30, floorBottom = H * 0.68;
+        for (let y = Math.floor(floorTop); y <= floorBottom; y++) {
+            const t = (y - floorTop) / (floorBottom - floorTop);
+            const r = Math.round(12 + t * 18);
+            const g = Math.round(28 + t * 25);
+            const b = Math.round(18 + t * 12);
+            bg.fillStyle(Phaser.Display.Color.GetColor(r, g, b));
+            bg.fillRect(0, y, W, 1);
+        }
+
+        // Hills — rolling terrain the trees sit on
+        const hillShades = [0x1a3020, 0x152818, 0x1e3825];
+        for (let h = 0; h < 3; h++) {
+            const hillY = H * (0.52 + h * 0.05);
+            const hillW = W * (0.7 + rng.frac() * 0.4);
+            const hillH = 50 + rng.between(10, 25);
+            const hillX = (h % 2 === 0 ? -hillW * 0.2 : W - hillW * 0.8) + rng.between(-20, 20);
+            bg.fillStyle(hillShades[h], 0.85);
+            bg.fillEllipse(hillX + hillW / 2, hillY, hillW, hillH);
+        }
+
         bg.fillStyle(CLR.grass2);
         bg.fillRect(0, H * 0.64, W, H * 0.36);
         bg.fillStyle(CLR.grass1);
         bg.fillRect(0, H * 0.67, W, H * 0.33);
 
-        const rng = new Phaser.Math.RandomDataGenerator(['menu']);
+        // Ground texture — subtle variation on the meadow
+        const shift = (c, n) => (Math.min(255, Math.max(0, ((c >> 16) & 0xff) + n)) << 16) |
+            (Math.min(255, Math.max(0, ((c >> 8) & 0xff) + n)) << 8) |
+            Math.min(255, Math.max(0, (c & 0xff) + n));
+        for (let i = 0; i < 35; i++) {
+            const gx = rng.between(0, W);
+            const gy = H * 0.7 + rng.between(0, H * 0.28);
+            const sz = rng.realInRange(1, 2.5);
+            bg.fillStyle(shift(CLR.grass1, rng.between(-6, 10)), 0.3);
+            bg.fillCircle(gx, gy, sz);
+        }
 
         // Stars in the sky
         for (let i = 0; i < 50; i++) {
@@ -66,18 +100,21 @@ export default class MenuScene extends Phaser.Scene {
         };
 
         const layers = [
-            { y: 0.33, spacing: 22, jitterX: 10, jitterY: 12, scaleMin: 0.3,  scaleMax: 0.45, dark: true },
-            { y: 0.38, spacing: 20, jitterX: 10, jitterY: 12, scaleMin: 0.4,  scaleMax: 0.55, dark: true },
-            { y: 0.43, spacing: 18, jitterX: 9,  jitterY: 10, scaleMin: 0.5,  scaleMax: 0.7,  dark: true },
-            { y: 0.48, spacing: 20, jitterX: 10, jitterY: 10, scaleMin: 0.6,  scaleMax: 0.8,  dark: true },
-            { y: 0.53, spacing: 22, jitterX: 10, jitterY: 8,  scaleMin: 0.7,  scaleMax: 0.95, dark: false },
-            { y: 0.58, spacing: 24, jitterX: 12, jitterY: 8,  scaleMin: 0.8,  scaleMax: 1.05, dark: false },
-            { y: 0.63, spacing: 28, jitterX: 14, jitterY: 6,  scaleMin: 0.9,  scaleMax: 1.15, dark: false },
+            { y: 0.33, spacing: 22, jitterX: 10, jitterY: 12, scaleMin: 0.3,  scaleMax: 0.45, dark: true, wave: true },
+            { y: 0.38, spacing: 20, jitterX: 10, jitterY: 12, scaleMin: 0.4,  scaleMax: 0.55, dark: true, wave: true },
+            { y: 0.43, spacing: 18, jitterX: 9,  jitterY: 10, scaleMin: 0.5,  scaleMax: 0.7,  dark: true, wave: true },
+            { y: 0.48, spacing: 20, jitterX: 10, jitterY: 10, scaleMin: 0.6,  scaleMax: 0.8,  dark: true, wave: false },
+            { y: 0.53, spacing: 22, jitterX: 10, jitterY: 8,  scaleMin: 0.7,  scaleMax: 0.95, dark: false, wave: false },
+            { y: 0.58, spacing: 24, jitterX: 12, jitterY: 8,  scaleMin: 0.8,  scaleMax: 1.05, dark: false, wave: false },
+            { y: 0.63, spacing: 28, jitterX: 14, jitterY: 6,  scaleMin: 0.9,  scaleMax: 1.15, dark: false, wave: false },
         ];
         for (const l of layers) {
             for (let x = -30; x < W + 30; x += l.spacing) {
                 const tx = x + rng.between(-l.jitterX, l.jitterX);
-                const ty = H * l.y + rng.between(-l.jitterY, l.jitterY);
+                let ty = H * l.y + rng.between(-l.jitterY, l.jitterY);
+                if (l.wave) {
+                    ty += 14 * Math.sin(tx / 70) + 6 * Math.sin(tx / 28);
+                }
                 drawTree(tx, ty, rng.realInRange(l.scaleMin, l.scaleMax), l.dark);
             }
         }
