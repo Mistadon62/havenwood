@@ -489,6 +489,32 @@ export class SpriteGenerator {
             g.fillRect(6, 8, 1, 1);
         });
 
+        tex(scene, 'icon_nauseous', 12, 12, g => {
+            g.fillStyle(0x88AA55);
+            g.fillCircle(6, 6, 5);
+            g.fillStyle(0x000000);
+            g.fillRect(3, 3, 1, 1);
+            g.fillRect(4, 4, 1, 1);
+            g.fillRect(5, 5, 1, 1);
+            g.fillRect(5, 3, 1, 1);
+            g.fillRect(3, 5, 1, 1);
+            g.fillRect(7, 3, 1, 1);
+            g.fillRect(8, 4, 1, 1);
+            g.fillRect(9, 5, 1, 1);
+            g.fillRect(9, 3, 1, 1);
+            g.fillRect(7, 5, 1, 1);
+            g.fillRect(4, 8, 4, 1);
+        });
+
+        tex(scene, 'icon_toilet', 12, 12, g => {
+            g.fillStyle(0xFFFFFF);
+            g.fillRect(4, 2, 4, 3);
+            g.fillStyle(0x888888);
+            g.fillRect(3, 5, 6, 4);
+            g.fillStyle(0xFFFFFF);
+            g.fillRect(4, 6, 4, 2);
+        });
+
         tex(scene, 'particle_coin', 10, 10, g => {
             g.fillStyle(0xFFD700);
             g.fillCircle(5, 5, 4);
@@ -798,7 +824,8 @@ export class SpriteGenerator {
             volunteer: 0x55AA55,
             vet: 0xAA5555,
             guide: 0xAA8855,
-            gardener: 0x66AA44
+            gardener: 0x66AA44,
+            janitor: 0x88AAEE
         };
         Object.entries(types).forEach(([id, c]) => {
             tex(scene, `staff_${id}`, TILE, TILE, g => {
@@ -819,7 +846,10 @@ export class SpriteGenerator {
                 }
                 if (id === 'gardener') {
                     rect(g, 20, 10, 2, 12, 0x6B4226);
-                    rect(g, 19, 8, 4, 3, 0x888888);
+                }
+                if (id === 'janitor') {
+                    rect(g, 18, 14, 6, 3, 0x6B4226);
+                    rect(g, 20, 12, 2, 8, 0x8B7355);
                 }
             });
         });

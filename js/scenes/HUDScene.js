@@ -43,6 +43,42 @@ export default class HUDScene extends Phaser.Scene {
         this.time.delayedCall(0, () => this.syncState());
     }
 
+    _updateBathroomMeter() {
+        if (!this.facilityPanel) return;
+        const b = this._facilityPanelBathroom;
+        if (!b || !b.fac) return;
+        const dirty = b.fac.dirty || 0;
+        const cleanliness = Math.max(0, 1 - dirty);
+        b.barFill.clear();
+        b.barFill.fillStyle(cleanliness > 0.5 ? 0x44AA44 : cleanliness > 0.25 ? 0xAA8844 : 0xAA4444, 0.9);
+        b.barFill.fillRoundedRect(8, b.barY, b.barW * cleanliness, b.barH, 3);
+        b.barPctTxt.setText(Math.round(cleanliness * 100) + '%');
+        if (b.cleanBg && b.cleanBtn && b.cleanY != null) {
+            const wasEnabled = b.cleanBtn.input && b.cleanBtn.input.enabled;
+            const nowEnabled = dirty > 0;
+            if (wasEnabled !== nowEnabled) {
+                b.cleanBg.clear();
+                b.cleanBg.fillStyle(nowEnabled ? 0x448844 : 0x444444, 0.5);
+                b.cleanBg.fillRoundedRect(6, b.cleanY, b.cleanW || 188, 24, 3);
+                b.cleanBtn.setText(nowEnabled ? 'Clean' : 'Spotless');
+                b.cleanBtn.setColor(nowEnabled ? '#88DD88' : '#888888');
+                if (nowEnabled) {
+                    b.cleanBtn.setInteractive({ useHandCursor: true });
+                    b.cleanBtn.off('pointerdown').on('pointerdown', () => { this.gs.cleanBathroom(b.fac); this.showFacilityBackBar(b.fac); });
+                    b.cleanBtn.on('pointerover', () => b.cleanBtn.setColor('#AAFFAA'));
+                    b.cleanBtn.on('pointerout', () => b.cleanBtn.setColor('#88DD88'));
+                } else {
+                    b.cleanBtn.disableInteractive();
+                    b.cleanBtn.off('pointerover').off('pointerout').off('pointerdown');
+                }
+            }
+        }
+    }
+
+    update() {
+        if (this.facilityPanel && this._facilityPanelBathroom) this._updateBathroomMeter();
+    }
+
     // Syncs HUD display from GameScene state (coins, time, research points).
     syncState() {
         const s = this.gs.state;
@@ -500,9 +536,9 @@ export default class HUDScene extends Phaser.Scene {
         ev.on('habitatViewClosed', () => {
             if (this.habitatPanel) { this.habitatPanel.destroy(); this.habitatPanel = null; }
             if (this.animalPanel) { this.animalPanel.destroy(); this.animalPanel = null; this._viewedAnimal = null; }
-            if (this.facilityPanel) { this.facilityPanel.destroy(); this.facilityPanel = null; }
-            this.destroyBackBar();
-            this.showToolbar();
+        if (this.facilityPanel) { this.facilityPanel.destroy(); this.facilityPanel = null; this._facilityPanelBathroom = null; }
+        this.destroyBackBar();
+        this.showToolbar();
         });
         ev.on('showFacilityView', fac => this.showFacilityBackBar(fac));
         ev.on('habitatSelectEnter', label => this.showSelectBar(label));
@@ -1048,7 +1084,11 @@ export default class HUDScene extends Phaser.Scene {
 
     showFacilityBackBar(fac) {
         this.destroyBackBar();
-        if (this.facilityPanel) { this.facilityPanel.destroy(); this.facilityPanel = null; }
+        if (this.facilityPanel) {
+            this.facilityPanel.destroy();
+            this.facilityPanel = null;
+            this._facilityPanelBathroom = null;
+        }
         this.hideToolbar();
 
         const ft = FACILITIES[fac.type];
@@ -1060,6 +1100,31 @@ export default class HUDScene extends Phaser.Scene {
         ct.add(descTxt);
 
         let yy = 30 + descTxt.height + 10;
+
+        if (fac.type === 'bathroom') {
+            const barW = pw - 16, barH = 10;
+            const barY = yy + 14 - barH / 2;
+            ct.add(this.txt(8, yy, 'Cleanliness', 5, '#CCCCCC').setOrigin(0, 0.5));
+            yy += 14;
+            const barBg = this.add.graphics();
+            barBg.fillStyle(0x333333, 0.8);
+            barBg.fillRoundedRect(8, barY, barW, barH, 3);
+            ct.add(barBg);
+            const barFill = this.add.graphics();
+            ct.add(barFill);
+            const barBorder = this.add.graphics();
+            barBorder.lineStyle(1, 0x555555, 1);
+            barBorder.strokeRoundedRect(8, barY, barW, barH, 3);
+            ct.add(barBorder);
+            const barPctTxt = this.txt(pw - 8, yy, '', 5, '#AAAAAA').setOrigin(1, 0.5);
+            ct.add(barPctTxt);
+            this._facilityPanelBathroom = { fac, barFill, barPctTxt, barW, barH, barY };
+            this._updateBathroomMeter();
+            yy += 20;
+        } else {
+            this._facilityPanelBathroom = null;
+        }
+
         const moveBg = this.add.graphics();
         moveBg.fillStyle(0x335577, 0.5); moveBg.fillRoundedRect(6, yy, pw - 12, 24, 3);
         ct.add(moveBg);
@@ -1069,6 +1134,29 @@ export default class HUDScene extends Phaser.Scene {
         moveBtn.on('pointerout', () => moveBtn.setColor('#88BBDD'));
         ct.add(moveBtn);
         yy += 30;
+
+        if (fac.type === 'bathroom') {
+            const dirty = fac.dirty || 0;
+            const cleanBg = this.add.graphics();
+            cleanBg.fillStyle(dirty > 0 ? 0x448844 : 0x444444, 0.5);
+            cleanBg.fillRoundedRect(6, yy, pw - 12, 24, 3);
+            ct.add(cleanBg);
+            const cleanBtn = this.txt(pw / 2, yy + 12, dirty > 0 ? 'Clean' : 'Spotless', 5, dirty > 0 ? '#88DD88' : '#888888').setOrigin(0.5);
+            if (dirty > 0) {
+                cleanBtn.setInteractive({ useHandCursor: true });
+                cleanBtn.on('pointerdown', () => { this.gs.cleanBathroom(fac); this.showFacilityBackBar(fac); });
+                cleanBtn.on('pointerover', () => cleanBtn.setColor('#AAFFAA'));
+                cleanBtn.on('pointerout', () => cleanBtn.setColor('#88DD88'));
+            }
+            ct.add(cleanBtn);
+            if (this._facilityPanelBathroom) {
+                this._facilityPanelBathroom.cleanBg = cleanBg;
+                this._facilityPanelBathroom.cleanBtn = cleanBtn;
+                this._facilityPanelBathroom.cleanY = yy;
+                this._facilityPanelBathroom.cleanW = pw - 12;
+            }
+            yy += 30;
+        }
 
         const destroyBg = this.add.graphics();
         destroyBg.fillStyle(0x773333, 0.5);
@@ -1721,6 +1809,7 @@ export default class HUDScene extends Phaser.Scene {
         ['animalPanel', 'upgradePanel', 'staffPanel', 'missionPanel', 'journalPanel', 'habitatPanel', 'researchPanel', 'facilityPanel'].forEach(k => {
             if (this[k]) { this[k].destroy(); this[k] = null; }
         });
+        this._facilityPanelBathroom = null;
         if (!keepZoom) this.destroyBackBar();
         this.closeBuildPopup();
         if (this._missionRefresh) { this._missionRefresh.destroy(); this._missionRefresh = null; }

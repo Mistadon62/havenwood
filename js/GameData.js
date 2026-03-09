@@ -31,11 +31,16 @@ export const HABITATS = {
     barn:   { id: 'barn', name: 'Barn', cost: 250, w: 4, h: 4, capacity: 5, types: ['domestic'], fill: 0xCD853F, stroke: 0x8B5A2B, desc: 'A warm barn for domestic animals.' },
 };
 
+// Bathroom dirtiness: accumulates over time, 0–1 scale. At 1, visitors get nauseous.
+export const BATHROOM_DIRTY_RATE = 0.00003;
+
 // Facilities — zoomable multi-tile buildings (no animals). Garden grows harvestable produce.
 // Gift shop: some visitors stop here before leaving; tour visitors go here then leave (no more habitats).
+// Bathroom: visitors may stop here before leaving; improves satisfaction.
 export const FACILITIES = {
     garden:    { id: 'garden', name: 'Garden', cost: 150, w: 3, h: 4, fill: 0x88CC66, stroke: 0x5A8A3A, desc: 'A tranquil garden that beautifies the sanctuary.' },
     gift_shop: { id: 'gift_shop', name: 'Gift Shop', cost: 200, w: 3, h: 3, fill: 0xCC8866, stroke: 0x8B5A3A, desc: 'Visitors stop here before leaving. Some will browse and spend.' },
+    bathroom:  { id: 'bathroom', name: 'Bathroom', cost: 80, w: 2, h: 2, fill: 0x88AAEE, stroke: 0x5A7ABB, desc: 'Restroom facilities. Visitors appreciate the convenience.' },
 };
 
 // Garden produce — 3 types × 4 each (12 total). Picked items give food and regrow after 8 hours (480 min).
@@ -254,13 +259,14 @@ export const UPGRADES = {
     conservation:   { id: 'conservation', name: 'Conservation', cost: 800, desc: 'Rescues arrive 30% faster' },
 };
 
-// Staff types — 4 hirable roles (volunteer, vet, guide, gardener) with costs and effects.
+// Staff types — 5 hirable roles (volunteer, vet, guide, gardener, janitor) with costs and effects.
 // Volunteers are free (0g hire, 0g salary) but limited to 1.
 export const STAFF_TYPES = {
     volunteer:  { id: 'volunteer', name: 'Volunteer', hireCost: 0, salary: 0, maxCount: 1, desc: 'Keeps animals fed and happy', color: 0x55AA55 },
     vet:        { id: 'vet', name: 'Veterinarian', hireCost: 200, salary: 40, desc: 'Keeps animals healthy', color: 0xAA5555 },
     guide:      { id: 'guide', name: 'Tour Guide', hireCost: 100, salary: 25, desc: '+25% visitor income', color: 0xAA8855 },
     gardener:   { id: 'gardener', name: 'Gardener', hireCost: 120, salary: 20, desc: 'Auto-harvests garden crops', color: 0x66AA44 },
+    janitor:    { id: 'janitor', name: 'Janitor', hireCost: 80, salary: 15, desc: 'Keeps bathrooms clean', color: 0x88AAEE },
 };
 
 // Research tree — 4 branches x 4 tiers; unlock dependencies and effect keys drive gameplay

@@ -34,7 +34,7 @@
 import { TILE, COLS, ROWS, W, H, MAP_Y, TIME_SCALE, START_COINS, HABITATS, SPECIES, RARITY_WEIGHT, RESCUE_MSG, CLR,
     SEASONS, SEASON_ORDER, SEASON_LENGTH, SEASON_CYCLE, UPGRADES, STAFF_TYPES,
     TRAITS, TRAIT_IDS, ILLNESSES, ENRICHMENTS, MISSIONS, VISITOR_TYPES, ACHIEVEMENTS,
-    RESEARCH, RESEARCH_BRANCHES, DECORATIONS, FACILITIES, GARDEN_PRODUCE, GARDEN_REGROW_TIME } from '../GameData.js';
+    RESEARCH, RESEARCH_BRANCHES, DECORATIONS, FACILITIES, GARDEN_PRODUCE, GARDEN_REGROW_TIME, BATHROOM_DIRTY_RATE } from '../GameData.js';
 import { SoundManager } from '../SoundManager.js';
 
 let uid = 0;
@@ -976,7 +976,9 @@ export default class GameScene extends Phaser.Scene {
             fac.gfx.lineStyle(2, ft.stroke, 0.9); fac.gfx.strokeRect(px + 1, py + 1, pw - 2, ph - 2);
         }
         if (fac.decor) fac.decor.forEach(d => d.destroy());
+        if (fac._dirtyGfx) { fac._dirtyGfx.destroy(); fac._dirtyGfx = null; }
         fac.decor = this.addFacilityDecor(fac.type, gx, gy, { ...ft, w, h });
+        if (fac.type === 'bathroom' && (fac.dirty || 0) > 0.1) this._updateBathroomDirtyVisual(fac);
         if (fac.produce) {
             this._recomputeGardenProducePositions(fac);
             if (fac._produceGfx) {
@@ -1012,6 +1014,7 @@ export default class GameScene extends Phaser.Scene {
             for (let dx = 0; dx < w; dx++)
                 this.grid[fac.gy + dy][fac.gx + dx] = null;
         if (fac.type === 'garden') this.hideGardenMiniBars(fac);
+        if (fac._dirtyGfx) { fac._dirtyGfx.destroy(); fac._dirtyGfx = null; }
         if (fac.gfx) fac.gfx.destroy();
         if (fac.decor) fac.decor.forEach(d => d.destroy());
         if (fac._produceGfx) fac._produceGfx.destroy();
@@ -1393,10 +1396,12 @@ export default class GameScene extends Phaser.Scene {
         }
 
         const fac = { id, type: facId, gx, gy, w, h, gfx, decor };
+        if (facId === 'bathroom') fac.dirty = opts.dirty ?? 0;
         this.state.facilities.push(fac);
         this.facilitySprites.push(fac);
 
         if (facId === 'garden') this.initGardenProduce(fac, opts.produce);
+        if (facId === 'bathroom') this._updateBathroomDirtyVisual(fac);
 
         if (opts.cost !== false) {
             this.spendCoins(ft.cost);
@@ -1427,6 +1432,22 @@ export default class GameScene extends Phaser.Scene {
             g.fillRect(base + 4, top + 4, pw - 8, 8);
             g.fillStyle(0xDEB887, 0.6);
             g.fillRect(base + pw / 2 - awningW / 2, top + 2, awningW, awningH);
+        } else if (facId === 'bathroom') {
+            g.fillStyle(0xE8EEF4, 0.85);
+            g.fillRect(base + 4, top + 4, pw - 8, ph - 8);
+            g.fillStyle(0x5A7ABB, 0.6);
+            g.fillRect(base + 6, top + 6, pw - 12, 10);
+            g.fillStyle(0xFFFFFF, 0.9);
+            g.fillRect(base + 10, top + 8, 8, 6);
+            const doorW = 14, doorH = 22;
+            const doorX = base + pw / 2 - doorW / 2;
+            const doorY = top + ph - doorH - 6;
+            g.fillStyle(0x4A6A8A, 0.9);
+            g.fillRect(doorX - 2, doorY - 2, doorW + 4, doorH + 4);
+            g.fillStyle(0xD8E0E8, 0.95);
+            g.fillRect(doorX, doorY, doorW, doorH);
+            g.fillStyle(0x3A5A7A, 1);
+            g.fillRect(doorX + doorW - 3, doorY + doorH / 2 - 2, 2, 4);
         }
         return objects;
     }
@@ -1539,6 +1560,35 @@ export default class GameScene extends Phaser.Scene {
         this._redrawAllMiniBars(fac);
     }
 
+    _updateBathroomDirtyVisual(fac) {
+        if (fac.type !== 'bathroom') return;
+        if (fac._dirtyGfx) {
+            fac._dirtyGfx.destroy();
+            fac._dirtyGfx = null;
+        }
+        if ((fac.dirty || 0) > 0.1) {
+            const base = fac.gx * TILE, top = MAP_Y + fac.gy * TILE;
+            const pw = fac.w * TILE, ph = fac.h * TILE;
+            const g = this.add.graphics().setDepth(11);
+            const alpha = Math.min(0.6, fac.dirty * 0.7);
+            g.fillStyle(0x4A3A20, alpha);
+            g.fillRect(base + 4, top + 4, pw - 8, ph - 8);
+            g.fillStyle(0x5A4A30, alpha * 0.8);
+            const rng = new Phaser.Math.RandomDataGenerator([fac.id, 'dirty']);
+            for (let i = 0; i < 6; i++) {
+                g.fillCircle(base + 8 + rng.between(0, pw - 20), top + 8 + rng.between(0, ph - 20), 4);
+            }
+            fac._dirtyGfx = g;
+        }
+    }
+
+    cleanBathroom(fac) {
+        if (fac.type !== 'bathroom') return;
+        fac.dirty = 0;
+        this._updateBathroomDirtyVisual(fac);
+        this.game.events.emit('timeUpdate', { time: this.state.time, day: this.state.day, season: this.state.season, rep: this.state.rep });
+    }
+
     updateGardens(delta) {
         const dt = TIME_SCALE * this.timeSpeedMult * delta / 1000;
         for (const fac of this.state.facilities) {
@@ -1555,6 +1605,15 @@ export default class GameScene extends Phaser.Scene {
             }
             if (changed) this._redrawAllProduce(fac);
             if (this.state.viewingFacility === fac.id) this._redrawAllMiniBars(fac);
+        }
+    }
+
+    updateBathrooms(delta) {
+        for (const fac of this.state.facilities) {
+            if (fac.type !== 'bathroom') continue;
+            const wasDirty = (fac.dirty || 0) > 0.1;
+            fac.dirty = Math.min(1, (fac.dirty || 0) + delta * BATHROOM_DIRTY_RATE * this.timeSpeedMult);
+            if (!wasDirty && (fac.dirty || 0) > 0.1) this._updateBathroomDirtyVisual(fac);
         }
     }
 
@@ -2598,6 +2657,11 @@ export default class GameScene extends Phaser.Scene {
         return shops.length > 0 ? Phaser.Utils.Array.GetRandom(shops) : null;
     }
 
+    pickBathroom() {
+        const bathrooms = this.state.facilities.filter(f => f.type === 'bathroom');
+        return bathrooms.length > 0 ? Phaser.Utils.Array.GetRandom(bathrooms) : null;
+    }
+
     findFacilitySpot(fac, visitor) {
         const pathSpots = [];
         const grassSpots = [];
@@ -2625,7 +2689,7 @@ export default class GameScene extends Phaser.Scene {
         const isFree = (sp) => {
             for (const ov of this.visitors) {
                 if (ov === visitor) continue;
-                if (ov.phase === 'viewing' || ov.phase === 'seeking' || ov.phase === 'atGiftShop' || ov.phase === 'seekingGiftShop') {
+                if (ov.phase === 'viewing' || ov.phase === 'seeking' || ov.phase === 'atGiftShop' || ov.phase === 'seekingGiftShop' || ov.phase === 'atBathroom' || ov.phase === 'seekingBathroom' || ov.phase === 'noBathroom') {
                     const ox = ov._giftShopSpot ? ov._giftShopSpot.x : ov.tx;
                     const oy = ov._giftShopSpot ? ov._giftShopSpot.y : ov.ty;
                     if (Math.abs(ox - sp.x) + Math.abs(oy - sp.y) < minDist) return false;
@@ -2671,6 +2735,7 @@ export default class GameScene extends Phaser.Scene {
             satisfaction: 0,
             wantsTour: Math.random() < 0.5,
             wantsGiftShop: Math.random() < 0.4,
+            wantsBathroom: Math.random() < 0.35,
         };
         this._setVisitorPath(v);
         this.visitors.push(v);
@@ -2842,7 +2907,7 @@ export default class GameScene extends Phaser.Scene {
 
     _recalcVisitorPaths() {
         for (const v of this.visitors) {
-            if (v.phase === 'viewing' || v.phase === 'confused' || v.phase === 'guided' || v.phase === 'seekingGuide' || v.phase === 'atGiftShop') continue;
+            if (v.phase === 'viewing' || v.phase === 'confused' || v.phase === 'guided' || v.phase === 'seekingGuide' || v.phase === 'atGiftShop' || v.phase === 'atBathroom' || v.phase === 'noBathroom') continue;
             if (v.phase === 'seeking' && v.targetHab) {
                 const hab = this.state.habitats.find(h => h.id === v.targetHab);
                 if (hab) {
@@ -2850,7 +2915,7 @@ export default class GameScene extends Phaser.Scene {
                     v.tx = spot.x; v.ty = spot.y;
                 }
             }
-            if (v.phase === 'seekingGiftShop' && v.targetFac) {
+            if ((v.phase === 'seekingGiftShop' || v.phase === 'seekingBathroom') && v.targetFac) {
                 const fac = this.state.facilities.find(f => f.id === v.targetFac);
                 if (fac) {
                     const spot = (fac.type === 'gift_shop' ? this.findGiftShopEntranceSpot(fac) : null) || this.findFacilitySpot(fac, v) || this.randomOpenTile();
@@ -2942,6 +3007,34 @@ export default class GameScene extends Phaser.Scene {
                 v.giftShopDuration = Phaser.Math.Between(2000, 4000);
                 v.sprite.setVisible(false);
                 if (v._bubble) { v._bubble.destroy(); v._bubble = null; }
+            } else if (v.phase === 'seekingBathroom') {
+                v.phase = 'atBathroom';
+                v.bathroomTimer = 0;
+                v.bathroomDuration = Phaser.Math.Between(1000, 2500);
+                v.sprite.setVisible(false);
+                if (v._bubble) { v._bubble.destroy(); v._bubble = null; }
+            } else if (v.phase === 'atBathroom') {
+                v.bathroomTimer = (v.bathroomTimer || 0) + sDelta;
+                if (v.bathroomTimer >= v.bathroomDuration) {
+                    const bathroom = this.state.facilities.find(f => f.id === v.targetFac);
+                    const wasDirty = bathroom && (bathroom.dirty || 0) > 0.5;
+                    if (bathroom) {
+                        bathroom.dirty = Math.min(1, (bathroom.dirty || 0) + 0.15);
+                        if ((bathroom.dirty || 0) > 0.1) this._updateBathroomDirtyVisual(bathroom);
+                        if (wasDirty) {
+                            this.showVisitorBubble(v, 'nauseous');
+                            this.state.rep = Math.max(0, this.state.rep - 2);
+                        } else {
+                            v.satisfaction = Math.min(5, (v.satisfaction || 0) + 1);
+                            this.state.rep = Math.min(100, this.state.rep + 1);
+                        }
+                    }
+                    v.sprite.setVisible(true);
+                    v.phase = 'leaving';
+                    v.tx = Phaser.Math.Between(13, 16) * TILE + TILE / 2;
+                    v.ty = MAP_Y + (ROWS - 1) * TILE;
+                    this._setVisitorPath(v);
+                }
             } else if (v.phase === 'atGiftShop') {
                 v.giftShopTimer = (v.giftShopTimer || 0) + sDelta;
                 if (v.giftShopTimer >= v.giftShopDuration) {
@@ -2959,6 +3052,14 @@ export default class GameScene extends Phaser.Scene {
                         this.tweens.add({ targets: txt, y: txt.y - 20, alpha: 0, duration: 800, onComplete: () => txt.destroy() });
                     }
                     v.sprite.setVisible(true);
+                    v.phase = 'leaving';
+                    v.tx = Phaser.Math.Between(13, 16) * TILE + TILE / 2;
+                    v.ty = MAP_Y + (ROWS - 1) * TILE;
+                    this._setVisitorPath(v);
+                }
+            } else if (v.phase === 'noBathroom') {
+                v._noBathroomTimer = (v._noBathroomTimer || 0) + sDelta;
+                if (v._noBathroomTimer >= 2000) {
                     v.phase = 'leaving';
                     v.tx = Phaser.Math.Between(13, 16) * TILE + TILE / 2;
                     v.ty = MAP_Y + (ROWS - 1) * TILE;
@@ -2986,8 +3087,16 @@ export default class GameScene extends Phaser.Scene {
                     v.habsToVisit--;
                     if (v.habsToVisit <= 0 || v.timer >= v.maxTime) {
                         const shop = v.wantsGiftShop ? this.pickGiftShop() : null;
+                        const bathroom = v.wantsBathroom ? this.pickBathroom() : null;
                         if (shop) {
                             this._visitorSeekGiftShop(v, shop);
+                        } else if (bathroom) {
+                            this._visitorSeekBathroom(v, bathroom);
+                        } else if (v.wantsBathroom) {
+                            v.phase = 'noBathroom';
+                            v._noBathroomTimer = 0;
+                            this.showVisitorBubble(v, 'toiletConfused');
+                            this.state.rep = Math.max(0, this.state.rep - 2);
                         } else {
                             v.phase = 'leaving';
                             v.tx = Phaser.Math.Between(13, 16) * TILE + TILE / 2;
@@ -3037,6 +3146,16 @@ export default class GameScene extends Phaser.Scene {
         v._giftShopSpot = spot;
         v._giftShopFac = shop;
         v.phase = 'seekingGiftShop';
+        this._setVisitorPath(v);
+    }
+
+    _visitorSeekBathroom(v, bathroom) {
+        v.targetFac = bathroom.id;
+        const spot = this.findFacilitySpot(bathroom, v) || this.randomOpenTile();
+        v.tx = spot.x; v.ty = spot.y;
+        v._giftShopSpot = spot;
+        v._giftShopFac = bathroom;
+        v.phase = 'seekingBathroom';
         this._setVisitorPath(v);
     }
 
@@ -3123,7 +3242,8 @@ export default class GameScene extends Phaser.Scene {
         const ct = this.add.container(v.sprite.x, v.sprite.y - 22).setDepth(56);
         const bubble = this.add.graphics();
         bubble.fillStyle(0xFFFFFF, 0.9);
-        bubble.fillRoundedRect(-10, -10, 20, 18, 4);
+        const bw = (type === 'toiletConfused') ? 28 : 20;
+        bubble.fillRoundedRect(-bw / 2, -10, bw, 18, 4);
         bubble.fillTriangle(-3, 8, 3, 8, 0, 13);
         ct.add(bubble);
 
@@ -3134,6 +3254,14 @@ export default class GameScene extends Phaser.Scene {
             icon = this.add.image(0, -1, 'icon_worried').setScale(0.9);
         } else if (type === 'confused') {
             icon = this.add.image(0, -1, 'icon_confused').setScale(0.9);
+        } else if (type === 'nauseous') {
+            icon = this.add.image(0, -1, 'icon_nauseous').setScale(0.9);
+        } else if (type === 'toilet') {
+            icon = this.add.image(0, -1, 'icon_toilet').setScale(0.9);
+        } else if (type === 'toiletConfused') {
+            icon = this.add.container(0, -1);
+            icon.add(this.add.image(-6, 0, 'icon_toilet').setScale(0.8));
+            icon.add(this.add.image(6, 0, 'icon_confused').setScale(0.8));
         } else {
             icon = this.add.graphics();
             icon.fillStyle(0x888888);
@@ -3187,7 +3315,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     _setStaffPath(s) {
-        const walkFn = (s.type === 'guide' || s.type === 'gardener')
+        const walkFn = (s.type === 'guide' || s.type === 'gardener' || s.type === 'janitor')
             ? (gx, gy) => this._isGuideWalkable(gx, gy)
             : (gx, gy) => this._isStaffWalkable(gx, gy);
         const path = this._findPath(s.sprite.x, s.sprite.y, s.tx, s.ty, walkFn);
@@ -3311,8 +3439,16 @@ export default class GameScene extends Phaser.Scene {
             v._showingSpot = null;
             v._guidedTour = true;
             const shop = v.wantsGiftShop ? this.pickGiftShop() : null;
+            const bathroom = v.wantsBathroom ? this.pickBathroom() : null;
             if (shop) {
                 this._visitorSeekGiftShop(v, shop);
+            } else if (bathroom) {
+                this._visitorSeekBathroom(v, bathroom);
+            } else if (v.wantsBathroom) {
+                v.phase = 'noBathroom';
+                v._noBathroomTimer = 0;
+                this.showVisitorBubble(v, 'toiletConfused');
+                this.state.rep = Math.max(0, this.state.rep - 2);
             } else {
                 v.phase = 'leaving';
                 v.tx = Phaser.Math.Between(13, 16) * TILE + TILE / 2;
@@ -3329,8 +3465,16 @@ export default class GameScene extends Phaser.Scene {
             v.guidedBy = null;
             v._showingSpot = null;
             const shop = v.wantsGiftShop ? this.pickGiftShop() : null;
+            const bathroom = v.wantsBathroom ? this.pickBathroom() : null;
             if (shop) {
                 this._visitorSeekGiftShop(v, shop);
+            } else if (bathroom) {
+                this._visitorSeekBathroom(v, bathroom);
+            } else if (v.wantsBathroom) {
+                v.phase = 'noBathroom';
+                v._noBathroomTimer = 0;
+                this.showVisitorBubble(v, 'toiletConfused');
+                this.state.rep = Math.max(0, this.state.rep - 2);
             } else {
                 v.phase = 'leaving';
                 v.tx = Phaser.Math.Between(13, 16) * TILE + TILE / 2;
@@ -3430,6 +3574,8 @@ export default class GameScene extends Phaser.Scene {
                 this._updateGuide(s, sDelta);
             } else if (s.type === 'gardener') {
                 this._updateGardener(s, sDelta);
+            } else if (s.type === 'janitor') {
+                this._updateJanitor(s, sDelta);
             } else {
                 this._updateWorker(s, sDelta);
             }
@@ -3522,6 +3668,121 @@ export default class GameScene extends Phaser.Scene {
     _findAnyGarden() {
         const gardens = this.state.facilities.filter(f => f.type === 'garden');
         return gardens.length > 0 ? Phaser.Utils.Array.GetRandom(gardens) : null;
+    }
+
+    _findDirtyBathroom() {
+        const dirty = this.state.facilities.filter(f => f.type === 'bathroom' && (f.dirty || 0) > 0.1);
+        if (dirty.length === 0) return null;
+        return Phaser.Utils.Array.GetRandom(dirty);
+    }
+
+    _findAnyBathroom() {
+        const bathrooms = this.state.facilities.filter(f => f.type === 'bathroom');
+        return bathrooms.length > 0 ? Phaser.Utils.Array.GetRandom(bathrooms) : null;
+    }
+
+    _bathroomAdjacentTile(fac) {
+        const ft = FACILITIES[fac.type];
+        const w = fac.w ?? ft.w, h = fac.h ?? ft.h;
+        const candidates = [];
+        for (let dx = 0; dx < w; dx++) {
+            candidates.push({ gx: fac.gx + dx, gy: fac.gy - 1 });
+            candidates.push({ gx: fac.gx + dx, gy: fac.gy + h });
+        }
+        for (let dy = 0; dy < h; dy++) {
+            candidates.push({ gx: fac.gx - 1, gy: fac.gy + dy });
+            candidates.push({ gx: fac.gx + w, gy: fac.gy + dy });
+        }
+        const walkable = candidates.filter(c => this._isGuideWalkable(c.gx, c.gy));
+        if (walkable.length === 0) return null;
+        return Phaser.Utils.Array.GetRandom(walkable);
+    }
+
+    _updateJanitor(s, sDelta) {
+        if (s.phase === 'idle') {
+            s.idleTimer += sDelta;
+            if (s.idleTimer >= 3000) {
+                s.idleTimer = 0;
+                const bathroom = this._findDirtyBathroom();
+                if (bathroom) {
+                    s._targetFac = bathroom.id;
+                    const tile = this._bathroomAdjacentTile(bathroom);
+                    if (tile) {
+                        s.tx = tile.gx * TILE + TILE / 2;
+                        s.ty = MAP_Y + tile.gy * TILE + TILE / 2;
+                        s.phase = 'walking';
+                        this._setStaffPath(s);
+                    }
+                } else {
+                    const bathroom2 = this._findAnyBathroom();
+                    if (bathroom2) {
+                        s._targetFac = bathroom2.id;
+                        const tile = this._bathroomAdjacentTile(bathroom2);
+                        if (tile) {
+                            s.tx = tile.gx * TILE + TILE / 2;
+                            s.ty = MAP_Y + tile.gy * TILE + TILE / 2;
+                            s.phase = 'wandering';
+                            this._setStaffPath(s);
+                        }
+                    }
+                }
+            }
+        } else if (s.phase === 'wandering') {
+            const arrived = this._staffMoveAlongPath(s, sDelta);
+            if (arrived) {
+                s._wanderTimer = 0;
+                s._wanderWait = 2000 + Math.random() * 3000;
+                s.phase = 'wanderPause';
+            }
+        } else if (s.phase === 'wanderPause') {
+            s._wanderTimer += sDelta;
+            if (s._wanderTimer >= s._wanderWait) {
+                const bathroom = this._findDirtyBathroom();
+                if (bathroom) {
+                    s._targetFac = bathroom.id;
+                    const tile = this._bathroomAdjacentTile(bathroom);
+                    if (tile) {
+                        s.tx = tile.gx * TILE + TILE / 2;
+                        s.ty = MAP_Y + tile.gy * TILE + TILE / 2;
+                        s.phase = 'walking';
+                        this._setStaffPath(s);
+                        return;
+                    }
+                }
+                const fac = this.state.facilities.find(f => f.id === s._targetFac);
+                if (fac) {
+                    const tile = this._bathroomAdjacentTile(fac);
+                    if (tile) {
+                        s.tx = tile.gx * TILE + TILE / 2;
+                        s.ty = MAP_Y + tile.gy * TILE + TILE / 2;
+                        s.phase = 'wandering';
+                        this._setStaffPath(s);
+                        return;
+                    }
+                }
+                s.phase = 'idle';
+                s.idleTimer = 0;
+                s._targetFac = null;
+            }
+        } else if (s.phase === 'walking') {
+            const arrived = this._staffMoveAlongPath(s, sDelta);
+            if (arrived) {
+                s.phase = 'working';
+                s.workTimer = 0;
+            }
+        } else if (s.phase === 'working') {
+            s.workTimer += sDelta;
+            if (s.workTimer >= 1500) {
+                const fac = this.state.facilities.find(f => f.id === s._targetFac);
+                if (fac && fac.type === 'bathroom' && (fac.dirty || 0) > 0) {
+                    this.cleanBathroom(fac);
+                    this.heartEffect(s.sprite.x, s.sprite.y);
+                }
+                s.phase = 'idle';
+                s.workTimer = 0;
+                s._targetFac = null;
+            }
+        }
     }
 
     _updateGardener(s, sDelta) {
@@ -4160,6 +4421,7 @@ export default class GameScene extends Phaser.Scene {
             facilities: this.state.facilities.map(f => ({
                 id: f.id, type: f.type, gx: f.gx, gy: f.gy,
                 produce: f.produce ? f.produce.map(p => ({ type: p.type, picked: p.picked, regrowLeft: p.regrowLeft })) : undefined,
+                dirty: f.dirty,
             })),
             autoSave: this.state.autoSave,
             visitors: this.visitors.map(v => ({
@@ -4168,7 +4430,7 @@ export default class GameScene extends Phaser.Scene {
                 maxTime: v.maxTime, phase: v.phase, targetHab: v.targetHab,
                 visitedHabs: [...v.visitedHabs], habsToVisit: v.habsToVisit,
                 viewTimer: v.viewTimer, satisfaction: v.satisfaction,
-                wantsTour: v.wantsTour || false, wantsGiftShop: v.wantsGiftShop || false,
+                wantsTour: v.wantsTour || false, wantsGiftShop: v.wantsGiftShop || false, wantsBathroom: v.wantsBathroom || false,
             })),
         };
         localStorage.setItem('havenwood_save', JSON.stringify(data));
@@ -4218,7 +4480,7 @@ export default class GameScene extends Phaser.Scene {
             if (d.facilities) {
                 for (const f of d.facilities) {
                     if (!FACILITIES[f.type]) continue;
-                    this.placeFacility(f.type, f.gx, f.gy, { id: f.id, cost: false, produce: f.produce });
+                    this.placeFacility(f.type, f.gx, f.gy, { id: f.id, cost: false, produce: f.produce, dirty: f.dirty });
                 }
             }
             for (const a of d.animals) {
@@ -4259,7 +4521,7 @@ export default class GameScene extends Phaser.Scene {
                     const sprite = this.add.image(sv.x, sv.y, `visitor_${vType.spriteIdx}`).setDepth(30).setAlpha(0.85);
                     let loadedPhase = sv.phase;
                     if (loadedPhase === 'guided' || loadedPhase === 'confused' || loadedPhase === 'seekingGuide') loadedPhase = 'seeking';
-                    else if (loadedPhase === 'seekingGiftShop' || loadedPhase === 'atGiftShop') loadedPhase = 'leaving';
+                    else if (loadedPhase === 'seekingGiftShop' || loadedPhase === 'atGiftShop' || loadedPhase === 'seekingBathroom' || loadedPhase === 'atBathroom' || loadedPhase === 'noBathroom') loadedPhase = 'leaving';
                     const v = {
                         sprite, visitorType: sv.visitorType,
                         tx: sv.tx, ty: sv.ty, speed: sv.speed,
@@ -4270,6 +4532,7 @@ export default class GameScene extends Phaser.Scene {
                         satisfaction: sv.satisfaction || 0,
                         wantsTour: sv.wantsTour || false,
                         wantsGiftShop: sv.wantsGiftShop || false,
+                        wantsBathroom: sv.wantsBathroom || false,
                     };
                     if (loadedPhase === 'leaving') {
                         v.tx = Phaser.Math.Between(13, 16) * TILE + TILE / 2;
@@ -4331,6 +4594,7 @@ export default class GameScene extends Phaser.Scene {
         this.updateStaff(delta);
         this.updateMissions(delta);
         this.updateGardens(delta);
+        this.updateBathrooms(delta);
         this.sfx.updateAmbient(delta, this.state.time);
 
         if (!this.state.buildMode && !this._habSelectMode) {
