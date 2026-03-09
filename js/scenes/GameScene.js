@@ -85,6 +85,7 @@ export default class GameScene extends Phaser.Scene {
             autoSave: true,
             decorations: [],
             facilities: [],
+            trashcanFullness: {},
         };
         this.visitors = [];
         this.decorSprites = [];
@@ -2922,7 +2923,7 @@ export default class GameScene extends Phaser.Scene {
 
     _recalcVisitorPaths() {
         for (const v of this.visitors) {
-            if (v.phase === 'viewing' || v.phase === 'confused' || v.phase === 'guided' || v.phase === 'seekingGuide' || v.phase === 'atGiftShop' || v.phase === 'atBathroom' || v.phase === 'noBathroom') continue;
+            if (v.phase === 'viewing' || v.phase === 'confused' || v.phase === 'guided' || v.phase === 'seekingGuide' || v.phase === 'atGiftShop' || v.phase === 'atBathroom' || v.phase === 'noBathroom' || v.phase === 'seekingTrashcan' || v.phase === 'usingTrashcan') continue;
             if (v.phase === 'seeking' && v.targetHab) {
                 const hab = this.state.habitats.find(h => h.id === v.targetHab);
                 if (hab) {
@@ -3022,6 +3023,19 @@ export default class GameScene extends Phaser.Scene {
                     v.phase = 'seeking';
                     this._visitorSeekHabitat(v);
                 }
+            } else if (v.phase === 'seekingTrashcan') {
+                v.phase = 'usingTrashcan';
+                v._useTrashcanTimer = 0;
+            } else if (v.phase === 'usingTrashcan') {
+                v._useTrashcanTimer = (v._useTrashcanTimer || 0) + sDelta;
+                if (v._useTrashcanTimer >= 600) {
+                    this._visitorUseTrashcan(v);
+                    v.phase = 'leaving';
+                    v.tx = Phaser.Math.Between(13, 16) * TILE + TILE / 2;
+                    v.ty = MAP_Y + (ROWS - 1) * TILE;
+                    this._setVisitorPath(v);
+                }
+                continue;
             } else if (v.phase === 'seekingGiftShop') {
                 v.phase = 'atGiftShop';
                 v.giftShopTimer = 0;
@@ -3051,11 +3065,7 @@ export default class GameScene extends Phaser.Scene {
                         }
                     }
                     v.sprite.setVisible(true);
-                    this.dropTrashMaybe(v);
-                    v.phase = 'leaving';
-                    v.tx = Phaser.Math.Between(13, 16) * TILE + TILE / 2;
-                    v.ty = MAP_Y + (ROWS - 1) * TILE;
-                    this._setVisitorPath(v);
+                    this._visitorLeaveWithTrash(v);
                 }
             } else if (v.phase === 'atGiftShop') {
                 v.giftShopTimer = (v.giftShopTimer || 0) + sDelta;
@@ -3074,11 +3084,7 @@ export default class GameScene extends Phaser.Scene {
                         this.tweens.add({ targets: txt, y: txt.y - 20, alpha: 0, duration: 800, onComplete: () => txt.destroy() });
                     }
                     v.sprite.setVisible(true);
-                    this.dropTrashMaybe(v);
-                    v.phase = 'leaving';
-                    v.tx = Phaser.Math.Between(13, 16) * TILE + TILE / 2;
-                    v.ty = MAP_Y + (ROWS - 1) * TILE;
-                    this._setVisitorPath(v);
+                    this._visitorLeaveWithTrash(v);
                 }
             } else if (v.phase === 'noBathroom') {
                 const sub = v._noBathroomWanderPhase || 'waiting';
@@ -3096,11 +3102,7 @@ export default class GameScene extends Phaser.Scene {
                 } else {
                     v._noBathroomTimer = (v._noBathroomTimer || 0) + sDelta;
                     if (v._noBathroomTimer >= 2000) {
-                        this.dropTrashMaybe(v);
-                        v.phase = 'leaving';
-                        v.tx = Phaser.Math.Between(13, 16) * TILE + TILE / 2;
-                        v.ty = MAP_Y + (ROWS - 1) * TILE;
-                        this._setVisitorPath(v);
+                        this._visitorLeaveWithTrash(v);
                     }
                 }
             } else if (v.phase === 'seekingGuide') {
@@ -3133,11 +3135,7 @@ export default class GameScene extends Phaser.Scene {
                         } else if (v.wantsBathroom) {
                             this._visitorSeekNoBathroom(v);
                         } else {
-                            this.dropTrashMaybe(v);
-                            v.phase = 'leaving';
-                            v.tx = Phaser.Math.Between(13, 16) * TILE + TILE / 2;
-                            v.ty = MAP_Y + (ROWS - 1) * TILE;
-                            this._setVisitorPath(v);
+                            this._visitorLeaveWithTrash(v);
                         }
                     } else {
                         v.phase = 'seeking';
@@ -3163,11 +3161,7 @@ export default class GameScene extends Phaser.Scene {
     _visitorSeekHabitat(v) {
         const hab = this.pickNextHabitat(v);
         if (!hab) {
-            this.dropTrashMaybe(v);
-            v.phase = 'leaving';
-            v.tx = Phaser.Math.Between(13, 16) * TILE + TILE / 2;
-            v.ty = MAP_Y + (ROWS - 1) * TILE;
-            this._setVisitorPath(v);
+            this._visitorLeaveWithTrash(v);
             return;
         }
         v.targetHab = hab.id;
@@ -3224,17 +3218,78 @@ export default class GameScene extends Phaser.Scene {
         if (!v.sprite || !v.sprite.active) return;
         if (Math.random() >= TRASH_DROP_CHANCE) return;
         const id = genId('trash');
-        const sprite = this.add.image(v.sprite.x, v.sprite.y, 'particle_trash').setDepth(25).setScale(1.2);
+        const sprite = this.add.image(v.sprite.x, v.sprite.y, 'particle_trash').setDepth(25).setScale(1.6);
         this.trash.push({ id, x: v.sprite.x, y: v.sprite.y, sprite });
     }
 
-    pickUpTrash(id) {
+    _pickTrashcanForVisitor(v) {
+        const trashcans = this.state.decorations.filter(d => d.id === 'trashcan');
+        if (trashcans.length === 0) return null;
+        const walkFn = (gx, gy) => this._isWalkable(gx, gy);
+        let best = null;
+        let bestLen = Infinity;
+        for (const tc of trashcans) {
+            for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                const ax = tc.gx + dx, ay = tc.gy + dy;
+                if (!walkFn(ax, ay)) continue;
+                const spotX = ax * TILE + TILE / 2, spotY = MAP_Y + ay * TILE + TILE / 2;
+                const path = this._findPath(v.sprite.x, v.sprite.y, spotX, spotY, walkFn);
+                if (path && path.length < bestLen) {
+                    bestLen = path.length;
+                    best = { trashcan: tc, spot: { x: spotX, y: spotY } };
+                }
+            }
+        }
+        return best;
+    }
+
+    _visitorTryUseTrashcan(v) {
+        if (!v.sprite || !v.sprite.active) return false;
+        if (Math.random() >= TRASH_DROP_CHANCE) return false;
+        const result = this._pickTrashcanForVisitor(v);
+        if (!result) return false;
+        v._targetTrashcan = result.trashcan;
+        v.tx = result.spot.x;
+        v.ty = result.spot.y;
+        this._setVisitorPath(v);
+        return true;
+    }
+
+    _visitorUseTrashcan(v) {
+        const tc = v._targetTrashcan;
+        if (!tc) return;
+        const key = `${tc.gx},${tc.gy}`;
+        this.state.trashcanFullness[key] = (this.state.trashcanFullness[key] || 0) + 10;
+        this._refreshTrashcanSprite(tc.gx, tc.gy);
+    }
+
+    _refreshTrashcanSprite(gx, gy) {
+        const key = `${gx},${gy}`;
+        const fullness = this.state.trashcanFullness?.[key] || 0;
+        const tex = fullness > 0 ? 'decor_trashcan_full' : 'decor_trashcan';
+        const entry = this.decorSprites.find(d => d.id === 'trashcan' && d.gx === gx && d.gy === gy);
+        if (entry?.sprite?.active) entry.sprite.setTexture(tex);
+    }
+
+    _visitorLeaveWithTrash(v) {
+        if (this._visitorTryUseTrashcan(v)) {
+            v.phase = 'seekingTrashcan';
+        } else {
+            this.dropTrashMaybe(v);
+            v.phase = 'leaving';
+            v.tx = Phaser.Math.Between(13, 16) * TILE + TILE / 2;
+            v.ty = MAP_Y + (ROWS - 1) * TILE;
+            this._setVisitorPath(v);
+        }
+    }
+
+    pickUpTrash(id, silent = false) {
         const idx = this.trash.findIndex(t => t.id === id);
         if (idx === -1) return;
         const t = this.trash[idx];
         if (t.sprite) t.sprite.destroy();
         this.trash.splice(idx, 1);
-        this.sfx.click();
+        if (!silent) this.sfx.click();
     }
 
     getTrashAt(wx, wy) {
@@ -3532,11 +3587,7 @@ export default class GameScene extends Phaser.Scene {
             } else if (v.wantsBathroom) {
                 this._visitorSeekNoBathroom(v);
             } else {
-                this.dropTrashMaybe(v);
-                v.phase = 'leaving';
-                v.tx = Phaser.Math.Between(13, 16) * TILE + TILE / 2;
-                v.ty = MAP_Y + (ROWS - 1) * TILE;
-                this._setVisitorPath(v);
+                this._visitorLeaveWithTrash(v);
             }
         }
         s.followers = [];
@@ -3556,11 +3607,7 @@ export default class GameScene extends Phaser.Scene {
             } else if (v.wantsBathroom) {
                 this._visitorSeekNoBathroom(v);
             } else {
-                this.dropTrashMaybe(v);
-                v.phase = 'leaving';
-                v.tx = Phaser.Math.Between(13, 16) * TILE + TILE / 2;
-                v.ty = MAP_Y + (ROWS - 1) * TILE;
-                this._setVisitorPath(v);
+                this._visitorLeaveWithTrash(v);
             }
         }
         s.followers = [];
@@ -3779,6 +3826,44 @@ export default class GameScene extends Phaser.Scene {
         return Phaser.Utils.Array.GetRandom(walkable);
     }
 
+    _findNearestTrashForJanitor(s) {
+        if (this.trash.length === 0) return null;
+        const walkFn = (gx, gy) => this._isStaffWalkable(gx, gy);
+        let best = null;
+        let bestLen = Infinity;
+        for (const t of this.trash) {
+            const path = this._findPath(s.sprite.x, s.sprite.y, t.x, t.y, walkFn);
+            if (path && path.length < bestLen) {
+                bestLen = path.length;
+                best = { trash: t, tx: t.x, ty: t.y };
+            }
+        }
+        return best;
+    }
+
+    _findTrashcanToEmpty(s) {
+        const walkFn = (gx, gy) => this._isStaffWalkable(gx, gy);
+        let best = null;
+        let bestLen = Infinity;
+        for (const tc of this.state.decorations) {
+            if (tc.id !== 'trashcan') continue;
+            const key = `${tc.gx},${tc.gy}`;
+            const fullness = this.state.trashcanFullness?.[key] || 0;
+            if (fullness <= 0) continue;
+            for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                const ax = tc.gx + dx, ay = tc.gy + dy;
+                if (!walkFn(ax, ay)) continue;
+                const spotX = ax * TILE + TILE / 2, spotY = MAP_Y + ay * TILE + TILE / 2;
+                const path = this._findPath(s.sprite.x, s.sprite.y, spotX, spotY, walkFn);
+                if (path && path.length < bestLen) {
+                    bestLen = path.length;
+                    best = { trashcan: tc, tile: { gx: ax, gy: ay }, tx: spotX, ty: spotY };
+                }
+            }
+        }
+        return best;
+    }
+
     _updateJanitor(s, sDelta) {
         if (s.phase === 'idle') {
             s.idleTimer += sDelta;
@@ -3795,18 +3880,51 @@ export default class GameScene extends Phaser.Scene {
                         this._setStaffPath(s);
                     }
                 } else {
-                    const bathroom2 = this._findAnyBathroom();
-                    if (bathroom2) {
-                        s._targetFac = bathroom2.id;
-                        const tile = this._bathroomAdjacentTile(bathroom2);
-                        if (tile) {
-                            s.tx = tile.gx * TILE + TILE / 2;
-                            s.ty = MAP_Y + tile.gy * TILE + TILE / 2;
-                            s.phase = 'wandering';
+                    const trashTarget = this._findNearestTrashForJanitor(s);
+                    if (trashTarget) {
+                        s._targetTrashId = trashTarget.trash.id;
+                        s.tx = trashTarget.tx;
+                        s.ty = trashTarget.ty;
+                        s.phase = 'pickingTrash';
+                        this._setStaffPath(s);
+                    } else {
+                        const tcTarget = this._findTrashcanToEmpty(s);
+                        if (tcTarget) {
+                            s._targetTrashcan = tcTarget.trashcan;
+                            s.tx = tcTarget.tx;
+                            s.ty = tcTarget.ty;
+                            s.phase = 'emptyingTrashcan';
                             this._setStaffPath(s);
+                        } else {
+                            const bathroom2 = this._findAnyBathroom();
+                            if (bathroom2) {
+                                s._targetFac = bathroom2.id;
+                                const tile = this._bathroomAdjacentTile(bathroom2);
+                                if (tile) {
+                                    s.tx = tile.gx * TILE + TILE / 2;
+                                    s.ty = MAP_Y + tile.gy * TILE + TILE / 2;
+                                    s.phase = 'wandering';
+                                    this._setStaffPath(s);
+                                }
+                            }
                         }
                     }
                 }
+            }
+        } else if (s.phase === 'pickingTrash') {
+            const arrived = this._staffMoveAlongPath(s, sDelta);
+            if (arrived) {
+                this.pickUpTrash(s._targetTrashId, true);
+                this.heartEffect(s.sprite.x, s.sprite.y);
+                s.phase = 'idle';
+                s.idleTimer = 0;
+                s._targetTrashId = null;
+            }
+        } else if (s.phase === 'emptyingTrashcan') {
+            const arrived = this._staffMoveAlongPath(s, sDelta);
+            if (arrived) {
+                s.phase = 'working';
+                s.workTimer = 0;
             }
         } else if (s.phase === 'wandering') {
             const arrived = this._staffMoveAlongPath(s, sDelta);
@@ -3829,6 +3947,24 @@ export default class GameScene extends Phaser.Scene {
                         this._setStaffPath(s);
                         return;
                     }
+                }
+                const trashTarget = this._findNearestTrashForJanitor(s);
+                if (trashTarget) {
+                    s._targetTrashId = trashTarget.trash.id;
+                    s.tx = trashTarget.tx;
+                    s.ty = trashTarget.ty;
+                    s.phase = 'pickingTrash';
+                    this._setStaffPath(s);
+                    return;
+                }
+                const tcTarget = this._findTrashcanToEmpty(s);
+                if (tcTarget) {
+                    s._targetTrashcan = tcTarget.trashcan;
+                    s.tx = tcTarget.tx;
+                    s.ty = tcTarget.ty;
+                    s.phase = 'emptyingTrashcan';
+                    this._setStaffPath(s);
+                    return;
                 }
                 const fac = this.state.facilities.find(f => f.id === s._targetFac);
                 if (fac) {
@@ -3854,14 +3990,23 @@ export default class GameScene extends Phaser.Scene {
         } else if (s.phase === 'working') {
             s.workTimer += sDelta;
             if (s.workTimer >= 1500) {
-                const fac = this.state.facilities.find(f => f.id === s._targetFac);
-                if (fac && fac.type === 'bathroom' && (fac.dirty || 0) > 0) {
-                    this.cleanBathroom(fac);
+                if (s._targetTrashcan) {
+                    const tc = s._targetTrashcan;
+                    const key = `${tc.gx},${tc.gy}`;
+                    this.state.trashcanFullness[key] = 0;
+                    this._refreshTrashcanSprite(tc.gx, tc.gy);
                     this.heartEffect(s.sprite.x, s.sprite.y);
+                    s._targetTrashcan = null;
+                } else {
+                    const fac = this.state.facilities.find(f => f.id === s._targetFac);
+                    if (fac && fac.type === 'bathroom' && (fac.dirty || 0) > 0) {
+                        this.cleanBathroom(fac);
+                        this.heartEffect(s.sprite.x, s.sprite.y);
+                    }
+                    s._targetFac = null;
                 }
                 s.phase = 'idle';
                 s.workTimer = 0;
-                s._targetFac = null;
             }
         }
     }
@@ -4499,6 +4644,7 @@ export default class GameScene extends Phaser.Scene {
             } : null,
             rescueAccum: this._rescueAccum,
             decorations: this.state.decorations.map(d => ({ id: d.id, gx: d.gx, gy: d.gy })),
+            trashcanFullness: this.state.trashcanFullness || {},
             trash: this.trash.map(t => ({ id: t.id, x: t.x, y: t.y })),
             facilities: this.state.facilities.map(f => ({
                 id: f.id, type: f.type, gx: f.gx, gy: f.gy,
@@ -4551,10 +4697,11 @@ export default class GameScene extends Phaser.Scene {
             }
             if (d.trash) {
                 for (const td of d.trash) {
-                    const sprite = this.add.image(td.x, td.y, 'particle_trash').setDepth(25).setScale(1.2);
+                    const sprite = this.add.image(td.x, td.y, 'particle_trash').setDepth(25).setScale(1.6);
                     this.trash.push({ id: td.id, x: td.x, y: td.y, sprite });
                 }
             }
+            this.state.trashcanFullness = d.trashcanFullness || {};
             if (d.decorations) {
                 for (const dec of d.decorations) {
                     if (!DECORATIONS[dec.id]) continue;
@@ -4563,6 +4710,7 @@ export default class GameScene extends Phaser.Scene {
                     const sprite = this.add.image(px, py, `decor_${dec.id}`).setDepth(10);
                     this.decorSprites.push({ id: dec.id, gx: dec.gx, gy: dec.gy, sprite });
                     this.state.decorations.push({ id: dec.id, gx: dec.gx, gy: dec.gy });
+                    if (dec.id === 'trashcan') this._refreshTrashcanSprite(dec.gx, dec.gy);
                 }
             }
             if (d.facilities) {

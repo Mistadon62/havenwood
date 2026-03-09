@@ -862,6 +862,25 @@ export class SpriteGenerator {
             g.fillRect(13, 18, 6, 1);
             g.fillRect(13, 22, 6, 1);
         });
+        tex(scene, 'decor_trashcan_full', TILE, TILE, g => {
+            g.fillStyle(0x666666);
+            g.fillRect(10, 10, 12, 16);
+            g.fillStyle(0x3a3520);
+            g.fillRect(11, 12, 10, 12);
+            g.fillStyle(0x4a4530);
+            g.fillRect(12, 14, 8, 8);
+            g.fillStyle(0x888888);
+            g.fillRect(9, 8, 14, 4);
+            g.fillStyle(0x5a5540);
+            g.fillRect(8, 6, 3, 4);
+            g.fillRect(21, 7, 3, 3);
+            g.fillStyle(0x777777);
+            g.fillRect(12, 26, 8, 2);
+            g.fillStyle(0x555555);
+            g.fillRect(13, 14, 6, 1);
+            g.fillRect(13, 18, 6, 1);
+            g.fillRect(13, 22, 6, 1);
+        });
         tex(scene, 'decor_flowers', TILE, TILE, g => {
             const rng = new Phaser.Math.RandomDataGenerator(['fl']);
             const colors = [0xFF6688, 0xFFDD44, 0xAABBFF, 0xFF88CC, 0xFFFFFF, 0xFF9944];
