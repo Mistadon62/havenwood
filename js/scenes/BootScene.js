@@ -1,6 +1,7 @@
 // First scene. Waits for "Press Start 2P" font, generates sprite textures via SpriteGenerator, then transitions to MenuScene.
 import { W, H } from '../GameData.js';
 import { SpriteGenerator } from '../SpriteGenerator.js';
+import { MetaSpriteGenerator } from '../MetaSpriteGenerator.js';
 
 export default class BootScene extends Phaser.Scene {
     constructor() { super('BootScene'); }
@@ -14,6 +15,7 @@ export default class BootScene extends Phaser.Scene {
 
         document.fonts.ready.then(() => {
             SpriteGenerator.generate(this);
+            MetaSpriteGenerator.generate(this);
             this.time.delayedCall(400, () => this.scene.start('MenuScene'));
         });
     }

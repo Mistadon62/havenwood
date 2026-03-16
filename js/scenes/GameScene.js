@@ -110,7 +110,25 @@ export default class GameScene extends Phaser.Scene {
 
         if (!this.isNewGame) this.loadGame();
         this.updateSeason();
-        if (this.state.autoSave) this.saveGame();
+        const loadedMeta = this._loadedMode === 'meta';
+        if (this.state.autoSave) {
+            if (loadedMeta) this._saveMode = 'meta';
+            this.saveGame();
+            this._saveMode = null;
+        }
+
+        // If saved in meta-world mode, auto-transition to the room scene
+        if (loadedMeta) {
+            this._loadedMode = null;
+            this.time.delayedCall(100, () => {
+                const hud = this.scene.get('HUDScene');
+                if (hud && hud.closeAllPanels) hud.closeAllPanels(true);
+                this.scene.sleep('GameScene');
+                this.scene.sleep('HUDScene');
+                this.scene.launch('MetaWorldScene', { startWithPhone: false });
+                this.scene.launch('MetaHUDScene');
+            });
+        }
 
         this.rescueInterval = 50000;
         this._rescueAccum = this.rescueInterval - 4000;
@@ -651,6 +669,16 @@ export default class GameScene extends Phaser.Scene {
             if (this.state.viewingHabitat || this.state.viewingFacility || this.cameras.main.zoom > 1) this.zoomOut();
             else if (this.state.buildMode) this.exitBuild();
             else if (hud) hud.toggleSettingsMenu();
+        });
+
+        this.input.keyboard.on('keydown-E', () => {
+            const hud = this.scene.get('HUDScene');
+            if (!hud) return;
+            // Don't switch if a menu/panel is open or in a special mode
+            if (hud.settingsPanel) return;
+            if (this.state.rescuePaused || this._habSelectMode || this._movingHabitat || this._movingFacility) return;
+            if (this.state.buildMode) return;
+            hud.triggerPhoneTransition();
         });
 
         this.game.canvas.addEventListener('contextmenu', e => e.preventDefault());
@@ -4603,6 +4631,7 @@ export default class GameScene extends Phaser.Scene {
     saveGame() {
         const data = {
             v: 5,
+            mode: this._saveMode || 'havenwood',
             day: this.state.day, time: this.state.time,
             coins: this.state.coins, rep: this.state.rep,
             food: this.state.food,
@@ -4791,6 +4820,7 @@ export default class GameScene extends Phaser.Scene {
             this._rescueAccum = d.rescueAccum ?? 0;
             this._firstRescue = false;
             this.state.autoSave = d.autoSave ?? true;
+            this._loadedMode = d.mode || 'havenwood';
 
             if (d.pendingRescue) {
                 const pr = d.pendingRescue;

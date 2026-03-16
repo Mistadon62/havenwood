@@ -180,7 +180,9 @@ export default class HUDScene extends Phaser.Scene {
         saveHit.on('pointerover', () => { saveBg.clear(); saveBg.fillStyle(0x55CC55, 0.7); saveBg.fillRoundedRect(bx, 60, btnW, btnH, 5); });
         saveHit.on('pointerout', () => { saveBg.clear(); saveBg.fillStyle(0x44AA44, 0.6); saveBg.fillRoundedRect(bx, 60, btnW, btnH, 5); });
         saveHit.on('pointerdown', () => {
+            this.gs._saveMode = 'havenwood';
             this.gs.saveGame();
+            this.gs._saveMode = null;
             this.notify('Game saved!');
             this.closeSettingsMenu();
         });
@@ -195,7 +197,9 @@ export default class HUDScene extends Phaser.Scene {
         exitHit.on('pointerover', () => { exitBg.clear(); exitBg.fillStyle(0xCC5555, 0.7); exitBg.fillRoundedRect(bx, 110, btnW, btnH, 5); });
         exitHit.on('pointerout', () => { exitBg.clear(); exitBg.fillStyle(0xAA4444, 0.6); exitBg.fillRoundedRect(bx, 110, btnW, btnH, 5); });
         exitHit.on('pointerdown', () => {
+            this.gs._saveMode = 'havenwood';
             this.gs.saveGame();
+            this.gs._saveMode = null;
             this.closeSettingsMenu();
             this.scene.stop('HUDScene');
             this.gs.scene.start('MenuScene');
@@ -258,6 +262,7 @@ export default class HUDScene extends Phaser.Scene {
             { key: 'staff', label: 'Staff', cost: null, color: 0x5588BB },
             { key: 'research', label: 'Research', cost: null, color: 0x44DDAA },
             { key: 'journal', label: 'Journal', cost: null, color: 0xAA77CC },
+            { key: 'phone', label: 'Phone', cost: null, color: 0x5577AA },
         ];
         const gap = Math.min(130, (W - 10) / allItems.length);
         this._toolGap = gap;
@@ -289,6 +294,7 @@ export default class HUDScene extends Phaser.Scene {
                 if (item.key === 'missions') { this.togglePanel('missionPanel', () => this.showMissionPanel(), 'missions'); return; }
                 if (item.key === 'research') { this.togglePanel('researchPanel', () => this.showResearchPanel(), 'research'); return; }
                 if (item.key === 'journal') { this.togglePanel('journalPanel', () => this.showJournalPanel(), 'journal'); return; }
+                if (item.key === 'phone') { this.triggerPhoneTransition(); return; }
                 this.closeAllPanels();
                 this.activeBuild = item.key;
                 this.toolBtns.forEach(b => this.drawToolBtn(b.bg, b.x, b.y, b.color, b.key === item.key, gap));
@@ -1944,6 +1950,40 @@ export default class HUDScene extends Phaser.Scene {
             journal:  () => this.togglePanel('journalPanel',  () => this.showJournalPanel(),  'journal'),
         };
         if (map[btnKey]) map[btnKey]();
+    }
+
+    // Launches the transition to the meta-world (room scene).
+    // First time: full zoom-out animation via TransitionScene.
+    // Subsequent times: quick switch with put-away phone animation.
+    triggerPhoneTransition() {
+        this.closeAllPanels(true);
+        if (this.gs.state.buildMode) this.gs.exitBuild();
+
+        if (!this.game._hasZoomedOut) {
+            // First time — full cinematic zoom-out
+            this.game._hasZoomedOut = true;
+            this.scene.launch('TransitionScene');
+            this.scene.bringToTop('TransitionScene');
+        } else {
+            // Subsequent times — quick switch
+            this.scene.sleep('GameScene');
+            this.scene.sleep('HUDScene');
+
+            const metaScene = this.scene.get('MetaWorldScene');
+            if (metaScene && this.scene.isSleeping('MetaWorldScene')) {
+                // Scene exists and is sleeping — wake it and trigger put-away
+                this.scene.wake('MetaWorldScene');
+                this.scene.wake('MetaHUDScene');
+                metaScene._startWithPhone = true;
+                metaScene._frozen = true;
+                metaScene.char.setTexture('char_phone');
+                metaScene.time.delayedCall(100, () => metaScene.playPutAwayPhone());
+            } else {
+                // Scene was stopped or never launched — full launch
+                this.scene.launch('MetaWorldScene', { startWithPhone: true });
+                this.scene.launch('MetaHUDScene');
+            }
+        }
     }
 
     // Returns a y position that vertically centers a panel of given height between the top and bottom bars.
