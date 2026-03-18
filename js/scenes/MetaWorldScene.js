@@ -695,6 +695,9 @@ export default class MetaWorldScene extends Phaser.Scene {
 
         MetaState.save();
 
+        // Record when we entered Havenwood so meta-time continues
+        this._havenwoodEnteredAt = Date.now();
+
         this.charDir = 'down';
         this.char.setTexture('char_down');
 
@@ -756,6 +759,17 @@ export default class MetaWorldScene extends Phaser.Scene {
         this._frozen = true;
         this.charDir = 'down';
         this.char.setTexture('char_phone');
+
+        // Advance meta-time by real seconds spent in Havenwood (1 sec = 1 min)
+        if (this._havenwoodEnteredAt) {
+            const elapsedMs = Date.now() - this._havenwoodEnteredAt;
+            const elapsedMin = Math.floor(elapsedMs / 1000);
+            if (elapsedMin > 0) {
+                MetaState.advanceTime(elapsedMin);
+                this.game.events.emit('metaTimeUpdate');
+            }
+            this._havenwoodEnteredAt = null;
+        }
 
         // Check cross-mode unlocks (havenwood -> meta)
         const gs = this.scene.get('GameScene');
