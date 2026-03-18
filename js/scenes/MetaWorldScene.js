@@ -90,15 +90,16 @@ export default class MetaWorldScene extends Phaser.Scene {
         }
 
         if (this.location.outdoor) {
-            // Zoom so room exactly fills height between top bar (42px) and bottom bar (62px)
-            const zoom = (H - 42 - 62) / (this.location.rows * TILE);
+            // Zoom so room fills height between top bar (42px) and bottom bar (62px)
+            // Add 2px to compensate for sub-pixel rounding at both edges
+            const zoom = (H - 42 - 62 + 2) / (this.location.rows * TILE);
             this.cameras.main.setZoom(zoom);
             this.cameras.main.centerOn(W / 2, H / 2);
             const scrollY = H / 2 - H / (2 * zoom);
             // Top-align room flush with top bar
             const topWorldY = 42 / zoom + scrollY;
             this.roomX = Math.floor((W - this.location.cols * TILE) / 2);
-            this.roomY = Math.floor(topWorldY);
+            this.roomY = Math.round(topWorldY) - 1;
             this._bg.setFillStyle(0x4A8B4A);
         } else {
             this.cameras.main.setZoom(1.35);

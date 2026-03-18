@@ -80,7 +80,7 @@ export default class MetaHUDScene extends Phaser.Scene {
         const barH = 42;
         const midY = 21;
         this.statusBg = this.add.graphics().setDepth(200);
-        this.statusBg.fillStyle(0x0D1520, 0.85);
+        this.statusBg.fillStyle(0x0D1520, 1);
         this.statusBg.fillRect(0, 0, W, barH);
         this.statusBg.lineStyle(1, 0x2A3A52, 0.6);
         this.statusBg.lineBetween(0, barH, W, barH);
