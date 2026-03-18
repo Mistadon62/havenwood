@@ -28,7 +28,7 @@ const NPCS = {
         // Rainy days: stays in classroom all day
         schedule: [
             { days: WEEKDAYS, start: 480, end: 720, location: 'classroom', gx: 6, gy: 2 },
-            { days: WEEKDAYS, start: 720, end: 1020, location: 'campus_quad', gx: 7, gy: 6 },
+            { days: WEEKDAYS, start: 720, end: 1020, location: 'campus_quad', gx: 11, gy: 8 },
         ],
 
         giftPreferences: {
@@ -174,8 +174,8 @@ const NPCS = {
         // Weekends: park mornings, café afternoons
         schedule: [
             { days: WEEKDAYS, start: 540, end: 720, location: 'library', gx: 8, gy: 4 },
-            { days: WEEKDAYS, start: 840, end: 1080, location: 'campus_quad', gx: 6, gy: 2 },
-            { days: WEEKEND, start: 540, end: 780, location: 'park', gx: 5, gy: 5 },
+            { days: WEEKDAYS, start: 840, end: 1080, location: 'campus_quad', gx: 10, gy: 3 },
+            { days: WEEKEND, start: 540, end: 780, location: 'park', gx: 9, gy: 6 },
             { days: WEEKEND, start: 780, end: 960, location: 'cafe', gx: 4, gy: 3 },
         ],
 

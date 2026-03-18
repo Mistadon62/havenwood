@@ -5,7 +5,11 @@
       "Bash(node -c js/MetaJobs.js)",
       "Bash(node -c js/MetaBulletinBoard.js)",
       "Bash(node -c js/MetaFriendshipMilestones.js)",
-      "Bash(where.exe node:*)"
+      "Bash(where.exe node:*)",
+      "Bash(wc -l /Users/baileywjohnson/Github/havenwood/js/*.js /Users/baileywjohnson/Github/havenwood/js/scenes/*.js)",
+      "Bash(ls -lh /Users/baileywjohnson/Github/havenwood/js/*.js)",
+      "Read(//Users/baileywjohnson/Github/havenwood/**)",
+      "Bash(wc -l /Users/baileywjohnson/Github/havenwood/js/scenes/*.js)"
     ]
   }
 }

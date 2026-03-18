@@ -89,8 +89,24 @@ export default class MetaWorldScene extends Phaser.Scene {
             }
         }
 
-        this.roomX = Math.floor((W - this.location.cols * TILE) / 2);
-        this.roomY = Math.floor((H - this.location.rows * TILE) / 2);
+        if (this.location.outdoor) {
+            // Zoom so room exactly fills height between top bar (42px) and bottom bar (62px)
+            const zoom = (H - 42 - 62) / (this.location.rows * TILE);
+            this.cameras.main.setZoom(zoom);
+            this.cameras.main.centerOn(W / 2, H / 2);
+            const scrollY = H / 2 - H / (2 * zoom);
+            // Top-align room flush with top bar
+            const topWorldY = 42 / zoom + scrollY;
+            this.roomX = Math.floor((W - this.location.cols * TILE) / 2);
+            this.roomY = Math.floor(topWorldY);
+            this._bg.setFillStyle(0x4A8B4A);
+        } else {
+            this.cameras.main.setZoom(1.35);
+            this.cameras.main.centerOn(W / 2, H / 2);
+            this.roomX = Math.floor((W - this.location.cols * TILE) / 2);
+            this.roomY = Math.floor((H - this.location.rows * TILE) / 2);
+            this._bg.setFillStyle(0x1a1a2a);
+        }
 
         this.drawRoom();
         this.placeFurniture();
@@ -1346,58 +1362,19 @@ export default class MetaWorldScene extends Phaser.Scene {
         // Record when we entered Havenwood so meta-time continues
         this._havenwoodEnteredAt = Date.now();
 
+        // Show character holding phone briefly, then switch
         this.charDir = 'down';
-        this.char.setTexture('char_down');
+        this.char.setTexture('char_phone');
 
-        const phoneX = this.char.x;
-        const phoneStartY = this.char.y + 4;
-        const phoneEndY = this.char.y - 6;
-        const phoneSpr = this.add.image(phoneX, phoneStartY, 'furniture_phone')
-            .setDepth(11).setScale(0.5).setAlpha(0);
-
-        this.tweens.add({
-            targets: phoneSpr,
-            y: phoneEndY,
-            alpha: 1,
-            scaleX: 1,
-            scaleY: 1,
-            duration: 300,
-            ease: 'Quad.easeOut',
-            onComplete: () => {
-                this.char.setTexture('char_phone');
-                phoneSpr.destroy();
-
-                const glow = this.add.circle(this.char.x, this.char.y - 2, 6, 0x55AA55, 0)
-                    .setDepth(12);
-                this.tweens.add({
-                    targets: glow,
-                    alpha: 0.3,
-                    scaleX: 2.5,
-                    scaleY: 2.5,
-                    duration: 400,
-                    ease: 'Quad.easeIn',
-                    onComplete: () => {
-                        glow.destroy();
-                        const flash = this.add.rectangle(W / 2, H / 2, W, H, 0xffffff, 0)
-                            .setDepth(100);
-                        this.tweens.add({
-                            targets: flash,
-                            alpha: 0.8,
-                            duration: 150,
-                            onComplete: () => {
-                                this.scene.sleep('MetaWorldScene');
-                                this.scene.sleep('MetaHUDScene');
-                                this.scene.wake('GameScene');
-                                this.scene.wake('HUDScene');
-                                const hudScene = this.scene.get('HUDScene');
-                                if (hudScene && hudScene.syncState) hudScene.syncState();
-                                this.scene.bringToTop('HUDScene');
-                                flash.destroy();
-                            }
-                        });
-                    }
-                });
-            }
+        this.time.delayedCall(350, () => {
+            this.char.setTexture('char_down');
+            this.scene.sleep('MetaWorldScene');
+            this.scene.sleep('MetaHUDScene');
+            this.scene.wake('GameScene');
+            this.scene.wake('HUDScene');
+            const hudScene = this.scene.get('HUDScene');
+            if (hudScene && hudScene.syncState) hudScene.syncState();
+            this.scene.bringToTop('HUDScene');
         });
     }
 
@@ -1446,34 +1423,20 @@ export default class MetaWorldScene extends Phaser.Scene {
             }
         }
 
-        const phoneX = this.char.x;
-        const phoneStartY = this.char.y - 6;
-        const phoneEndY = this.char.y + 4;
-        const phoneSpr = this.add.image(phoneX, phoneStartY, 'furniture_phone')
-            .setDepth(11).setAlpha(1);
+        // Hold phone briefly, then put it away
+        this.char.setTexture('char_phone');
 
-        this.char.setTexture('char_down');
-
-        this.tweens.add({
-            targets: phoneSpr,
-            y: phoneEndY,
-            alpha: 0,
-            scaleX: 0.5,
-            scaleY: 0.5,
-            duration: 350,
-            ease: 'Quad.easeIn',
-            onComplete: () => {
-                phoneSpr.destroy();
-                this._startWithPhone = false;
-                this._frozen = false;
-                this._interactCooldown = true;
-                this.time.delayedCall(300, () => { this._interactCooldown = false; });
-                // Refresh after time passed in Havenwood
-                this.updateDayNightTint();
-                this.refreshNPCs();
-                const hud = this.scene.get('MetaHUDScene');
-                if (hud) hud.refreshStatusBar();
-            }
+        this.time.delayedCall(400, () => {
+            this.char.setTexture('char_down');
+            this._startWithPhone = false;
+            this._frozen = false;
+            this._interactCooldown = true;
+            this.time.delayedCall(300, () => { this._interactCooldown = false; });
+            // Refresh after time passed in Havenwood
+            this.updateDayNightTint();
+            this.refreshNPCs();
+            const hud = this.scene.get('MetaHUDScene');
+            if (hud) hud.refreshStatusBar();
         });
     }
 }

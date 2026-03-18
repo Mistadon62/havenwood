@@ -12,12 +12,12 @@ const SCRIPTED_EVENTS = [
         day: 7,
         location: 'campus_quad',
         desc: 'A wildlife fair has set up in the quad!',
-        npcOverrides: { prof_elara: { location: 'campus_quad', gx: 4, gy: 4 } },
+        npcOverrides: { prof_elara: { location: 'campus_quad', gx: 7, gy: 6 } },
         interactables: [
-            { id: 'fair_booth', gx: 8, gy: 3, w: 2, h: 1, name: 'Fair Booth', action: 'evt_fair_booth' },
+            { id: 'fair_booth', gx: 12, gy: 5, w: 2, h: 1, name: 'Fair Booth', action: 'evt_fair_booth' },
         ],
         furniture: [
-            { type: 'fair_booth', gx: 8, gy: 2 },
+            { type: 'fair_booth', gx: 12, gy: 4 },
         ],
     },
     {
@@ -27,15 +27,15 @@ const SCRIPTED_EVENTS = [
         location: 'campus_quad',
         desc: 'The annual campus festival is in full swing!',
         npcOverrides: {
-            sam: { location: 'campus_quad', gx: 3, gy: 6 },
-            shopkeeper: { location: 'campus_quad', gx: 10, gy: 6 },
+            sam: { location: 'campus_quad', gx: 6, gy: 8 },
+            shopkeeper: { location: 'campus_quad', gx: 16, gy: 8 },
         },
         interactables: [
-            { id: 'festival_stage', gx: 6, gy: 5, w: 2, h: 1, name: 'Festival Stage', action: 'evt_festival' },
+            { id: 'festival_stage', gx: 10, gy: 7, w: 2, h: 1, name: 'Festival Stage', action: 'evt_festival' },
         ],
         furniture: [
-            { type: 'fair_booth', gx: 6, gy: 4 },
-            { type: 'fair_booth', gx: 10, gy: 5 },
+            { type: 'fair_booth', gx: 10, gy: 6 },
+            { type: 'fair_booth', gx: 16, gy: 7 },
         ],
     },
     {
@@ -55,12 +55,12 @@ const SCRIPTED_EVENTS = [
         location: 'campus_quad',
         desc: 'A campus holiday! Everyone is relaxing in the quad.',
         npcOverrides: {
-            sam: { location: 'campus_quad', gx: 6, gy: 6 },
-            prof_elara: { location: 'campus_quad', gx: 4, gy: 3 },
-            shopkeeper: { location: 'campus_quad', gx: 10, gy: 3 },
+            sam: { location: 'campus_quad', gx: 10, gy: 8 },
+            prof_elara: { location: 'campus_quad', gx: 7, gy: 5 },
+            shopkeeper: { location: 'campus_quad', gx: 16, gy: 5 },
         },
         interactables: [
-            { id: 'founders_statue', gx: 7, gy: 5, w: 1, h: 1, name: 'Founder\'s Statue', action: 'evt_founders' },
+            { id: 'founders_statue', gx: 11, gy: 7, w: 1, h: 1, name: 'Founder\'s Statue', action: 'evt_founders' },
         ],
         furniture: [],
     },
@@ -97,10 +97,10 @@ const RANDOM_EVENTS = [
         location: 'campus_quad',
         desc: 'A stray cat is wandering the quad!',
         interactables: [
-            { id: 'lost_cat', gx: 5, gy: 6, w: 1, h: 1, name: 'Stray Cat', action: 'evt_lost_cat' },
+            { id: 'lost_cat', gx: 9, gy: 8, w: 1, h: 1, name: 'Stray Cat', action: 'evt_lost_cat' },
         ],
         furniture: [
-            { type: 'lost_cat', gx: 5, gy: 6 },
+            { type: 'lost_cat', gx: 9, gy: 8 },
         ],
     },
     {
@@ -121,10 +121,10 @@ const RANDOM_EVENTS = [
         location: 'campus_quad',
         desc: 'A food truck is parked outside!',
         interactables: [
-            { id: 'food_truck', gx: 11, gy: 3, w: 1, h: 1, name: 'Food Truck', action: 'evt_food_truck' },
+            { id: 'food_truck', gx: 18, gy: 5, w: 1, h: 1, name: 'Food Truck', action: 'evt_food_truck' },
         ],
         furniture: [
-            { type: 'fair_booth', gx: 11, gy: 2 },
+            { type: 'fair_booth', gx: 18, gy: 4 },
         ],
     },
     {

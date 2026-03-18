@@ -58,17 +58,17 @@ const MetaDialogue = {
 
         // Speaker name
         if (speaker) {
-            const nameText = txt(hudScene, boxX + 14, boxY + 10, speaker, 9, CLR.gold);
+            const nameText = txt(hudScene, boxX + 14, boxY + 10, speaker, 10, CLR.gold);
             container.add(nameText);
         }
 
         // Line text
         const textY = speaker ? boxY + 28 : boxY + 14;
-        const lineText = txt(hudScene, boxX + 14, textY, lines[0] || '', 8, '#DDDDEE');
+        const lineText = txt(hudScene, boxX + 14, textY, lines[0] || '', 9, '#DDDDEE');
         container.add(lineText);
 
         // Hint
-        const hint = txt(hudScene, boxX + boxW - 14, boxY + boxH - 16, '[E] Continue', 7, '#666688');
+        const hint = txt(hudScene, boxX + boxW - 14, boxY + boxH - 16, '[E] Continue', 8, '#666688');
         hint.setOrigin(1, 0.5);
         container.add(hint);
 
@@ -97,7 +97,7 @@ const MetaDialogue = {
                     .setInteractive({ useHandCursor: true });
                 choiceContainer.add(cHit);
 
-                const cText = txt(hudScene, boxX + 34, cy + 13, `${i + 1}. ${c.label}`, 8, '#88DD88');
+                const cText = txt(hudScene, boxX + 34, cy + 13, `${i + 1}. ${c.label}`, 9, '#88DD88');
                 cText.setOrigin(0, 0.5);
                 choiceContainer.add(cText);
 

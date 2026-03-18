@@ -19,7 +19,7 @@ export default class MetaHUDScene extends Phaser.Scene {
         this.notifPanel = null;
 
         this.createStatusBar();
-        this.createInteractPrompt();
+        this.createBottomBar();
 
         // ESC key
         this.input.keyboard.on('keydown-ESC', () => {
@@ -76,47 +76,49 @@ export default class MetaHUDScene extends Phaser.Scene {
     // ── Status Bar ──
 
     createStatusBar() {
-        // Dark bar at top
+        // Dark bar at top — match sanctuary HUD height (42px)
+        const barH = 42;
+        const midY = 21;
         this.statusBg = this.add.graphics().setDepth(200);
         this.statusBg.fillStyle(0x0D1520, 0.85);
-        this.statusBg.fillRect(0, 0, W, 28);
+        this.statusBg.fillRect(0, 0, W, barH);
         this.statusBg.lineStyle(1, 0x2A3A52, 0.6);
-        this.statusBg.lineBetween(0, 28, W, 28);
+        this.statusBg.lineBetween(0, barH, W, barH);
 
         // Day & Time
-        this.dayTimeText = this.txt(10, 14, '', 8, '#CCDDEE').setOrigin(0, 0.5).setDepth(201);
+        this.dayTimeText = this.txt(12, midY, '', 10, '#CCDDEE').setOrigin(0, 0.5).setDepth(201);
 
         // Energy bar
-        this.energyLabel = this.txt(260, 14, 'EN', 7, '#88CC88').setOrigin(0, 0.5).setDepth(201);
-        this.energyBarBg = this.add.rectangle(290, 14, 60, 8, 0x333344).setOrigin(0, 0.5).setDepth(201);
-        this.energyBarFill = this.add.rectangle(290, 14, 60, 8, 0x44CC44).setOrigin(0, 0.5).setDepth(201);
+        this.energyLabel = this.txt(270, midY, 'EN', 8, '#88CC88').setOrigin(0, 0.5).setDepth(201);
+        this.energyBarBg = this.add.rectangle(304, midY, 60, 10, 0x333344).setOrigin(0, 0.5).setDepth(201);
+        this.energyBarFill = this.add.rectangle(304, midY, 60, 10, 0x44CC44).setOrigin(0, 0.5).setDepth(201);
 
         // Mood
-        this.moodText = this.txt(370, 14, '', 8, '#DDBB88').setOrigin(0, 0.5).setDepth(201);
+        this.moodText = this.txt(382, midY, '', 9, '#DDBB88').setOrigin(0, 0.5).setDepth(201);
 
         // Money
-        this.moneyText = this.txt(460, 14, '', 8, '#AADDAA').setOrigin(0, 0.5).setDepth(201);
+        this.moneyText = this.txt(460, midY, '', 9, '#AADDAA').setOrigin(0, 0.5).setDepth(201);
 
         // Knowledge
-        this.knowledgeText = this.txt(560, 14, '', 8, '#AABBDD').setOrigin(0, 0.5).setDepth(201);
+        this.knowledgeText = this.txt(540, midY, '', 9, '#AABBDD').setOrigin(0, 0.5).setDepth(201);
 
         // Quest count
-        this.questText = this.txt(650, 14, '', 7, '#BBAA88').setOrigin(0, 0.5).setDepth(201);
+        this.questText = this.txt(640, midY, '', 8, '#BBAA88').setOrigin(0, 0.5).setDepth(201);
 
         // Weather icon
-        this.weatherText = this.txt(710, 14, '', 7, '#AABBCC').setOrigin(0, 0.5).setDepth(201);
+        this.weatherText = this.txt(710, midY, '', 8, '#AABBCC').setOrigin(0, 0.5).setDepth(201);
 
         // Inventory count
-        this.invText = this.txt(780, 14, '', 7, '#AABB88').setOrigin(0, 0.5).setDepth(201);
+        this.invText = this.txt(780, midY, '', 8, '#AABB88').setOrigin(0, 0.5).setDepth(201);
 
         // Event indicator
-        this.eventText = this.txt(840, 14, '', 7, '#FFDD66').setOrigin(0, 0.5).setDepth(201);
+        this.eventText = this.txt(840, midY, '', 8, '#FFDD66').setOrigin(0, 0.5).setDepth(201);
 
         // Phone notification badge
-        this.phoneBadge = this.txt(920, 14, '', 7, '#FF8866').setOrigin(0, 0.5).setDepth(201);
+        this.phoneBadge = this.txt(920, midY, '', 8, '#FF8866').setOrigin(0, 0.5).setDepth(201);
 
         // Location name (right side)
-        this.locationText = this.txt(W - 10, 14, '', 7, '#667788').setOrigin(1, 0.5).setDepth(201);
+        this.locationText = this.txt(W - 10, midY, '', 8, '#667788').setOrigin(1, 0.5).setDepth(201);
 
         this.refreshStatusBar();
     }
@@ -205,32 +207,23 @@ export default class MetaHUDScene extends Phaser.Scene {
 
     // ── Interact Prompt ──
 
-    createInteractPrompt() {
-        this.interactPrompt = this.add.container(W / 2, H - 60).setAlpha(0.8).setDepth(200);
+    createBottomBar() {
+        const barY = H - 62;
+        this.bottomBarBg = this.add.graphics().setDepth(200);
+        this.bottomBarBg.fillStyle(0x0D1520, 1);
+        this.bottomBarBg.fillRect(0, barY, W, 62);
+        this.bottomBarBg.lineStyle(1, 0x2A3A52, 0.6);
+        this.bottomBarBg.lineBetween(0, barY, W, barY);
 
-        this.promptBg = this.add.graphics();
-        this.promptBg.fillStyle(0x252F40, 0.85);
-        this.promptBg.fillRoundedRect(-100, -14, 200, 28, 6);
-        this.promptBg.lineStyle(1, 0x3D4F6B, 0.8);
-        this.promptBg.strokeRoundedRect(-100, -14, 200, 28, 6);
-        this.interactPrompt.add(this.promptBg);
+        const midY = barY + 22;
 
-        this.promptText = this.txt(0, 0, '[E] Play Havenwood', 9, '#88DD88').setOrigin(0.5);
-        this.interactPrompt.add(this.promptText);
+        // Interact prompt
+        this.promptText = this.txt(W / 2, midY, '[E] Play Havenwood', 10, '#88DD88')
+            .setOrigin(0.5).setDepth(201);
 
         // Controls hint
-        this.controlsHint = this.txt(W / 2, H - 20, 'WASD move | Q quests | I inventory | N notifs', 8, '#666677')
-            .setOrigin(0.5).setAlpha(0.7).setDepth(200);
-
-        // Gentle float
-        this.tweens.add({
-            targets: this.interactPrompt,
-            y: H - 65,
-            duration: 1200,
-            yoyo: true,
-            repeat: -1,
-            ease: 'Sine.easeInOut'
-        });
+        this.controlsHint = this.txt(W / 2, midY + 20, 'WASD move | Q quests | I inventory | N notifs', 8, '#556677')
+            .setOrigin(0.5).setDepth(201);
     }
 
     // Update the prompt text based on what the player is facing
@@ -268,7 +261,7 @@ export default class MetaHUDScene extends Phaser.Scene {
         bg.lineStyle(2, CLR.uiBorder); bg.strokeRoundedRect(0, 0, pw, ph, 8);
         ct.add(bg);
 
-        ct.add(this.txt(pw / 2, 20, 'Settings', 12, CLR.gold).setOrigin(0.5));
+        ct.add(this.txt(pw / 2, 20, 'Settings', 13, CLR.gold).setOrigin(0.5));
 
         const btnW = 180, btnH = 34;
         const bx = pw / 2 - btnW / 2;
@@ -279,7 +272,7 @@ export default class MetaHUDScene extends Phaser.Scene {
         ct.add(saveBg);
         const saveHit = this.add.rectangle(pw / 2, 60 + btnH / 2, btnW, btnH, 0, 0).setInteractive({ useHandCursor: true });
         ct.add(saveHit);
-        ct.add(this.txt(pw / 2, 60 + btnH / 2, 'Save Game', 9, '#FFFFFF').setOrigin(0.5));
+        ct.add(this.txt(pw / 2, 60 + btnH / 2, 'Save Game', 10, '#FFFFFF').setOrigin(0.5));
         saveHit.on('pointerover', () => { saveBg.clear(); saveBg.fillStyle(0x55CC55, 0.7); saveBg.fillRoundedRect(bx, 60, btnW, btnH, 5); });
         saveHit.on('pointerout', () => { saveBg.clear(); saveBg.fillStyle(0x44AA44, 0.6); saveBg.fillRoundedRect(bx, 60, btnW, btnH, 5); });
         saveHit.on('pointerdown', () => {
@@ -300,7 +293,7 @@ export default class MetaHUDScene extends Phaser.Scene {
         ct.add(exitBg);
         const exitHit = this.add.rectangle(pw / 2, 110 + btnH / 2, btnW, btnH, 0, 0).setInteractive({ useHandCursor: true });
         ct.add(exitHit);
-        ct.add(this.txt(pw / 2, 110 + btnH / 2, 'Exit to Menu', 9, '#FFFFFF').setOrigin(0.5));
+        ct.add(this.txt(pw / 2, 110 + btnH / 2, 'Exit to Menu', 10, '#FFFFFF').setOrigin(0.5));
         exitHit.on('pointerover', () => { exitBg.clear(); exitBg.fillStyle(0xCC5555, 0.7); exitBg.fillRoundedRect(bx, 110, btnW, btnH, 5); });
         exitHit.on('pointerout', () => { exitBg.clear(); exitBg.fillStyle(0xAA4444, 0.6); exitBg.fillRoundedRect(bx, 110, btnW, btnH, 5); });
         exitHit.on('pointerdown', () => {
@@ -324,7 +317,7 @@ export default class MetaHUDScene extends Phaser.Scene {
         ct.add(resBg);
         const resHit = this.add.rectangle(pw / 2, 160 + btnH / 2, btnW, btnH, 0, 0).setInteractive({ useHandCursor: true });
         ct.add(resHit);
-        ct.add(this.txt(pw / 2, 160 + btnH / 2, 'Resume', 9, '#FFFFFF').setOrigin(0.5));
+        ct.add(this.txt(pw / 2, 160 + btnH / 2, 'Resume', 10, '#FFFFFF').setOrigin(0.5));
         resHit.on('pointerover', () => { resBg.clear(); resBg.fillStyle(0x666688, 0.7); resBg.fillRoundedRect(bx, 160, btnW, btnH, 5); });
         resHit.on('pointerout', () => { resBg.clear(); resBg.fillStyle(0x555566, 0.6); resBg.fillRoundedRect(bx, 160, btnW, btnH, 5); });
         resHit.on('pointerdown', () => this.closeSettingsMenu());
@@ -346,7 +339,7 @@ export default class MetaHUDScene extends Phaser.Scene {
         const checkHit = this.add.rectangle(checkX + checkSize / 2, checkY + checkSize / 2, checkSize, checkSize, 0, 0).setInteractive({ useHandCursor: true });
         ct.add(checkHit);
         checkHit.on('pointerdown', () => { if (gs) gs.state.autoSave = !gs.state.autoSave; drawCheck(); });
-        ct.add(this.txt(checkX + checkSize + 10, checkY + checkSize / 2, 'Auto-Save', 8, '#CCBBAA').setOrigin(0, 0.5));
+        ct.add(this.txt(checkX + checkSize + 10, checkY + checkSize / 2, 'Auto-Save', 9, '#CCBBAA').setOrigin(0, 0.5));
 
         this.settingsPanel = ct;
     }
@@ -379,8 +372,8 @@ export default class MetaHUDScene extends Phaser.Scene {
         bg.lineStyle(2, CLR.uiBorder); bg.strokeRoundedRect(0, 0, pw, ph, 8);
         ct.add(bg);
 
-        ct.add(this.txt(pw / 2, 18, 'Quest Log', 11, CLR.gold).setOrigin(0.5));
-        ct.add(this.txt(pw / 2, 34, '[Q/Tab] Close', 7, '#666688').setOrigin(0.5));
+        ct.add(this.txt(pw / 2, 18, 'Quest Log', 13, CLR.gold).setOrigin(0.5));
+        ct.add(this.txt(pw / 2, 36, '[Q/Tab] Close', 8, '#666688').setOrigin(0.5));
 
         const activeQuests = MetaQuests.getActiveQuestsDisplay();
         const completedQuests = MetaQuests.getCompletedQuests();
@@ -388,8 +381,8 @@ export default class MetaHUDScene extends Phaser.Scene {
         let yOff = 54;
 
         if (activeQuests.length === 0 && completedQuests.length === 0) {
-            ct.add(this.txt(pw / 2, yOff + 20, 'No quests yet...', 8, '#888899').setOrigin(0.5));
-            ct.add(this.txt(pw / 2, yOff + 40, 'Explore campus and talk to people!', 7, '#667788').setOrigin(0.5));
+            ct.add(this.txt(pw / 2, yOff + 20, 'No quests yet...', 9, '#888899').setOrigin(0.5));
+            ct.add(this.txt(pw / 2, yOff + 40, 'Explore campus and talk to people!', 8, '#667788').setOrigin(0.5));
         }
 
         // Active quests
@@ -398,11 +391,11 @@ export default class MetaHUDScene extends Phaser.Scene {
 
             // Quest name with giver
             const giverTag = quest.giver ? ` (${getNPC(quest.giver)?.name || quest.giver})` : '';
-            ct.add(this.txt(14, yOff, `${quest.name}${giverTag}`, 8, '#DDCC88').setOrigin(0, 0));
-            yOff += 16;
+            ct.add(this.txt(14, yOff, `${quest.name}${giverTag}`, 9, '#DDCC88').setOrigin(0, 0));
+            yOff += 18;
 
             // Description (with word wrap)
-            const descText = this.txt(20, yOff, quest.desc, 7, '#99AABB').setOrigin(0, 0);
+            const descText = this.txt(20, yOff, quest.desc, 8, '#99AABB').setOrigin(0, 0);
             descText.setWordWrapWidth(pw - 40);
             ct.add(descText);
             yOff += descText.height + 4;
@@ -411,12 +404,12 @@ export default class MetaHUDScene extends Phaser.Scene {
             for (const step of quest.steps) {
                 const icon = step.done ? '[x]' : '[ ]';
                 const color = step.done ? '#66AA66' : '#AABBCC';
-                ct.add(this.txt(24, yOff, `${icon} ${step.label}`, 7, color).setOrigin(0, 0));
-                yOff += 13;
+                ct.add(this.txt(24, yOff, `${icon} ${step.label}`, 8, color).setOrigin(0, 0));
+                yOff += 15;
             }
 
             // Reward
-            ct.add(this.txt(24, yOff, `Reward: ${quest.rewardText}`, 7, '#AABB88').setOrigin(0, 0));
+            ct.add(this.txt(24, yOff, `Reward: ${quest.rewardText}`, 8, '#AABB88').setOrigin(0, 0));
             yOff += 18;
 
             // Separator
@@ -429,12 +422,12 @@ export default class MetaHUDScene extends Phaser.Scene {
 
         // Completed quests
         if (completedQuests.length > 0 && yOff < ph - 40) {
-            ct.add(this.txt(14, yOff, 'Completed', 8, '#668866').setOrigin(0, 0));
-            yOff += 16;
+            ct.add(this.txt(14, yOff, 'Completed', 9, '#668866').setOrigin(0, 0));
+            yOff += 18;
             for (const quest of completedQuests) {
                 if (yOff > ph - 20) break;
-                ct.add(this.txt(24, yOff, `[x] ${quest.name}`, 7, '#557755').setOrigin(0, 0));
-                yOff += 14;
+                ct.add(this.txt(24, yOff, `[x] ${quest.name}`, 8, '#557755').setOrigin(0, 0));
+                yOff += 16;
             }
         }
 
@@ -446,8 +439,8 @@ export default class MetaHUDScene extends Phaser.Scene {
             fsep.lineBetween(20, yOff, pw - 20, yOff);
             ct.add(fsep);
             yOff += 8;
-            ct.add(this.txt(14, yOff, 'Friendships', 8, '#BBAA88').setOrigin(0, 0));
-            yOff += 16;
+            ct.add(this.txt(14, yOff, 'Friendships', 9, '#BBAA88').setOrigin(0, 0));
+            yOff += 18;
             for (const npcId of MetaState.state.npcsMetSet) {
                 if (yOff > ph - 10) break;
                 const npcDef = getNPC(npcId);
@@ -456,8 +449,8 @@ export default class MetaHUDScene extends Phaser.Scene {
                 const tier = MetaState.getFriendshipTier(npcId);
                 const tierLabels = { stranger: 'Stranger', acquaintance: 'Acquaintance', friend: 'Friend', close: 'Close Friend' };
                 const tierColors = { stranger: '#888899', acquaintance: '#AABBCC', friend: '#88CCAA', close: '#FFDD88' };
-                ct.add(this.txt(24, yOff, `${name}: ${fp}/100 — ${tierLabels[tier]}`, 7, tierColors[tier]).setOrigin(0, 0));
-                yOff += 14;
+                ct.add(this.txt(24, yOff, `${name}: ${fp}/100 — ${tierLabels[tier]}`, 8, tierColors[tier]).setOrigin(0, 0));
+                yOff += 16;
             }
         }
 
@@ -492,16 +485,16 @@ export default class MetaHUDScene extends Phaser.Scene {
         bg.lineStyle(2, CLR.uiBorder); bg.strokeRoundedRect(0, 0, pw, ph, 8);
         ct.add(bg);
 
-        ct.add(this.txt(pw / 2, 18, 'Inventory', 11, CLR.gold).setOrigin(0.5));
-        ct.add(this.txt(pw / 2, 34, '[I] Close', 7, '#666688').setOrigin(0.5));
+        ct.add(this.txt(pw / 2, 18, 'Inventory', 13, CLR.gold).setOrigin(0.5));
+        ct.add(this.txt(pw / 2, 36, '[I] Close', 8, '#666688').setOrigin(0.5));
 
         const inv = MetaState.state.inventory;
         const giftItems = getGiftItemInfo();
 
         if (inv.length === 0) {
-            ct.add(this.txt(pw / 2, ph / 2, 'Empty', 9, '#888899').setOrigin(0.5));
-            ct.add(this.txt(pw / 2, ph / 2 + 20, 'Buy items at the cafe or', 7, '#667788').setOrigin(0.5));
-            ct.add(this.txt(pw / 2, ph / 2 + 34, 'pick flowers in the park!', 7, '#667788').setOrigin(0.5));
+            ct.add(this.txt(pw / 2, ph / 2, 'Empty', 10, '#888899').setOrigin(0.5));
+            ct.add(this.txt(pw / 2, ph / 2 + 22, 'Buy items at the cafe or', 8, '#667788').setOrigin(0.5));
+            ct.add(this.txt(pw / 2, ph / 2 + 38, 'pick flowers in the park!', 8, '#667788').setOrigin(0.5));
         } else {
             // Grid layout: 4 columns, 2 rows of slots
             const slotSize = 48;
@@ -540,20 +533,20 @@ export default class MetaHUDScene extends Phaser.Scene {
 
                 // Item name and count
                 const name = giftItems[itemId]?.name || itemId;
-                ct.add(this.txt(sx + slotSize / 2, sy + slotSize + 4, name, 6, '#CCBBAA').setOrigin(0.5, 0));
+                ct.add(this.txt(sx + slotSize / 2, sy + slotSize + 4, name, 7, '#CCBBAA').setOrigin(0.5, 0));
                 if (count > 1) {
-                    ct.add(this.txt(sx + slotSize - 4, sy + slotSize - 4, `x${count}`, 7, '#DDDD88').setOrigin(1, 1));
+                    ct.add(this.txt(sx + slotSize - 4, sy + slotSize - 4, `x${count}`, 8, '#DDDD88').setOrigin(1, 1));
                 }
 
                 slotIdx++;
             }
 
             // Capacity
-            ct.add(this.txt(pw / 2, ph - 30, `${inv.length}/8 slots used`, 7, '#778899').setOrigin(0.5));
+            ct.add(this.txt(pw / 2, ph - 30, `${inv.length}/8 slots used`, 8, '#778899').setOrigin(0.5));
         }
 
         // Hint
-        ct.add(this.txt(pw / 2, ph - 14, 'Give gifts to NPCs to boost friendship!', 7, '#557766').setOrigin(0.5));
+        ct.add(this.txt(pw / 2, ph - 14, 'Give gifts to NPCs to boost friendship!', 8, '#557766').setOrigin(0.5));
 
         this.inventoryPanel = ct;
     }
@@ -586,14 +579,14 @@ export default class MetaHUDScene extends Phaser.Scene {
         bg.lineStyle(2, CLR.uiBorder); bg.strokeRoundedRect(0, 0, pw, ph, 8);
         ct.add(bg);
 
-        ct.add(this.txt(pw / 2, 18, 'Phone Notifications', 10, CLR.gold).setOrigin(0.5));
-        ct.add(this.txt(pw / 2, 34, '[N] Close', 7, '#666688').setOrigin(0.5));
+        ct.add(this.txt(pw / 2, 18, 'Phone Notifications', 12, CLR.gold).setOrigin(0.5));
+        ct.add(this.txt(pw / 2, 36, '[N] Close', 8, '#666688').setOrigin(0.5));
 
         const notifs = MetaState.state.phoneNotifications || [];
 
         if (notifs.length === 0) {
-            ct.add(this.txt(pw / 2, ph / 2, 'No notifications', 8, '#888899').setOrigin(0.5));
-            ct.add(this.txt(pw / 2, ph / 2 + 18, 'Play Havenwood to get updates!', 7, '#667788').setOrigin(0.5));
+            ct.add(this.txt(pw / 2, ph / 2, 'No notifications', 9, '#888899').setOrigin(0.5));
+            ct.add(this.txt(pw / 2, ph / 2 + 20, 'Play Havenwood to get updates!', 8, '#667788').setOrigin(0.5));
         } else {
             let yOff = 54;
             for (let i = notifs.length - 1; i >= 0 && yOff < ph - 50; i--) {
@@ -601,7 +594,7 @@ export default class MetaHUDScene extends Phaser.Scene {
                 // Notification icon
                 const icon = n.type === 'npc_visit' ? '*' : '>';
                 const color = n.type === 'npc_visit' ? '#FFDD88' : '#88CCAA';
-                const msgText = this.txt(20, yOff, `${icon} ${n.text}`, 7, color).setOrigin(0, 0);
+                const msgText = this.txt(20, yOff, `${icon} ${n.text}`, 8, color).setOrigin(0, 0);
                 msgText.setWordWrapWidth(pw - 40);
                 ct.add(msgText);
                 yOff += msgText.height + 8;
@@ -615,7 +608,7 @@ export default class MetaHUDScene extends Phaser.Scene {
             ct.add(clearBg);
             const clearHit = this.add.rectangle(pw / 2, by + btnH / 2, btnW, btnH, 0, 0).setInteractive({ useHandCursor: true });
             ct.add(clearHit);
-            ct.add(this.txt(pw / 2, by + btnH / 2, 'Clear All', 8, '#CCDDEE').setOrigin(0.5));
+            ct.add(this.txt(pw / 2, by + btnH / 2, 'Clear All', 9, '#CCDDEE').setOrigin(0.5));
             clearHit.on('pointerover', () => { clearBg.clear(); clearBg.fillStyle(0x556688, 0.7); clearBg.fillRoundedRect(bx, by, btnW, btnH, 4); });
             clearHit.on('pointerout', () => { clearBg.clear(); clearBg.fillStyle(0x445566, 0.6); clearBg.fillRoundedRect(bx, by, btnW, btnH, 4); });
             clearHit.on('pointerdown', () => {
@@ -634,18 +627,30 @@ export default class MetaHUDScene extends Phaser.Scene {
         if (metaScene && !metaScene._startWithPhone) metaScene._frozen = false;
     }
 
+    // Queued toast notifications; displayed one at a time, auto-dismiss with fade.
     showNotification(text) {
-        const n = this.add.text(W / 2, 50, text, {
-            fontFamily: '"Press Start 2P", monospace', fontSize: '9px', color: CLR.uiText,
+        if (!this._notifQueue) this._notifQueue = [];
+        this._notifQueue.push(text);
+        if (!this._notifActive) this._showNextNotif();
+    }
+
+    _showNextNotif() {
+        if (!this._notifQueue || this._notifQueue.length === 0) { this._notifActive = false; return; }
+        this._notifActive = true;
+        const text = this._notifQueue.shift();
+        const topY = 50;
+
+        const n = this.add.text(W / 2, topY + 8, text, {
+            fontFamily: '"Press Start 2P", monospace', fontSize: '10px', color: CLR.uiText,
             stroke: '#000000', strokeThickness: 2,
             backgroundColor: '#1A2438DD', padding: { x: 10, y: 8 }
-        }).setOrigin(0.5).setAlpha(0).setDepth(500);
+        }).setOrigin(0.5, 0).setAlpha(0).setDepth(500);
 
-        this.tweens.add({ targets: n, alpha: 1, y: 42, duration: 300 });
+        this.tweens.add({ targets: n, alpha: 1, y: `-=8`, duration: 300 });
         this.tweens.add({
-            targets: n, alpha: 0, y: 30,
-            delay: 2000, duration: 400,
-            onComplete: () => n.destroy()
+            targets: n, alpha: 0, y: `-=12`,
+            delay: 2400, duration: 400,
+            onComplete: () => { n.destroy(); this._showNextNotif(); }
         });
     }
 }

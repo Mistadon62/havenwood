@@ -1960,7 +1960,7 @@ export default class HUDScene extends Phaser.Scene {
         if (this.gs.state.buildMode) this.gs.exitBuild();
 
         if (!this.game._hasZoomedOut) {
-            // First time — full cinematic zoom-out
+            // First time — cinematic zoom-out
             this.game._hasZoomedOut = true;
             this.scene.launch('TransitionScene');
             this.scene.bringToTop('TransitionScene');
@@ -1974,14 +1974,20 @@ export default class HUDScene extends Phaser.Scene {
                 // Scene exists and is sleeping — wake it and trigger put-away
                 this.scene.wake('MetaWorldScene');
                 this.scene.wake('MetaHUDScene');
+                this.scene.bringToTop('MetaHUDScene');
                 metaScene._startWithPhone = true;
                 metaScene._frozen = true;
                 metaScene.char.setTexture('char_phone');
                 metaScene.time.delayedCall(100, () => metaScene.playPutAwayPhone());
             } else {
-                // Scene was stopped or never launched — full launch
+                // Scene was stopped or never launched — full launch with put-away
                 this.scene.launch('MetaWorldScene', { startWithPhone: true });
                 this.scene.launch('MetaHUDScene');
+                // Trigger put-away after scene has initialized
+                this.time.delayedCall(150, () => {
+                    const ms = this.scene.get('MetaWorldScene');
+                    if (ms && ms.playPutAwayPhone) ms.playPutAwayPhone();
+                });
             }
         }
     }

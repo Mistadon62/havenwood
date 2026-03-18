@@ -48,13 +48,12 @@ export default class TransitionScene extends Phaser.Scene {
             }
             this.textures.addImage('phone_screen_snap', image);
 
-            // Build phone container FIRST so it covers the screen before we swap scenes
-            const container = this.buildPhoneContainer();
-            this.phoneContainer = container;
-            container.setScale(1);
-            container.setPosition(W / 2, H / 2);
+            // Screenshot covers the screen before we swap scenes
+            const snap = this.add.image(W / 2, H / 2, 'phone_screen_snap')
+                .setDisplaySize(W, H).setDepth(10);
+            this.snapImage = snap;
 
-            // Now safe to sleep game scenes — container covers everything
+            // Now safe to sleep game scenes — screenshot covers everything
             this.scene.sleep('GameScene');
             this.scene.sleep('HUDScene');
 
@@ -68,20 +67,17 @@ export default class TransitionScene extends Phaser.Scene {
                 const metaScene = this.scene.get('MetaWorldScene');
                 const charX = metaScene.char ? metaScene.char.x : W / 2;
                 const charY = metaScene.char ? metaScene.char.y : H / 2;
-                const phoneY = charY - 6;
 
-                const phoneSpriteH = 1;
-                const containerH = H + BEZEL * 2;
-                const targetScale = phoneSpriteH / containerH;
+                const targetScale = 1 / H; // shrink to ~1px tall
 
-                // Animate zoom-out — phone shrinks to character's hands
+                // Animate zoom-out — sanctuary shrinks to character's hands
                 let putAwayTriggered = false;
                 this.tweens.add({
-                    targets: container,
+                    targets: snap,
                     scaleX: targetScale,
                     scaleY: targetScale,
                     x: charX,
-                    y: phoneY,
+                    y: charY - 6,
                     duration: DURATION,
                     ease: 'Cubic.easeInOut',
                     onUpdate: (tween) => {
@@ -100,55 +96,13 @@ export default class TransitionScene extends Phaser.Scene {
     }
 
     finishZoomOut() {
-        // Fade out the phone container (put-away animation already started at 70%)
         this.tweens.add({
-            targets: this.phoneContainer,
+            targets: this.snapImage,
             alpha: 0,
             duration: 200,
             onComplete: () => {
                 this.scene.stop('TransitionScene');
             }
         });
-    }
-
-    // ── Phone Container ──
-
-    buildPhoneContainer() {
-        const container = this.add.container(W / 2, H / 2).setDepth(10);
-
-        const phoneW = W + BEZEL * 2;
-        const phoneH = H + BEZEL * 2;
-
-        // 1) Phone body (behind screen)
-        const body = this.add.graphics();
-        body.fillStyle(0x1a1a2a, 1);
-        body.fillRoundedRect(-phoneW / 2, -phoneH / 2, phoneW, phoneH, CORNER + 4);
-        body.fillStyle(0x2a2a3a, 1);
-        body.fillRoundedRect(-phoneW / 2 + 2, -phoneH / 2 + 2, phoneW - 4, phoneH - 4, CORNER + 2);
-        body.fillStyle(0x111118, 1);
-        body.fillRoundedRect(-W / 2 - 2, -H / 2 - 2, W + 4, H + 4, CORNER);
-        body.fillCircle(0, -H / 2 - BEZEL / 2, 3);
-        body.fillStyle(0x333344, 1);
-        body.fillRoundedRect(-12, H / 2 + BEZEL / 2 - 4, 24, 8, 4);
-        container.add(body);
-
-        // 2) Game screen image
-        const screen = this.add.image(0, 0, 'phone_screen_snap');
-        screen.setDisplaySize(W, H);
-        container.add(screen);
-
-        // 3) Frame overlay
-        const frame = this.add.graphics();
-        frame.lineStyle(2, 0x2a2a3a, 0.6);
-        frame.strokeRoundedRect(-W / 2, -H / 2, W, H, CORNER);
-        container.add(frame);
-
-        // 4) Screen glow
-        const glow = this.add.graphics();
-        glow.lineStyle(1, 0x3a5a8a, 0.3);
-        glow.strokeRoundedRect(-W / 2 + 1, -H / 2 + 1, W - 2, H - 2, CORNER - 1);
-        container.add(glow);
-
-        return container;
     }
 }
