@@ -628,6 +628,84 @@ export class SpriteGenerator {
                 rect(g, 17, 22, 3, 5, 0x445566);
             });
         });
+
+        // NPC visitors from meta-world (special sanctuary visitors)
+        // Sam — red hoodie, distinct from regular visitors
+        tex(scene, 'visitor_sam', TILE, TILE, g => {
+            const skin = 0xFFDDBB;
+            const hair = 0x2A2A3A;
+            const hoodie = 0xCC5533;
+            g.fillStyle(hair);
+            g.fillCircle(16, 7, 5);
+            g.fillStyle(skin);
+            g.fillCircle(16, 8, 4);
+            rect(g, 14, 8, 2, 1, 0x222222); // eyes
+            rect(g, 18, 8, 2, 1, 0x222222);
+            rect(g, 11, 12, 10, 10, hoodie);
+            rect(g, 14, 13, 1, 2, 0xEEEEDD); // zipper
+            rect(g, 17, 13, 1, 2, 0xEEEEDD);
+            rect(g, 9, 14, 3, 7, dark(hoodie, 20));
+            rect(g, 20, 14, 3, 7, dark(hoodie, 20));
+            rect(g, 12, 22, 3, 5, 0x334455);
+            rect(g, 17, 22, 3, 5, 0x334455);
+            rect(g, 12, 27, 3, 2, 0xEEEEEE);
+            rect(g, 17, 27, 3, 2, 0xEEEEEE);
+            // Star badge (special visitor indicator)
+            g.fillStyle(0xFFDD44);
+            g.fillTriangle(24, 3, 21, 7, 27, 7);
+            g.fillTriangle(24, 11, 21, 7, 27, 7);
+        });
+
+        // Prof. Elara — lab coat, glasses
+        tex(scene, 'visitor_elara', TILE, TILE, g => {
+            const skin = 0xDDBB99;
+            const hair = 0x884422;
+            const coat = 0xEEEEDD;
+            g.fillStyle(hair);
+            g.fillCircle(16, 6, 5);
+            g.fillStyle(skin);
+            g.fillCircle(16, 8, 4);
+            rect(g, 13, 7, 3, 2, 0x666688); // glasses left
+            rect(g, 17, 7, 3, 2, 0x666688); // glasses right
+            rect(g, 14, 8, 2, 1, 0xAABBDD);
+            rect(g, 18, 8, 2, 1, 0xAABBDD);
+            rect(g, 11, 12, 10, 10, coat);
+            rect(g, 13, 13, 6, 8, 0x4488AA); // shirt under coat
+            rect(g, 9, 14, 3, 7, coat);
+            rect(g, 20, 14, 3, 7, coat);
+            rect(g, 12, 22, 3, 5, 0x445566);
+            rect(g, 17, 22, 3, 5, 0x445566);
+            // Star badge
+            g.fillStyle(0xFFDD44);
+            g.fillTriangle(24, 3, 21, 7, 27, 7);
+            g.fillTriangle(24, 11, 21, 7, 27, 7);
+        });
+
+        // Mr. Tanaka — green apron
+        tex(scene, 'visitor_tanaka', TILE, TILE, g => {
+            const skin = 0xDDBB99;
+            const hair = 0x666666;
+            const apron = 0x44AA44;
+            const shirt = 0x5566AA;
+            g.fillStyle(hair);
+            g.fillCircle(16, 7, 5);
+            g.fillStyle(skin);
+            g.fillCircle(16, 8, 4);
+            rect(g, 14, 8, 2, 1, 0x222222);
+            rect(g, 18, 8, 2, 1, 0x222222);
+            rect(g, 14, 10, 4, 1, hair); // mustache
+            rect(g, 11, 12, 10, 10, shirt);
+            rect(g, 13, 14, 6, 7, apron);
+            rect(g, 12, 14, 8, 1, apron); // apron strap
+            rect(g, 9, 14, 3, 7, dark(shirt, 20));
+            rect(g, 20, 14, 3, 7, dark(shirt, 20));
+            rect(g, 12, 22, 3, 5, 0x445566);
+            rect(g, 17, 22, 3, 5, 0x445566);
+            // Star badge
+            g.fillStyle(0xFFDD44);
+            g.fillTriangle(24, 3, 21, 7, 27, 7);
+            g.fillTriangle(24, 11, 21, 7, 27, 7);
+        });
     }
 
     // Seasonal particles: snow, leaf, petal, firefly.

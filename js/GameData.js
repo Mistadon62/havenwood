@@ -245,6 +245,14 @@ export const VISITOR_TYPES = {
     vip:          { id: 'vip', name: 'VIP', weight: 5, incomeMult: 3.0, stayMult: 1.2, minRep: 100, spriteIdx: 3 },
 };
 
+// NPC visitors — meta-world characters who visit the sanctuary (friendship-gated)
+// These use named sprite keys instead of spriteIdx, higher income, longer stays, and special bubbles.
+export const NPC_VISITOR_TYPES = {
+    sam:    { id: 'sam', name: 'Sam', spriteKey: 'visitor_sam', incomeMult: 2.5, stayMult: 1.8, minFriendship: 30, bubbleText: 'So cool!', repBonus: 5 },
+    elara:  { id: 'elara', name: 'Prof. Elara', spriteKey: 'visitor_elara', incomeMult: 3.0, stayMult: 2.0, minFriendship: 40, bubbleText: 'Fascinating!', repBonus: 8 },
+    tanaka: { id: 'tanaka', name: 'Mr. Tanaka', spriteKey: 'visitor_tanaka', incomeMult: 2.0, stayMult: 1.5, minFriendship: 20, bubbleText: 'Well done!', repBonus: 3 },
+};
+
 // Achievements — 22 milestones for rescues, breeding, species, coins, upgrades, etc.
 export const ACHIEVEMENTS = [
     { id: 'first_rescue', name: 'First Rescue', desc: 'Rescue your first animal' },

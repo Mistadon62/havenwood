@@ -44,6 +44,22 @@ const DEFAULTS = {
     pendingFood: 0,
     pendingTreats: 0,
 
+    // NPC sanctuary visit cooldowns (npcId → last meta-day they visited)
+    npcVisitCooldowns: {},
+    // Total NPC visits to sanctuary
+    npcVisitsTotal: 0,
+
+    // Phone notifications queue (shown in meta-world about Havenwood events)
+    phoneNotifications: [],
+
+    // Snapshot of Havenwood stats (updated on mode switch for NPC dialogue)
+    sanctuarySnapshot: {
+        animalCount: 0,
+        habitatCount: 0,
+        rep: 0,
+        coins: 0,
+    },
+
     // Location
     currentLocation: 'bedroom',
     playerTileX: 6,

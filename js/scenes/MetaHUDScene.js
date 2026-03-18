@@ -16,6 +16,7 @@ export default class MetaHUDScene extends Phaser.Scene {
         this.settingsPanel = null;
         this.questPanel = null;
         this.inventoryPanel = null;
+        this.notifPanel = null;
 
         this.createStatusBar();
         this.createInteractPrompt();
@@ -24,6 +25,10 @@ export default class MetaHUDScene extends Phaser.Scene {
         this.input.keyboard.on('keydown-ESC', () => {
             if (MetaDialogue.isActive()) {
                 MetaDialogue.close(this);
+                return;
+            }
+            if (this.notifPanel) {
+                this.closeNotifications();
                 return;
             }
             if (this.inventoryPanel) {
@@ -39,19 +44,25 @@ export default class MetaHUDScene extends Phaser.Scene {
 
         // Q / Tab key for quest log (handled here since MetaWorldScene is frozen when panel is open)
         this.input.keyboard.on('keydown-Q', () => {
-            if (MetaDialogue.isActive() || this.settingsPanel || this.inventoryPanel) return;
+            if (MetaDialogue.isActive() || this.settingsPanel || this.inventoryPanel || this.notifPanel) return;
             this.toggleQuestLog();
         });
         this.input.keyboard.on('keydown-TAB', (e) => {
             e.preventDefault();
-            if (MetaDialogue.isActive() || this.settingsPanel || this.inventoryPanel) return;
+            if (MetaDialogue.isActive() || this.settingsPanel || this.inventoryPanel || this.notifPanel) return;
             this.toggleQuestLog();
         });
 
         // I key for inventory
         this.input.keyboard.on('keydown-I', () => {
-            if (MetaDialogue.isActive() || this.settingsPanel || this.questPanel) return;
+            if (MetaDialogue.isActive() || this.settingsPanel || this.questPanel || this.notifPanel) return;
             this.toggleInventory();
+        });
+
+        // N key for phone notifications
+        this.input.keyboard.on('keydown-N', () => {
+            if (MetaDialogue.isActive() || this.settingsPanel || this.questPanel || this.inventoryPanel) return;
+            this.toggleNotifications();
         });
 
         // Listen for time updates
@@ -97,6 +108,9 @@ export default class MetaHUDScene extends Phaser.Scene {
 
         // Inventory count
         this.invText = this.txt(780, 14, '', 7, '#AABB88').setOrigin(0, 0.5).setDepth(201);
+
+        // Phone notification badge
+        this.phoneBadge = this.txt(840, 14, '', 7, '#FF8866').setOrigin(0, 0.5).setDepth(201);
 
         // Location name (right side)
         this.locationText = this.txt(W - 10, 14, '', 7, '#667788').setOrigin(1, 0.5).setDepth(201);
@@ -156,6 +170,14 @@ export default class MetaHUDScene extends Phaser.Scene {
             this.invText.setText('');
         }
 
+        // Phone notification badge
+        const notifCount = (s.phoneNotifications || []).length;
+        if (notifCount > 0) {
+            this.phoneBadge.setText(`! ${notifCount}`);
+        } else {
+            this.phoneBadge.setText('');
+        }
+
         // Location
         const metaScene = this.scene.get('MetaWorldScene');
         if (metaScene && metaScene.location) {
@@ -179,7 +201,7 @@ export default class MetaHUDScene extends Phaser.Scene {
         this.interactPrompt.add(this.promptText);
 
         // Controls hint
-        this.controlsHint = this.txt(W / 2, H - 20, 'WASD move | Q quests | I inventory', 8, '#666677')
+        this.controlsHint = this.txt(W / 2, H - 20, 'WASD move | Q quests | I inventory | N notifs', 8, '#666677')
             .setOrigin(0.5).setAlpha(0.7).setDepth(200);
 
         // Gentle float
@@ -520,6 +542,76 @@ export default class MetaHUDScene extends Phaser.Scene {
 
     closeInventory() {
         if (this.inventoryPanel) { this.inventoryPanel.destroy(); this.inventoryPanel = null; }
+        const metaScene = this.scene.get('MetaWorldScene');
+        if (metaScene && !metaScene._startWithPhone) metaScene._frozen = false;
+    }
+
+    // ── Phone Notifications Panel ──
+
+    toggleNotifications() {
+        if (this.notifPanel) { this.closeNotifications(); return; }
+        if (this.settingsPanel || this.questPanel || this.inventoryPanel) return;
+        if (MetaDialogue.isActive()) return;
+
+        const metaScene = this.scene.get('MetaWorldScene');
+        if (metaScene) metaScene._frozen = true;
+
+        const pw = 340, ph = 320;
+        const px = W / 2 - pw / 2, py = Math.max(36, (H - ph) / 2);
+        const ct = this.add.container(px, py).setDepth(310);
+
+        const overlay = this.add.rectangle(W / 2 - px, H / 2 - py, W, H, 0x000000, 0.45).setInteractive();
+        ct.add(overlay);
+
+        const bg = this.add.graphics();
+        bg.fillStyle(CLR.uiPanelBg, 0.97); bg.fillRoundedRect(0, 0, pw, ph, 8);
+        bg.lineStyle(2, CLR.uiBorder); bg.strokeRoundedRect(0, 0, pw, ph, 8);
+        ct.add(bg);
+
+        ct.add(this.txt(pw / 2, 18, 'Phone Notifications', 10, CLR.gold).setOrigin(0.5));
+        ct.add(this.txt(pw / 2, 34, '[N] Close', 7, '#666688').setOrigin(0.5));
+
+        const notifs = MetaState.state.phoneNotifications || [];
+
+        if (notifs.length === 0) {
+            ct.add(this.txt(pw / 2, ph / 2, 'No notifications', 8, '#888899').setOrigin(0.5));
+            ct.add(this.txt(pw / 2, ph / 2 + 18, 'Play Havenwood to get updates!', 7, '#667788').setOrigin(0.5));
+        } else {
+            let yOff = 54;
+            for (let i = notifs.length - 1; i >= 0 && yOff < ph - 50; i--) {
+                const n = notifs[i];
+                // Notification icon
+                const icon = n.type === 'npc_visit' ? '*' : '>';
+                const color = n.type === 'npc_visit' ? '#FFDD88' : '#88CCAA';
+                const msgText = this.txt(20, yOff, `${icon} ${n.text}`, 7, color).setOrigin(0, 0);
+                msgText.setWordWrapWidth(pw - 40);
+                ct.add(msgText);
+                yOff += msgText.height + 8;
+            }
+
+            // Clear button
+            const btnW = 140, btnH = 28;
+            const bx = pw / 2 - btnW / 2, by = ph - 42;
+            const clearBg = this.add.graphics();
+            clearBg.fillStyle(0x445566, 0.6); clearBg.fillRoundedRect(bx, by, btnW, btnH, 4);
+            ct.add(clearBg);
+            const clearHit = this.add.rectangle(pw / 2, by + btnH / 2, btnW, btnH, 0, 0).setInteractive({ useHandCursor: true });
+            ct.add(clearHit);
+            ct.add(this.txt(pw / 2, by + btnH / 2, 'Clear All', 8, '#CCDDEE').setOrigin(0.5));
+            clearHit.on('pointerover', () => { clearBg.clear(); clearBg.fillStyle(0x556688, 0.7); clearBg.fillRoundedRect(bx, by, btnW, btnH, 4); });
+            clearHit.on('pointerout', () => { clearBg.clear(); clearBg.fillStyle(0x445566, 0.6); clearBg.fillRoundedRect(bx, by, btnW, btnH, 4); });
+            clearHit.on('pointerdown', () => {
+                MetaState.state.phoneNotifications = [];
+                this.closeNotifications();
+                this.refreshStatusBar();
+            });
+        }
+
+        this.notifPanel = ct;
+    }
+
+    closeNotifications() {
+        if (this.notifPanel) { this.notifPanel.destroy(); this.notifPanel = null; }
         const metaScene = this.scene.get('MetaWorldScene');
         if (metaScene && !metaScene._startWithPhone) metaScene._frozen = false;
     }

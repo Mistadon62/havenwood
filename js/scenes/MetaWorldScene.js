@@ -1219,6 +1219,23 @@ export default class MetaWorldScene extends Phaser.Scene {
             for (const n of notifications) {
                 if (hudScene) hudScene.showNotification(n);
             }
+
+            // Snapshot Havenwood stats for NPC dialogue awareness
+            MetaState.state.sanctuarySnapshot = {
+                animalCount: (gs.state.animals || []).length,
+                habitatCount: (gs.state.habitats || []).length,
+                rep: gs.state.rep || 0,
+                coins: gs.state.coins || 0,
+            };
+
+            // Show phone notifications from NPC visits
+            const pending = MetaState.state.phoneNotifications;
+            if (pending.length > 0) {
+                for (const notif of pending) {
+                    if (hudScene) hudScene.showNotification(notif.text);
+                }
+                MetaState.state.phoneNotifications = [];
+            }
         }
 
         const phoneX = this.char.x;

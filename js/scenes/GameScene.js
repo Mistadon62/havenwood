@@ -33,7 +33,7 @@
  */
 import { TILE, COLS, ROWS, W, H, MAP_Y, TIME_SCALE, START_COINS, HABITATS, SPECIES, RARITY_WEIGHT, RESCUE_MSG, CLR,
     SEASONS, SEASON_ORDER, SEASON_LENGTH, SEASON_CYCLE, UPGRADES, STAFF_TYPES,
-    TRAITS, TRAIT_IDS, ILLNESSES, ENRICHMENTS, MISSIONS, VISITOR_TYPES, ACHIEVEMENTS,
+    TRAITS, TRAIT_IDS, ILLNESSES, ENRICHMENTS, MISSIONS, VISITOR_TYPES, NPC_VISITOR_TYPES, ACHIEVEMENTS,
     RESEARCH, RESEARCH_BRANCHES, DECORATIONS, FACILITIES, GARDEN_PRODUCE, GARDEN_REGROW_TIME, BATHROOM_DIRTY_RATE, TRASH_DROP_CHANCE } from '../GameData.js';
 import { SoundManager } from '../SoundManager.js';
 import MetaState from '../MetaStateManager.js';
@@ -144,6 +144,7 @@ export default class GameScene extends Phaser.Scene {
         this._firstRescue = true;
         this._autoSaveAccum = 0;
         this.time.addEvent({ delay: 7000, callback: () => this.trySpawnVisitor(), loop: true });
+        this.time.addEvent({ delay: 15000, callback: () => this.trySpawnNPCVisitor(), loop: true });
         this.time.addEvent({ delay: 10000, callback: () => this.checkIllness(), loop: true });
         this.time.addEvent({ delay: 8000, callback: () => this.updateBonds(), loop: true });
         this.time.addEvent({ delay: 15000, callback: () => this.checkAutoBreed(), loop: true });
@@ -2794,6 +2795,75 @@ export default class GameScene extends Phaser.Scene {
         this.visitors.push(v);
     }
 
+    // Spawn special NPC visitors from the meta-world (friendship-gated)
+    trySpawnNPCVisitor() {
+        if (this.state.buildMode || this._habSelectMode || this.state.settingsPaused || this.state.rescuePaused) return;
+        const t = this.state.time;
+        if (t < 480 || t > 1080) return;
+        if (this.state.habitats.length === 0) return;
+        if (this.visitors.length >= 10) return;
+
+        // Check each NPC type
+        for (const [npcKey, npcDef] of Object.entries(NPC_VISITOR_TYPES)) {
+            // Already visiting?
+            if (this.visitors.some(v => v._npcId === npcDef.id)) continue;
+
+            // Cooldown: each NPC can only visit once per meta-day
+            const metaDay = MetaState.state.day;
+            const lastVisit = MetaState.state.npcVisitCooldowns[npcDef.id];
+            if (lastVisit && lastVisit >= metaDay) continue;
+
+            // Friendship gate
+            const friendshipId = npcDef.id === 'tanaka' ? 'shopkeeper' : npcDef.id === 'elara' ? 'prof_elara' : npcDef.id;
+            const friendship = MetaState.getFriendship(friendshipId);
+            if (friendship < npcDef.minFriendship) continue;
+
+            // Probability: higher friendship = more likely (10-40% per check)
+            const chance = 0.1 + (friendship / 100) * 0.3;
+            if (Math.random() > chance) continue;
+
+            // Spawn this NPC visitor!
+            const entX = Phaser.Math.Between(13, 16) * TILE + TILE / 2;
+            const sprite = this.add.image(entX, MAP_Y + (ROWS - 1) * TILE, npcDef.spriteKey).setDepth(31).setAlpha(0.9);
+
+            const entGx = Math.floor(entX / TILE);
+            const entryTarget = { x: entGx * TILE + TILE / 2, y: MAP_Y + (ROWS - 2) * TILE + TILE / 2 };
+
+            const v = {
+                sprite, visitorType: 'family', // fallback for income calculations
+                _npcId: npcDef.id,
+                _npcDef: npcDef,
+                tx: entryTarget.x, ty: entryTarget.y,
+                speed: Phaser.Math.Between(28, 38),
+                timer: 0,
+                maxTime: Phaser.Math.Between(18000, 35000) * npcDef.stayMult,
+                phase: 'entering',
+                targetHab: null,
+                visitedHabs: new Set(),
+                habsToVisit: Math.min(this.state.habitats.length, Phaser.Math.Between(2, this.state.habitats.length)),
+                viewTimer: 0,
+                satisfaction: 0,
+                wantsTour: false,
+                wantsGiftShop: Math.random() < 0.6,
+                wantsBathroom: Math.random() < 0.3,
+            };
+            this._setVisitorPath(v);
+            this.visitors.push(v);
+
+            // Track the visit
+            MetaState.state.npcVisitCooldowns[npcDef.id] = metaDay;
+            MetaState.state.npcVisitsTotal++;
+
+            // Store a phone notification for meta-world
+            MetaState.state.phoneNotifications.push({
+                text: `${npcDef.name} visited your sanctuary!`,
+                day: metaDay,
+            });
+
+            break; // Only spawn one NPC per check
+        }
+    }
+
     _isWalkable(gx, gy) {
         if (gy < 0 || gy >= ROWS || gx < 0 || gx >= COLS) return false;
         const cell = this.grid[gy]?.[gx];
@@ -3354,13 +3424,14 @@ export default class GameScene extends Phaser.Scene {
             return;
         }
         const mistreated = habAnimals.some(a => a.hunger < 20 || a.happiness < 20 || a.health < 40 || a.illness);
+        const repBonus = v._npcDef ? v._npcDef.repBonus : 0;
         if (mistreated) {
             this.showVisitorBubble(v, 'worried');
             this.state.rep = Math.max(0, this.state.rep - 1);
             v.satisfaction--;
         } else {
             this.showVisitorBubble(v, 'heart');
-            this.state.rep++;
+            this.state.rep += 1 + repBonus;
             v.satisfaction++;
         }
     }
@@ -3370,7 +3441,8 @@ export default class GameScene extends Phaser.Scene {
         let fee = 5;
         if (this.state.upgrades.has('sanctuary_sign')) fee = Math.round(fee * 1.2);
         if (this.hasResearch('income_50')) fee = Math.round(fee * 1.5);
-        fee = Math.round(fee * vType.incomeMult);
+        const incomeMult = v._npcDef ? v._npcDef.incomeMult : vType.incomeMult;
+        fee = Math.round(fee * incomeMult);
         fee = Math.max(1, fee);
         this.addCoins(fee);
     }

@@ -71,6 +71,13 @@ const NPCS = {
             }
 
             if (attendedToday) {
+                const snap = s.sanctuarySnapshot || {};
+                if ((tier === 'close' || tier === 'friend') && snap.animalCount >= 5) {
+                    return {
+                        speaker: 'Prof. Elara',
+                        lines: ['Great work today!', `I heard your sanctuary has ${snap.animalCount} animals now.`, 'Your fieldwork is paying off!'],
+                    };
+                }
                 if (tier === 'close' || tier === 'friend') {
                     return {
                         speaker: 'Prof. Elara',
@@ -197,10 +204,23 @@ const NPCS = {
             }
 
             if (hungOut) {
+                const snap = s.sanctuarySnapshot || {};
+                if (tier === 'close' && snap.animalCount >= 10) {
+                    return {
+                        speaker: 'Sam',
+                        lines: ['Had a great time earlier!', `Dude, ${snap.animalCount} animals?! Your sanctuary is legendary.`, 'Same time tomorrow?'],
+                    };
+                }
                 if (tier === 'close') {
                     return {
                         speaker: 'Sam',
                         lines: ['Had a great time earlier!', 'You\'re seriously the best.', 'Same time tomorrow?'],
+                    };
+                }
+                if (s.npcVisitsTotal > 0 && tier === 'friend') {
+                    return {
+                        speaker: 'Sam',
+                        lines: ['Had fun earlier!', 'BTW I visited your sanctuary — really cool place!', 'See you tomorrow?'],
                     };
                 }
                 return {
@@ -326,9 +346,14 @@ const NPCS = {
                 };
             }
 
+            const snap = s.sanctuarySnapshot || {};
             let greeting;
-            if (tier === 'close') {
+            if (tier === 'close' && snap.animalCount >= 8) {
+                greeting = ['My favorite customer!', `${snap.animalCount} animals in your sanctuary — you must go through a lot of supplies!`, 'I set aside some premium stock for you.'];
+            } else if (tier === 'close') {
                 greeting = ['My favorite customer!', 'I set aside some premium stock for you.'];
+            } else if (tier === 'friend' && s.npcVisitsTotal > 0) {
+                greeting = ['Welcome back! Great to see you.', 'I stopped by your sanctuary the other day — impressive setup!', 'What can I get you today?'];
             } else if (tier === 'friend') {
                 greeting = ['Welcome back! Great to see you.', 'What can I get you today?'];
             } else {
