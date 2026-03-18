@@ -1,6 +1,6 @@
 // MetaSpriteGenerator.js — Havenwood meta-world
-// Generates textures for the real-world layer: phone bezel, character (4-dir),
-// room tiles (floor, walls), furniture, and interaction prompts.
+// Generates textures for the real-world layer: character (4-dir + phone-holding),
+// room tiles (floor, walls, grass, stone), furniture, NPCs, and weather particles.
 // Follows the same procedural pattern as SpriteGenerator.js.
 
 import { TILE } from './GameData.js';

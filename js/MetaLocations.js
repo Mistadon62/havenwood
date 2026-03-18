@@ -2,6 +2,9 @@
 // Each location has a tile map, furniture, doors, NPCs, and interactables.
 // Tile values: 0=floor, 1=wall, 2=wall_window, 3=grass, 4=stone_path,
 //              5=exterior_wall, 9=door (walkable)
+// Locations with outdoor:true (campus_quad, park) use larger tile maps (23×15) that
+// fill the screen between the top and bottom HUD bars. Indoor rooms are smaller and
+// centered with a 1.35x zoom.
 
 const LOCATIONS = {
     bedroom: {

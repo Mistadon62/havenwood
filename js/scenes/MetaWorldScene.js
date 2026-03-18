@@ -2,6 +2,9 @@
 // Data-driven: loads room layout, furniture, NPCs, and interactables from MetaLocations.
 // Supports door transitions between locations, proximity-based interaction,
 // time progression, weather overlays, and cross-mode unlocks.
+// Outdoor areas use a height-based zoom to fill the space between top/bottom HUD bars,
+// with a grass-colored background. Edge columns on outdoor maps block walking to prevent
+// going off-screen. Indoor rooms use a fixed 1.35x zoom centered in the canvas.
 
 import { W, H, TILE, CLR } from '../GameData.js';
 import { getLocation } from '../MetaLocations.js';

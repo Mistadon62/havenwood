@@ -1,7 +1,8 @@
-// TransitionScene — Orchestrates the first-time zoom-out (Havenwood → phone → room).
-// Runs as an overlay scene. Captures GameScene+HUDScene, launches MetaWorldScene
-// behind so the room is visible as the phone shrinks, then triggers a "put phone away"
-// animation. Only used once; subsequent transitions skip the zoom.
+// TransitionScene — Orchestrates the first-time zoom-out (Havenwood → meta-world).
+// Runs as an overlay scene. Captures a screenshot of GameScene+HUDScene, launches
+// MetaWorldScene behind, then animates the screenshot shrinking down to the character's
+// phone-holding position. Triggers "put phone away" near the end of the animation.
+// Only used on the first transition per new game; subsequent transitions use a quick switch.
 
 import { W, H } from '../GameData.js';
 

@@ -1,6 +1,9 @@
 // MetaHUDScene — UI overlay for the meta-world.
-// Shows status bar (time, energy, mood, money, weather), context-sensitive interaction
-// prompt, settings/pause menu (ESC), quest log (Q/Tab), inventory (I), and notifications.
+// Top bar (42px, fully opaque) shows day/time, energy, mood, money, knowledge, quests,
+// weather, inventory count, and location name — matches sanctuary HUD height.
+// Bottom bar (62px, fully opaque) contains the [E] Play Havenwood prompt and controls hint.
+// Also manages settings/pause menu (ESC), quest log (Q/Tab), inventory (I), phone
+// notifications (N), and queued toast notifications (displayed one at a time).
 
 import { W, H, CLR } from '../GameData.js';
 import MetaState from '../MetaStateManager.js';

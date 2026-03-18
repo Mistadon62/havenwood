@@ -1,15 +1,18 @@
 // UI overlay scene running parallel to GameScene. Has its own camera, unaffected by GameScene zoom.
 // Communicates via this.game.events; this.gs = GameScene reference for state and method calls.
 // Manages toolbar (hidden during habitat/facility zoom, disabled during rescue, replaced by
-// build hint bar during build mode), habitat/animal
-// panels (with close X, back bar, navigation arrows to cycle animals, generation display for bred
-// animals), facility back bar (shown when zoomed into a garden or other facility), settings/pause
-// menu (gear icon or ESC from sanctuary; includes auto-save toggle), rescue popup with time-pause
-// and full modal blocking, two-level build menu (categories then items), and management panels
-// (vertically centered). Build menu: click Build → category buttons (Habitats, Decorations,
-// Facilities) appear; click a category → item sub-menu appears to the right.
+// build hint bar during build mode), habitat/animal panels (with close X, back bar, navigation
+// arrows to cycle animals, generation display for bred animals), facility back bar (shown when
+// zoomed into a garden or other facility), settings/pause menu (gear icon or ESC from sanctuary;
+// includes auto-save toggle), rescue popup with time-pause and full modal blocking, two-level
+// build menu (categories then items), and management panels (vertically centered).
+// Build menu: click Build → category buttons (Habitats, Decorations, Facilities) appear;
+// click a category → item sub-menu appears to the right.
 // Top bar shows day/season, reputation face, clock with speed controls (graphics-based highlight
 // behind active icon to avoid preFX pixel shifts), research points, food count, and coins.
+// Speed state (slow/normal/fast) is persisted in the save file and synced on load.
+// triggerPhoneTransition() handles switching to meta-world: first time uses TransitionScene
+// for a cinematic zoom-out, subsequent times do a quick scene sleep/wake with put-away animation.
 // animalDeselected event closes the animal panel when navigating to a habitat with no animals.
 // hasOpenPanel() lets GameScene suppress world clicks while a management panel or settings is visible.
 import { W, H, HABITATS, SPECIES, RARITY_COLOR, CLR, SEASONS, UPGRADES, STAFF_TYPES,
