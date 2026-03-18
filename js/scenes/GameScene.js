@@ -110,7 +110,7 @@ export default class GameScene extends Phaser.Scene {
         this.scene.launch('HUDScene');
 
         if (!this.isNewGame) this.loadGame();
-        else MetaState.reset();
+        else { MetaState.reset(); this.game._hasZoomedOut = false; }
         this.updateSeason();
         const loadedMeta = this._loadedMode === 'meta';
         if (this.state.autoSave) {
@@ -4762,6 +4762,7 @@ export default class GameScene extends Phaser.Scene {
                 dirty: f.dirty,
             })),
             autoSave: this.state.autoSave,
+            timeSpeedMult: this.timeSpeedMult,
             visitors: this.visitors.map(v => ({
                 visitorType: v.visitorType, x: v.sprite.x, y: v.sprite.y,
                 tx: v.tx, ty: v.ty, speed: v.speed, timer: v.timer,
@@ -4903,6 +4904,7 @@ export default class GameScene extends Phaser.Scene {
             this._rescueAccum = d.rescueAccum ?? 0;
             this._firstRescue = false;
             this.state.autoSave = d.autoSave ?? true;
+            this.timeSpeedMult = d.timeSpeedMult ?? 1;
             this._loadedMode = d.mode || 'havenwood';
 
             if (d.pendingRescue) {

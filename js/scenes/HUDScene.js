@@ -86,6 +86,10 @@ export default class HUDScene extends Phaser.Scene {
         this.updateFood(s.food);
         this.updateTime({ time: s.time, day: s.day, season: s.season, rep: s.rep });
         this.rpTxt.setText(s.researchPoints.toString());
+        // Sync speed indicator with loaded timeSpeedMult
+        const mult = this.gs.timeSpeedMult;
+        this._activeSpeed = mult <= 0.5 ? 'slow' : mult >= 3 ? 'fast' : 'normal';
+        this._updateSpeedGlow();
     }
 
     /* ========== TOP BAR ========== */
