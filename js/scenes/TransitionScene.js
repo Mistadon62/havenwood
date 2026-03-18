@@ -70,14 +70,15 @@ export default class TransitionScene extends Phaser.Scene {
 
                 const targetScale = 1 / H; // shrink to ~1px tall
 
-                // Animate zoom-out — sanctuary shrinks to character's hands
+                // Animate zoom-out — target the phone in the character's hands
+                // (slightly left and down from center to match where hands hold the phone)
                 let putAwayTriggered = false;
                 this.tweens.add({
                     targets: snap,
                     scaleX: targetScale,
                     scaleY: targetScale,
-                    x: charX,
-                    y: charY - 6,
+                    x: charX - 5,
+                    y: charY + 9,
                     duration: DURATION,
                     ease: 'Cubic.easeInOut',
                     onUpdate: (tween) => {
