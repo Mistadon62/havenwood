@@ -491,6 +491,92 @@ export class MetaSpriteGenerator {
             g.fillRect(28, 20, 3, 8);
         });
 
+        // Counter (2 tiles wide — for shops/café)
+        tex(scene, 'furniture_counter', 64, TILE, g => {
+            g.fillStyle(0x8B7355);
+            g.fillRect(2, 8, 60, 6);
+            g.fillStyle(0x9B8365);
+            g.fillRect(4, 8, 56, 3);
+            g.fillStyle(0x6B5335);
+            g.fillRect(2, 14, 60, 14);
+            g.fillStyle(0x5A4228);
+            g.fillRect(4, 26, 4, 4);
+            g.fillRect(56, 26, 4, 4);
+        });
+
+        // Cash register (single tile)
+        tex(scene, 'furniture_register', TILE, TILE, g => {
+            g.fillStyle(0x666666);
+            g.fillRect(8, 12, 16, 12);
+            g.fillStyle(0x44AA44);
+            g.fillRect(10, 8, 12, 6);
+            g.fillStyle(0x888888);
+            for (let r = 0; r < 2; r++) {
+                for (let c = 0; c < 3; c++) {
+                    g.fillRect(10 + c * 4, 16 + r * 4, 3, 2);
+                }
+            }
+            g.fillStyle(0x555555);
+            g.fillRect(6, 24, 20, 4);
+        });
+
+        // Café table (single tile, round top-down)
+        tex(scene, 'furniture_table_cafe', TILE, TILE, g => {
+            g.fillStyle(0x7A5C3A);
+            g.fillCircle(16, 16, 10);
+            g.fillStyle(0x8A6C4A);
+            g.fillCircle(14, 14, 4);
+            g.fillStyle(0x5A4020);
+            g.fillRect(14, 14, 4, 4);
+        });
+
+        // Stool (single tile, walkable seating)
+        tex(scene, 'furniture_stool', TILE, TILE, g => {
+            g.fillStyle(0x885533);
+            g.fillCircle(16, 16, 6);
+            g.fillStyle(0x996644);
+            g.fillCircle(15, 15, 3);
+            g.fillStyle(0x555555);
+            g.fillRect(10, 20, 2, 4);
+            g.fillRect(20, 20, 2, 4);
+            g.fillRect(10, 10, 2, 4);
+            g.fillRect(20, 10, 2, 4);
+        });
+
+        // Store shelf (single tile — products on shelves)
+        tex(scene, 'furniture_shelf_store', TILE, TILE, g => {
+            g.fillStyle(0x6B4E2E);
+            g.fillRect(4, 2, 24, 28);
+            g.fillStyle(0x7A5C3A);
+            g.fillRect(4, 2, 24, 3);
+            g.fillRect(4, 10, 24, 2);
+            g.fillRect(4, 18, 24, 2);
+            g.fillRect(4, 27, 24, 3);
+            g.fillStyle(0xDD6644); g.fillRect(6, 5, 4, 5);
+            g.fillStyle(0x44AADD); g.fillRect(11, 5, 4, 5);
+            g.fillStyle(0xDDAA44); g.fillRect(16, 5, 4, 5);
+            g.fillStyle(0x44DD66); g.fillRect(21, 5, 4, 5);
+            g.fillStyle(0xAA8855); g.fillRect(7, 13, 5, 5);
+            g.fillStyle(0x8855AA); g.fillRect(14, 13, 5, 5);
+            g.fillStyle(0x55AA88); g.fillRect(21, 13, 4, 5);
+            g.fillStyle(0xBB9966); g.fillRect(6, 21, 6, 6);
+            g.fillStyle(0x6699BB); g.fillRect(14, 21, 6, 6);
+            g.fillStyle(0x99BB66); g.fillRect(22, 21, 4, 6);
+        });
+
+        // Menu board (single tile — café chalkboard)
+        tex(scene, 'furniture_menu_board', TILE, TILE, g => {
+            g.fillStyle(0x333333);
+            g.fillRect(4, 2, 24, 26);
+            g.fillStyle(0x2A4A2A);
+            g.fillRect(6, 4, 20, 22);
+            g.fillStyle(0xCCCCBB);
+            g.fillRect(8, 7, 16, 2);
+            g.fillRect(8, 12, 12, 2);
+            g.fillRect(8, 17, 14, 2);
+            g.fillRect(8, 22, 10, 2);
+        });
+
         // Job board (single tile — bulletin board)
         tex(scene, 'furniture_job_board', TILE, TILE, g => {
             // Board
@@ -519,8 +605,20 @@ export class MetaSpriteGenerator {
         });
     }
 
-    // Outdoor tiles — grass, stone path, exterior wall.
+    // Outdoor & commercial tiles
     static outdoor(scene) {
+        // Checkered tile floor (shops, café)
+        tex(scene, 'floor_tile', TILE, TILE, g => {
+            g.fillStyle(0xCCBBAA);
+            g.fillRect(0, 0, TILE, TILE);
+            g.fillStyle(0xBBAA99);
+            g.fillRect(0, 0, 16, 16);
+            g.fillRect(16, 16, 16, 16);
+            g.fillStyle(0x999888);
+            g.fillRect(0, 15, TILE, 2);
+            g.fillRect(15, 0, 2, TILE);
+        });
+
         tex(scene, 'floor_grass', TILE, TILE, g => {
             g.fillStyle(0x4A8B4A);
             g.fillRect(0, 0, TILE, TILE);
@@ -578,6 +676,50 @@ export class MetaSpriteGenerator {
         const hairColor = 0x884422;
         const coatColor = 0xEEEEDD; // lab coat
         const shirtColor = 0x4488AA;
+
+        // Sam — fellow student, red hoodie
+        tex(scene, 'npc_sam', TILE, TILE, g => {
+            const skin = 0xFFDDBB;
+            const hair = 0x2A2A3A;
+            const hoodie = 0xCC5533;
+            const pant = 0x334455;
+            rect(g, 12, 2, 8, 5, hair);
+            rect(g, 12, 5, 8, 7, skin);
+            rect(g, 14, 8, 2, 2, 0x222222);
+            rect(g, 18, 8, 2, 2, 0x222222);
+            rect(g, 15, 10, 4, 1, 0xCC8888);
+            rect(g, 9, 12, 14, 10, hoodie);
+            rect(g, 14, 13, 1, 3, 0xEEEEDD);
+            rect(g, 17, 13, 1, 3, 0xEEEEDD);
+            rect(g, 7, 14, 3, 7, dark(hoodie, 20));
+            rect(g, 22, 14, 3, 7, dark(hoodie, 20));
+            rect(g, 11, 22, 4, 6, pant);
+            rect(g, 17, 22, 4, 6, pant);
+            rect(g, 11, 27, 4, 3, 0xEEEEEE);
+            rect(g, 17, 27, 4, 3, 0xEEEEEE);
+        });
+
+        // Mr. Tanaka — shopkeeper, green apron
+        tex(scene, 'npc_shopkeeper', TILE, TILE, g => {
+            const skin = 0xDDBB99;
+            const hair = 0x666666;
+            const apron = 0x44AA44;
+            const shirt = 0x5566AA;
+            rect(g, 12, 3, 8, 4, hair);
+            rect(g, 12, 5, 8, 7, skin);
+            rect(g, 14, 8, 2, 2, 0x222222);
+            rect(g, 18, 8, 2, 2, 0x222222);
+            rect(g, 14, 10, 4, 2, hair);
+            rect(g, 10, 12, 12, 10, shirt);
+            rect(g, 12, 14, 8, 8, apron);
+            rect(g, 11, 14, 10, 2, apron);
+            rect(g, 8, 14, 3, 7, dark(shirt, 20));
+            rect(g, 21, 14, 3, 7, dark(shirt, 20));
+            rect(g, 11, 22, 4, 6, 0x445566);
+            rect(g, 17, 22, 4, 6, 0x445566);
+            rect(g, 11, 27, 4, 3, 0x444433);
+            rect(g, 17, 27, 4, 3, 0x444433);
+        });
 
         // Professor Elara — facing down, lab coat
         tex(scene, 'npc_elara', TILE, TILE, g => {

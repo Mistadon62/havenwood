@@ -71,6 +71,132 @@ const NPCS = {
             }
         },
     },
+    sam: {
+        id: 'sam',
+        name: 'Sam',
+        spriteKey: 'npc_sam',
+        facing: 'down',
+
+        getDialogue() {
+            const s = MetaState.state;
+            const hungOut = MetaState.hasFlag(`hangout_day_${s.day}`);
+
+            if (s.energy < 10) {
+                return {
+                    speaker: 'Sam',
+                    lines: ['Whoa, you look beat!', 'Go get some rest, we can hang later.'],
+                };
+            }
+
+            if (hungOut) {
+                return {
+                    speaker: 'Sam',
+                    lines: ['Had fun earlier!', 'See you tomorrow?'],
+                };
+            }
+
+            if (!MetaState.hasMetNPC('sam')) {
+                return {
+                    speaker: 'Sam',
+                    lines: [
+                        'Hey! I\'m Sam.',
+                        'I\'m studying wildlife conservation too.',
+                        'We should hang out sometime!',
+                    ],
+                    choices: [
+                        { label: 'Hang out (-10 energy, 30min)', action: 'hangout' },
+                        { label: 'Nice to meet you!', action: 'cancel' },
+                    ],
+                };
+            }
+
+            return {
+                speaker: 'Sam',
+                lines: ['Hey! Want to hang out?'],
+                choices: [
+                    { label: 'Hang out (-10 energy, 30min)', action: 'hangout' },
+                    { label: 'Just passing through', action: 'cancel' },
+                ],
+            };
+        },
+
+        handleAction(action, hudScene) {
+            if (action === 'cancel') return;
+            if (action === 'hangout') {
+                if (!MetaState.spendEnergy(10)) {
+                    hudScene.showNotification('Too tired!');
+                    return;
+                }
+                MetaState.meetNPC('sam');
+                MetaState.advanceTime(30);
+                MetaState.addMood(15);
+                MetaState.setFlag(`hangout_day_${MetaState.state.day}`);
+                hudScene.refreshStatusBar();
+                hudScene.showNotification('+15 Mood — Good times!');
+            }
+        },
+    },
+
+    shopkeeper: {
+        id: 'shopkeeper',
+        name: 'Mr. Tanaka',
+        spriteKey: 'npc_shopkeeper',
+        facing: 'down',
+
+        getDialogue() {
+            if (!MetaState.hasMetNPC('shopkeeper')) {
+                return {
+                    speaker: 'Mr. Tanaka',
+                    lines: [
+                        'Welcome to Paws & Claws!',
+                        'I\'m Tanaka. We sell supplies for animal sanctuaries.',
+                        'What can I get you?',
+                    ],
+                    choices: [
+                        { label: 'Food Supplies ($20)', action: 'buy_food_supplies' },
+                        { label: 'Treats ($15)', action: 'buy_treats' },
+                        { label: 'Just browsing', action: 'cancel' },
+                    ],
+                };
+            }
+
+            return {
+                speaker: 'Mr. Tanaka',
+                lines: ['What can I get you today?'],
+                choices: [
+                    { label: 'Food Supplies ($20)', action: 'buy_food_supplies' },
+                    { label: 'Treats ($15)', action: 'buy_treats' },
+                    { label: 'Just looking', action: 'cancel' },
+                ],
+            };
+        },
+
+        handleAction(action, hudScene) {
+            if (action === 'cancel') return;
+            MetaState.meetNPC('shopkeeper');
+
+            if (action === 'buy_food_supplies') {
+                if (!MetaState.spendMoney(20)) {
+                    hudScene.showNotification('Not enough money!');
+                    return;
+                }
+                // Accumulate purchases — applied when switching to Havenwood
+                MetaState.state.pendingFood = (MetaState.state.pendingFood || 0) + 50;
+                hudScene.refreshStatusBar();
+                hudScene.showNotification('Bought food supplies for your sanctuary!');
+            }
+
+            if (action === 'buy_treats') {
+                if (!MetaState.spendMoney(15)) {
+                    hudScene.showNotification('Not enough money!');
+                    return;
+                }
+                MetaState.state.pendingTreats = (MetaState.state.pendingTreats || 0) + 1;
+                hudScene.refreshStatusBar();
+                hudScene.showNotification('Bought treats for your animals!');
+            }
+        },
+    },
 };
 
 export function getNPC(id) {

@@ -27,6 +27,10 @@ const DEFAULTS = {
     // Cross-mode unlock tracking
     unlocksGranted: [],
 
+    // Pending purchases (applied when switching to Havenwood)
+    pendingFood: 0,
+    pendingTreats: 0,
+
     // Location
     currentLocation: 'bedroom',
     playerTileX: 6,

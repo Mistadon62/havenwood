@@ -117,6 +117,9 @@ export default class MetaWorldScene extends Phaser.Scene {
             } else if (f.type === 'bench') {
                 const bench = this._track(this.add.image(px + 32, py + TILE / 2, 'furniture_bench').setDepth(5));
                 this.furnitureSprites.push(bench);
+            } else if (f.type === 'counter') {
+                const counter = this._track(this.add.image(px + 32, py + TILE / 2, 'furniture_counter').setDepth(5));
+                this.furnitureSprites.push(counter);
             } else if (f.type === 'job_board') {
                 const jb = this._track(this.add.image(px + TILE / 2, py + TILE / 2, 'furniture_job_board').setDepth(5));
                 this.furnitureSprites.push(jb);
@@ -187,9 +190,9 @@ export default class MetaWorldScene extends Phaser.Scene {
 
         // Furniture collision
         for (const f of this.location.furniture) {
-            if (f.type === 'rug' || f.type === 'lamp') continue;
+            if (f.type === 'rug' || f.type === 'lamp' || f.type === 'stool') continue;
             let fw = 1, fh = 1;
-            if (f.type === 'desk' || f.type === 'bench') { fw = 2; fh = 1; }
+            if (f.type === 'desk' || f.type === 'bench' || f.type === 'counter') { fw = 2; fh = 1; }
             if (f.type === 'bed') { fw = 2; fh = 3; }
             if (rx >= f.gx && rx < f.gx + fw && ry >= f.gy && ry < f.gy + fh) return false;
         }
@@ -408,7 +411,7 @@ export default class MetaWorldScene extends Phaser.Scene {
                 const npcDef = getNPC(target.id);
                 hudScene.updatePrompt(`[E] Talk to ${npcDef ? npcDef.name : 'NPC'}`);
             } else if (target.type === 'interactable') {
-                const labels = { sleep: 'Sleep', study: 'Study', job: 'Job Board' };
+                const labels = { sleep: 'Sleep', study: 'Study', job: 'Job Board', buy_coffee: 'Order', library_study: 'Study (Library)' };
                 hudScene.updatePrompt(`[E] ${labels[target.data.action] || target.data.name}`);
             }
         } else {
@@ -469,6 +472,10 @@ export default class MetaWorldScene extends Phaser.Scene {
             this.doStudy(hudScene);
         } else if (ia.action === 'job') {
             this.doJob(hudScene);
+        } else if (ia.action === 'buy_coffee') {
+            this.doCafe(hudScene);
+        } else if (ia.action === 'library_study') {
+            this.doLibraryStudy(hudScene);
         }
     }
 
@@ -582,6 +589,78 @@ export default class MetaWorldScene extends Phaser.Scene {
         });
     }
 
+    doCafe(hudScene) {
+        MetaDialogue.show(hudScene, {
+            speaker: null,
+            lines: ['Campus Café — What would you like?'],
+            choices: [
+                { label: 'Coffee ($5, +15 energy)', action: 'coffee' },
+                { label: 'Meal ($10, +15 mood)', action: 'meal' },
+                { label: 'Never mind', action: 'cancel' },
+            ],
+            onChoice: (action) => {
+                if (action === 'coffee') {
+                    if (!MetaState.spendMoney(5)) {
+                        hudScene.showNotification('Not enough money!');
+                        return;
+                    }
+                    MetaState.addEnergy(15);
+                    MetaState.addMood(5);
+                    MetaState.advanceTime(15);
+                    hudScene.refreshStatusBar();
+                    hudScene.showNotification('+15 Energy — Coffee time!');
+                } else if (action === 'meal') {
+                    if (!MetaState.spendMoney(10)) {
+                        hudScene.showNotification('Not enough money!');
+                        return;
+                    }
+                    MetaState.addEnergy(10);
+                    MetaState.addMood(15);
+                    MetaState.advanceTime(30);
+                    hudScene.refreshStatusBar();
+                    hudScene.showNotification('+15 Mood — Delicious!');
+                }
+            },
+        });
+    }
+
+    doLibraryStudy(hudScene) {
+        const studied = MetaState.hasFlag(`lib_study_day_${MetaState.state.day}`);
+        if (studied) {
+            MetaDialogue.show(hudScene, {
+                speaker: null,
+                lines: ['You\'ve studied enough for today.', 'Come back tomorrow!'],
+            });
+            return;
+        }
+        if (MetaState.state.energy < 15) {
+            MetaDialogue.show(hudScene, {
+                speaker: null,
+                lines: ['Too tired to focus on these textbooks...'],
+            });
+            return;
+        }
+
+        MetaDialogue.show(hudScene, {
+            speaker: null,
+            lines: ['The library has an excellent wildlife section...'],
+            choices: [
+                { label: 'Deep study (-15 energy, 1hr)', action: 'study' },
+                { label: 'Not now', action: 'cancel' },
+            ],
+            onChoice: (action) => {
+                if (action !== 'study') return;
+                MetaState.spendEnergy(15);
+                MetaState.advanceTime(60);
+                MetaState.addKnowledge(12);
+                MetaState.addMood(3);
+                MetaState.setFlag(`lib_study_day_${MetaState.state.day}`);
+                hudScene.refreshStatusBar();
+                hudScene.showNotification('+12 Knowledge — Great session!');
+            },
+        });
+    }
+
     // ── Pull out phone → switch to Havenwood ──
 
     zoomIntoPhone() {
@@ -594,6 +673,23 @@ export default class MetaWorldScene extends Phaser.Scene {
             const hudScene = this.scene.get('MetaHUDScene');
             for (const n of notifications) {
                 if (hudScene) hudScene.showNotification(n);
+            }
+
+            // Apply consumable purchases
+            if (MetaState.state.pendingFood > 0) {
+                gs.state.food = (gs.state.food || 0) + MetaState.state.pendingFood;
+                if (hudScene) hudScene.showNotification(`+${MetaState.state.pendingFood} Food delivered!`);
+                MetaState.state.pendingFood = 0;
+            }
+            if (MetaState.state.pendingTreats > 0) {
+                const count = MetaState.state.pendingTreats;
+                if (gs.state.animals) {
+                    for (const a of gs.state.animals) {
+                        a.happiness = Math.min(100, (a.happiness || 50) + 10 * count);
+                    }
+                }
+                if (hudScene) hudScene.showNotification(`Treats delivered! +${10 * count} Happiness`);
+                MetaState.state.pendingTreats = 0;
             }
         }
 
