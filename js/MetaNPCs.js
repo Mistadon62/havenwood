@@ -27,8 +27,8 @@ const NPCS = {
         // Weekday mornings: classroom; afternoons: campus quad
         // Rainy days: stays in classroom all day
         schedule: [
-            { days: WEEKDAYS, start: 480, end: 720, location: 'classroom', gx: 6, gy: 2 },
-            { days: WEEKDAYS, start: 720, end: 1020, location: 'campus_quad', gx: 11, gy: 8 },
+            { days: WEEKDAYS, start: 480, end: 495, location: 'classroom', gx: 6, gy: 2 },
+            { days: WEEKDAYS, start: 495, end: 1020, location: 'campus_quad', gx: 11, gy: 8 },
         ],
 
         giftPreferences: {
@@ -173,8 +173,8 @@ const NPCS = {
         // Weekdays: library mornings, quad afternoons
         // Weekends: park mornings, café afternoons
         schedule: [
-            { days: WEEKDAYS, start: 540, end: 720, location: 'library', gx: 8, gy: 4 },
-            { days: WEEKDAYS, start: 840, end: 1080, location: 'campus_quad', gx: 10, gy: 3 },
+            { days: WEEKDAYS, start: 480, end: 495, location: 'library', gx: 8, gy: 4 },
+            { days: WEEKDAYS, start: 495, end: 1080, location: 'campus_quad', gx: 10, gy: 3 },
             { days: WEEKEND, start: 540, end: 780, location: 'park', gx: 9, gy: 6 },
             { days: WEEKEND, start: 780, end: 960, location: 'cafe', gx: 4, gy: 3 },
         ],
@@ -576,4 +576,66 @@ function getRainyRedirect(npcId, outdoorLoc) {
         sam: { location: 'common_room', gx: 4, gy: 3 },
     };
     return redirects[npcId] || null;
+}
+
+// Get the effective location and position for an NPC at a specific time
+function _getEffectiveSchedule(npc, timeOfDay, dayOfWeek, weather) {
+    const isRainy = weather === 'rainy' || weather === 'snowy';
+    if (!npc.schedule) return null;
+    for (const slot of npc.schedule) {
+        if (!slot.days.includes(dayOfWeek)) continue;
+        if (timeOfDay < slot.start || timeOfDay >= slot.end) continue;
+        let loc = slot.location, gx = slot.gx, gy = slot.gy;
+        if (isRainy && isOutdoorLocation(slot.location)) {
+            const redirect = getRainyRedirect(npc.id, slot.location);
+            if (redirect) { loc = redirect.location; gx = redirect.gx; gy = redirect.gy; }
+        }
+        return { location: loc, gx, gy };
+    }
+    return null;
+}
+
+// Detect NPCs departing or arriving at a location between two time points.
+// Returns { departing: [{ id, targetLocation, targetGx, targetGy }], arriving: [{ id, fromLocation, gx, gy }] }
+export function getTransitioningNPCs(locationId, prevTime, currTime, dayOfWeek, weather) {
+    const eventOverrides = MetaEvents.getEventNPCOverrides();
+    const departing = [];
+    const arriving = [];
+
+    for (const npc of Object.values(NPCS)) {
+        if (eventOverrides[npc.id]) continue;
+        const prev = _getEffectiveSchedule(npc, prevTime, dayOfWeek, weather);
+        const curr = _getEffectiveSchedule(npc, currTime, dayOfWeek, weather);
+        const prevLoc = prev ? prev.location : null;
+        const currLoc = curr ? curr.location : null;
+
+        if (prevLoc === currLoc) continue;
+
+        if (prevLoc === locationId && currLoc !== locationId) {
+            departing.push({ id: npc.id, targetLocation: currLoc, targetGx: curr ? curr.gx : 0, targetGy: curr ? curr.gy : 0 });
+        }
+        if (currLoc === locationId && prevLoc !== locationId) {
+            arriving.push({ id: npc.id, fromLocation: prevLoc, gx: curr.gx, gy: curr.gy });
+        }
+    }
+    return { departing, arriving };
+}
+
+// Get ALL NPCs that are changing locations between two time points (not filtered by room).
+// Returns array of { id, fromLocation, toLocation, destGx, destGy }
+export function getAllTransitioningNPCs(prevTime, currTime, dayOfWeek, weather) {
+    const eventOverrides = MetaEvents.getEventNPCOverrides();
+    const transitions = [];
+    for (const npc of Object.values(NPCS)) {
+        if (eventOverrides[npc.id]) continue;
+        const prev = _getEffectiveSchedule(npc, prevTime, dayOfWeek, weather);
+        const curr = _getEffectiveSchedule(npc, currTime, dayOfWeek, weather);
+        const prevLoc = prev ? prev.location : null;
+        const currLoc = curr ? curr.location : null;
+        if (prevLoc === currLoc) continue;
+        if (prevLoc && currLoc) {
+            transitions.push({ id: npc.id, fromLocation: prevLoc, toLocation: currLoc, destGx: curr.gx, destGy: curr.gy });
+        }
+    }
+    return transitions;
 }

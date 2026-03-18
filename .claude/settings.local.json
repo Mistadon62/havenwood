@@ -9,7 +9,13 @@
       "Bash(wc -l /Users/baileywjohnson/Github/havenwood/js/*.js /Users/baileywjohnson/Github/havenwood/js/scenes/*.js)",
       "Bash(ls -lh /Users/baileywjohnson/Github/havenwood/js/*.js)",
       "Read(//Users/baileywjohnson/Github/havenwood/**)",
-      "Bash(wc -l /Users/baileywjohnson/Github/havenwood/js/scenes/*.js)"
+      "Bash(wc -l /Users/baileywjohnson/Github/havenwood/js/scenes/*.js)",
+      "Bash(node -c js/scenes/MetaWorldScene.js)",
+      "Bash(node -c js/MetaNPCs.js)",
+      "Bash(node -c js/MetaLocations.js)",
+      "Bash(node -c /Users/baileywjohnson/Github/havenwood/js/scenes/MetaWorldScene.js)",
+      "Bash(node -c /Users/baileywjohnson/Github/havenwood/js/MetaLocations.js)",
+      "Bash(node -c /Users/baileywjohnson/Github/havenwood/js/MetaNPCs.js)"
     ]
   }
 }

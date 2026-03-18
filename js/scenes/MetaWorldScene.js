@@ -7,8 +7,8 @@
 // going off-screen. Indoor rooms use a fixed 1.35x zoom centered in the canvas.
 
 import { W, H, TILE, CLR } from '../GameData.js';
-import { getLocation } from '../MetaLocations.js';
-import { getNPC, getNPCsAtLocation } from '../MetaNPCs.js';
+import { getLocation, findDoorTo, findFullPath } from '../MetaLocations.js';
+import { getNPC, getNPCsAtLocation, getTransitioningNPCs, getAllTransitioningNPCs } from '../MetaNPCs.js';
 import MetaState from '../MetaStateManager.js';
 import MetaDialogue from '../MetaDialogue.js';
 import MetaCrossModeUnlocks from '../MetaCrossModeUnlocks.js';
@@ -46,6 +46,9 @@ export default class MetaWorldScene extends Phaser.Scene {
         // Weather overlay container (persistent)
         this._weatherParticles = [];
 
+        // Global NPC transit tracking (persists across room rebuilds)
+        if (!this.game._npcTransits) this.game._npcTransits = {};
+
         this.setupInput();
         this.buildLocation(this._locationId, this._spawnGx, this._spawnGy);
 
@@ -66,6 +69,18 @@ export default class MetaWorldScene extends Phaser.Scene {
 
     // Build or rebuild a location without restarting the scene (preserves input)
     buildLocation(locationId, spawnGx, spawnGy) {
+        // Save transit state for any departing/passing-through NPCs before destroying the room
+        for (const npc of (this.npcSprites || [])) {
+            if (npc.transitionState === 'departing' && npc.departPath) {
+                this.game._npcTransits[npc.id] = {
+                    path: npc.departPath,
+                    pathIndex: npc.departPathIndex + 1, // advance past current room
+                    destGx: npc.departDestGx,
+                    destGy: npc.departDestGy,
+                };
+            }
+        }
+
         // Destroy old room objects
         for (const obj of (this._roomObjects || [])) {
             if (obj && obj.destroy) obj.destroy();
@@ -255,16 +270,598 @@ export default class MetaWorldScene extends Phaser.Scene {
 
     placeNPCs() {
         this.npcSprites = [];
-        // Dynamic NPC placement based on schedule (time of day + day of week)
         this._activeNPCRefs = getNPCsAtLocation(this.location.id);
+        const placedIds = new Set();
+
+        // First, check for NPCs in transit that pass through or arrive at this room
+        for (const [npcId, transit] of Object.entries(this.game._npcTransits || {})) {
+            const { path, pathIndex, destGx, destGy } = transit;
+            if (!path || pathIndex >= path.length) continue;
+            const currentPathRoom = path[pathIndex];
+            if (currentPathRoom !== this.location.id) continue;
+
+            const npcDef = getNPC(npcId);
+            if (!npcDef) continue;
+            placedIds.add(npcId);
+
+            // Find the door the NPC enters from (previous room in path)
+            const prevRoom = pathIndex > 0 ? path[pathIndex - 1] : null;
+            const entryDoor = prevRoom ? this.location.doors.find(d => d.targetLocation === prevRoom) : null;
+
+            const isFinalRoom = pathIndex === path.length - 1;
+
+            let sx, sy;
+            if (entryDoor) {
+                sx = this.roomX + entryDoor.gx * TILE + TILE / 2;
+                sy = this.roomY + entryDoor.gy * TILE + TILE / 2;
+            } else {
+                const fb = this.location.doors[0];
+                sx = fb ? this.roomX + fb.gx * TILE + TILE / 2 : this.roomX + TILE * 2;
+                sy = fb ? this.roomY + fb.gy * TILE + TILE / 2 : this.roomY + TILE * 2;
+            }
+
+            const sprite = this._track(this.add.image(sx, sy, npcDef.spriteKey).setDepth(10).setAlpha(0));
+            this.tweens.add({ targets: sprite, alpha: 1, duration: 300 });
+            const startGx = Math.floor((sx - this.roomX) / TILE);
+            const startGy = Math.floor((sy - this.roomY) / TILE);
+
+            if (isFinalRoom) {
+                // Arriving at destination — walk to target position
+                delete this.game._npcTransits[npcId];
+                this.npcSprites.push({
+                    id: npcId, gx: startGx, gy: startGy,
+                    homeGx: destGx, homeGy: destGy, sprite, def: npcDef,
+                    targetX: this.roomX + destGx * TILE + TILE / 2,
+                    targetY: this.roomY + destGy * TILE + TILE / 2,
+                    walking: true, paused: false, wanderTimer: 0,
+                    transitionState: 'arriving',
+                });
+                // Add to active refs if not already there
+                if (!this._activeNPCRefs.some(r => r.id === npcId)) {
+                    this._activeNPCRefs.push({ id: npcId, gx: startGx, gy: startGy });
+                }
+            } else {
+                // Passing through — walk to the exit door leading to next room
+                const nextRoom = path[pathIndex + 1];
+                const exitDoor = findDoorTo(this.location.id, nextRoom);
+                const tx = exitDoor ? this.roomX + exitDoor.gx * TILE + TILE / 2 : sx;
+                const ty = exitDoor ? this.roomY + exitDoor.gy * TILE + TILE / 2 : sy;
+                this.npcSprites.push({
+                    id: npcId, gx: startGx, gy: startGy,
+                    homeGx: startGx, homeGy: startGy, sprite, def: npcDef,
+                    targetX: tx, targetY: ty,
+                    walking: true, paused: false, wanderTimer: 0,
+                    transitionState: 'departing',
+                    departPath: path, departPathIndex: pathIndex,
+                    departDestGx: destGx, departDestGy: destGy,
+                });
+                if (!this._activeNPCRefs.some(r => r.id === npcId)) {
+                    this._activeNPCRefs.push({ id: npcId, gx: startGx, gy: startGy });
+                }
+            }
+        }
+
+        // Then place scheduled NPCs that aren't already placed from transit
         for (const npcRef of this._activeNPCRefs) {
+            if (placedIds.has(npcRef.id)) continue;
             const npcDef = getNPC(npcRef.id);
             if (!npcDef) continue;
+
             const px = this.roomX + npcRef.gx * TILE + TILE / 2;
             const py = this.roomY + npcRef.gy * TILE + TILE / 2;
             const sprite = this._track(this.add.image(px, py, npcDef.spriteKey).setDepth(10));
-            this.npcSprites.push({ id: npcRef.id, gx: npcRef.gx, gy: npcRef.gy, sprite, def: npcDef });
+            this.npcSprites.push({
+                id: npcRef.id, gx: npcRef.gx, gy: npcRef.gy,
+                homeGx: npcRef.gx, homeGy: npcRef.gy,
+                sprite, def: npcDef,
+                targetX: px, targetY: py,
+                walking: false, paused: false,
+                wanderTimer: 2000 + Math.random() * 3000,
+            });
         }
+    }
+
+    // A* pathfinding on the tile grid. Returns array of {gx, gy} waypoints, or null if no path.
+    _findTilePath(startGx, startGy, endGx, endGy) {
+        const cols = this.location.cols, rows = this.location.rows;
+        if (startGx === endGx && startGy === endGy) return [{ gx: endGx, gy: endGy }];
+        if (endGx < 0 || endGx >= cols || endGy < 0 || endGy >= rows) return null;
+
+        const key = (x, y) => x + y * cols;
+        const open = [{ gx: startGx, gy: startGy, g: 0, f: 0 }];
+        const gScore = new Map();
+        const cameFrom = new Map();
+        gScore.set(key(startGx, startGy), 0);
+        open[0].f = Math.abs(endGx - startGx) + Math.abs(endGy - startGy);
+
+        const dirs = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]];
+
+        while (open.length > 0) {
+            // Find lowest f
+            let bestIdx = 0;
+            for (let i = 1; i < open.length; i++) {
+                if (open[i].f < open[bestIdx].f) bestIdx = i;
+            }
+            const cur = open.splice(bestIdx, 1)[0];
+
+            if (cur.gx === endGx && cur.gy === endGy) {
+                // Reconstruct path
+                const path = [];
+                let k = key(endGx, endGy);
+                while (k !== undefined) {
+                    const gy = Math.floor(k / cols), gx = k % cols;
+                    path.unshift({ gx, gy });
+                    k = cameFrom.get(k);
+                }
+                return path;
+            }
+
+            for (const [ddx, ddy] of dirs) {
+                const nx = cur.gx + ddx, ny = cur.gy + ddy;
+                if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue;
+
+                // Check walkability using tile type (same rules as isWalkable)
+                const tile = this.location.tileMap[ny][nx];
+                if (tile === 1 || tile === 2 || tile === 5) continue;
+                // Allow doors (tile 9) — NPCs need to walk through them
+                // Check furniture collision
+                let blocked = false;
+                for (const f of this.location.furniture) {
+                    if (f.type === 'rug' || f.type === 'lamp' || f.type === 'stool' || f.type === 'flower') continue;
+                    let fw = 1, fh = 1;
+                    if (f.type === 'desk' || f.type === 'bench' || f.type === 'counter' || f.type === 'chalkboard' || f.type === 'couch') { fw = 2; fh = 1; }
+                    if (f.type === 'bed') { fw = 2; fh = 3; }
+                    if (f.type === 'pond') { fw = 2; fh = 2; }
+                    if (nx >= f.gx && nx < f.gx + fw && ny >= f.gy && ny < f.gy + fh) { blocked = true; break; }
+                }
+                if (blocked) continue;
+                // Check interactable collision (job board, bulletin board)
+                for (const ia of this.location.interactables) {
+                    if ((ia.action === 'job' || ia.action === 'bulletin_board') &&
+                        nx >= ia.gx && nx < ia.gx + (ia.w || 1) && ny >= ia.gy && ny < ia.gy + (ia.h || 1)) {
+                        blocked = true; break;
+                    }
+                }
+                if (blocked) continue;
+
+                const moveCost = (ddx !== 0 && ddy !== 0) ? 1.41 : 1;
+                const tentG = cur.g + moveCost;
+                const nk = key(nx, ny);
+                if (tentG < (gScore.get(nk) ?? Infinity)) {
+                    gScore.set(nk, tentG);
+                    cameFrom.set(nk, key(cur.gx, cur.gy));
+                    const h = Math.abs(endGx - nx) + Math.abs(endGy - ny);
+                    open.push({ gx: nx, gy: ny, g: tentG, f: tentG + h });
+                }
+            }
+        }
+        return null; // no path found
+    }
+
+    // Set an NPC to follow a tile path to a world-space target.
+    // Computes A* path and stores waypoints on the NPC.
+    _setNPCPath(npc, targetWorldX, targetWorldY) {
+        const startGx = Math.floor((npc.sprite.x - this.roomX) / TILE);
+        const startGy = Math.floor((npc.sprite.y - this.roomY) / TILE);
+        const endGx = Math.floor((targetWorldX - this.roomX) / TILE);
+        const endGy = Math.floor((targetWorldY - this.roomY) / TILE);
+
+        const tilePath = this._findTilePath(startGx, startGy, endGx, endGy);
+        if (tilePath && tilePath.length > 1) {
+            // Convert to world-space waypoints (skip the first since that's where we are)
+            npc._waypoints = tilePath.slice(1).map(p => ({
+                x: this.roomX + p.gx * TILE + TILE / 2,
+                y: this.roomY + p.gy * TILE + TILE / 2,
+            }));
+            // Set immediate target to first waypoint
+            npc.targetX = npc._waypoints[0].x;
+            npc.targetY = npc._waypoints[0].y;
+            npc.walking = true;
+        } else {
+            // Fallback: walk directly (or stay put if no path)
+            npc._waypoints = null;
+            npc.targetX = targetWorldX;
+            npc.targetY = targetWorldY;
+            npc.walking = true;
+        }
+    }
+
+    // Update NPC movement each frame (wandering + transitions)
+    updateNPCs(delta) {
+        const NPC_WANDER_SPEED = 40;
+        const NPC_TRANSITION_SPEED = 60;
+
+        for (let i = this.npcSprites.length - 1; i >= 0; i--) {
+            const npc = this.npcSprites[i];
+            if (npc.paused) continue;
+
+            const isTransitioning = npc.transitionState === 'departing' || npc.transitionState === 'arriving';
+            const speed = (isTransitioning ? NPC_TRANSITION_SPEED : NPC_WANDER_SPEED) * (delta / 1000);
+
+            if (npc.walking) {
+                // Compute A* path if walking but no waypoints computed yet
+                if (!npc._waypoints && !npc._pathComputed) {
+                    npc._pathComputed = true;
+                    this._setNPCPath(npc, npc.targetX, npc.targetY);
+                }
+
+                const dx = npc.targetX - npc.sprite.x;
+                const dy = npc.targetY - npc.sprite.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (dist < 2) {
+                    npc.sprite.x = npc.targetX;
+                    npc.sprite.y = npc.targetY;
+
+                    // Update grid position
+                    npc.gx = Math.floor((npc.sprite.x - this.roomX) / TILE);
+                    npc.gy = Math.floor((npc.sprite.y - this.roomY) / TILE);
+                    const ref = this._activeNPCRefs.find(r => r.id === npc.id);
+                    if (ref) { ref.gx = npc.gx; ref.gy = npc.gy; }
+
+                    // Advance to next waypoint if path has more
+                    if (npc._waypoints && npc._waypoints.length > 0) {
+                        npc._waypoints.shift();
+                        if (npc._waypoints.length > 0) {
+                            npc.targetX = npc._waypoints[0].x;
+                            npc.targetY = npc._waypoints[0].y;
+                            continue; // keep walking
+                        }
+                    }
+                    npc._waypoints = null;
+                    npc._pathComputed = false;
+                    npc.walking = false;
+
+                    if (npc.transitionState === 'departing') {
+                        // Reached exit door — record transit and fade out
+                        if (npc.departPath && npc.departPathIndex < npc.departPath.length - 1) {
+                            // Advance to next room in path
+                            this.game._npcTransits[npc.id] = {
+                                path: npc.departPath,
+                                pathIndex: npc.departPathIndex + 1,
+                                destGx: npc.departDestGx,
+                                destGy: npc.departDestGy,
+                            };
+                        }
+                        this.tweens.add({
+                            targets: npc.sprite, alpha: 0, duration: 200,
+                            onComplete: () => {
+                                const idx2 = this._roomObjects.indexOf(npc.sprite);
+                                if (idx2 >= 0) this._roomObjects.splice(idx2, 1);
+                                npc.sprite.destroy();
+                                const si = this.npcSprites.indexOf(npc);
+                                if (si >= 0) this.npcSprites.splice(si, 1);
+                                const ri = this._activeNPCRefs.findIndex(r => r.id === npc.id);
+                                if (ri >= 0) this._activeNPCRefs.splice(ri, 1);
+                            }
+                        });
+                        continue;
+                    } else if (npc.transitionState === 'arriving') {
+                        // Reached destination — switch to normal wandering
+                        npc.transitionState = null;
+                        npc.homeGx = npc.gx;
+                        npc.homeGy = npc.gy;
+                        npc.wanderTimer = 2000 + Math.random() * 4000;
+                    } else {
+                        npc.wanderTimer = 2000 + Math.random() * 4000;
+                    }
+                } else {
+                    npc.sprite.x += (dx / dist) * speed;
+                    npc.sprite.y += (dy / dist) * speed;
+                    npc.gx = Math.floor((npc.sprite.x - this.roomX) / TILE);
+                    npc.gy = Math.floor((npc.sprite.y - this.roomY) / TILE);
+                    const ref = this._activeNPCRefs.find(r => r.id === npc.id);
+                    if (ref) { ref.gx = npc.gx; ref.gy = npc.gy; }
+                }
+            } else if (!isTransitioning) {
+                // Normal wander countdown
+                npc.wanderTimer -= delta;
+                if (npc.wanderTimer <= 0) {
+                    const attempts = 8;
+                    for (let j = 0; j < attempts; j++) {
+                        const ox = npc.homeGx + Math.floor(Math.random() * 7) - 3;
+                        const oy = npc.homeGy + Math.floor(Math.random() * 7) - 3;
+                        if (ox < 1 || ox >= this.location.cols - 1 || oy < 1 || oy >= this.location.rows - 1) continue;
+                        const wx = this.roomX + ox * TILE + TILE / 2;
+                        const wy = this.roomY + oy * TILE + TILE / 2;
+                        if (this.isWalkable(wx, wy - 6)) {
+                            npc.targetX = wx;
+                            npc.targetY = wy;
+                            npc.walking = true;
+                            npc._pathComputed = false;
+                            break;
+                        }
+                    }
+                    if (!npc.walking) {
+                        npc.wanderTimer = 1000 + Math.random() * 2000;
+                    }
+                }
+            }
+        }
+    }
+
+    // Check for NPC schedule transitions (called from updateTime)
+    _checkNPCTransitions(prevTime, currTime) {
+        const s = MetaState.state;
+        const { departing, arriving } = getTransitioningNPCs(
+            this.location.id, prevTime, currTime, s.dayOfWeek, s.weather
+        );
+
+        // Handle departing NPCs — walk to exit door
+        for (const dep of departing) {
+            const npc = this.npcSprites.find(n => n.id === dep.id);
+            if (!npc || npc.transitionState || npc.paused) {
+                if (npc && npc.paused) npc.pendingTransition = dep;
+                continue;
+            }
+            if (!dep.targetLocation) continue;
+            const fullPath = findFullPath(this.location.id, dep.targetLocation);
+            if (!fullPath || fullPath.length < 2) continue;
+            const door = findDoorTo(this.location.id, fullPath[1]);
+            if (!door) continue;
+            npc.transitionState = 'departing';
+            npc.departPath = fullPath;
+            npc.departPathIndex = 0; // currently in first room
+            npc.departDestGx = dep.targetGx;
+            npc.departDestGy = dep.targetGy;
+            npc.targetX = this.roomX + door.gx * TILE + TILE / 2;
+            npc.targetY = this.roomY + door.gy * TILE + TILE / 2;
+            npc.walking = true;
+        }
+
+        // Handle arriving NPCs — spawn at door and walk to target
+        for (const arr of arriving) {
+            if (this.npcSprites.some(n => n.id === arr.id)) continue; // already here
+            const npcDef = getNPC(arr.id);
+            if (!npcDef) continue;
+
+            // Find the door connecting to where they came from
+            const incomingDoor = arr.fromLocation
+                ? this.location.doors.find(d => d.targetLocation === arr.fromLocation)
+                : null;
+
+            let spawnX, spawnY;
+            if (incomingDoor) {
+                spawnX = this.roomX + incomingDoor.gx * TILE + TILE / 2;
+                spawnY = this.roomY + incomingDoor.gy * TILE + TILE / 2;
+            } else {
+                // Fallback: spawn at target position
+                spawnX = this.roomX + arr.gx * TILE + TILE / 2;
+                spawnY = this.roomY + arr.gy * TILE + TILE / 2;
+            }
+
+            const sprite = this._track(this.add.image(spawnX, spawnY, npcDef.spriteKey).setDepth(10).setAlpha(0));
+            this.tweens.add({ targets: sprite, alpha: 1, duration: 300 });
+
+            const npcEntry = {
+                id: arr.id, gx: Math.floor((spawnX - this.roomX) / TILE), gy: Math.floor((spawnY - this.roomY) / TILE),
+                homeGx: arr.gx, homeGy: arr.gy, sprite, def: npcDef,
+                targetX: this.roomX + arr.gx * TILE + TILE / 2,
+                targetY: this.roomY + arr.gy * TILE + TILE / 2,
+                walking: true, paused: false,
+                wanderTimer: 0,
+                transitionState: 'arriving',
+            };
+            this.npcSprites.push(npcEntry);
+            this._activeNPCRefs.push({ id: arr.id, gx: npcEntry.gx, gy: npcEntry.gy });
+        }
+
+        // Create transit records for NPCs transitioning in OTHER rooms (off-screen)
+        const allTransitions = getAllTransitioningNPCs(prevTime, currTime, s.dayOfWeek, s.weather);
+        for (const t of allTransitions) {
+            // Skip NPCs in the current room (handled above) or already in transit
+            if (t.fromLocation === this.location.id) continue;
+            if (this.game._npcTransits[t.id]) continue;
+            const fullPath = findFullPath(t.fromLocation, t.toLocation);
+            if (!fullPath || fullPath.length < 2) continue;
+            // Create transit starting from the second room (they instantly leave their origin)
+            this.game._npcTransits[t.id] = {
+                path: fullPath,
+                pathIndex: 1, // already left the first room
+                destGx: t.destGx,
+                destGy: t.destGy,
+            };
+        }
+    }
+
+    // Periodic check: ensure NPCs in the room match the current schedule.
+    // Catches missed transitions (e.g. player entered after a boundary, or tick was skipped).
+    _syncNPCPresence(delta) {
+        this._npcSyncAccum = (this._npcSyncAccum || 0) + delta;
+        if (this._npcSyncAccum < 3000) return; // check every 3 seconds
+        this._npcSyncAccum = 0;
+
+        const expected = getNPCsAtLocation(this.location.id);
+        const expectedIds = new Set(expected.map(e => e.id));
+
+        // NPCs that are here but shouldn't be — trigger departure
+        for (const npc of this.npcSprites) {
+            if (npc.transitionState) continue; // already transitioning / passing through
+            if (!expectedIds.has(npc.id)) {
+                if (npc.paused) { npc.pendingTransition = { targetLocation: null }; continue; }
+                // Try to find their actual scheduled location for a proper path
+                const npcDef = getNPC(npc.id);
+                const s = MetaState.state;
+                let targetLoc = null;
+                if (npcDef && npcDef.schedule) {
+                    for (const slot of npcDef.schedule) {
+                        if (slot.days && slot.days.includes(s.dayOfWeek) && s.timeOfDay >= slot.start && s.timeOfDay < slot.end) {
+                            targetLoc = slot.location;
+                            break;
+                        }
+                    }
+                }
+                if (targetLoc && targetLoc !== this.location.id) {
+                    const fullPath = findFullPath(this.location.id, targetLoc);
+                    if (fullPath && fullPath.length >= 2) {
+                        const door = findDoorTo(this.location.id, fullPath[1]);
+                        if (door) {
+                            npc.transitionState = 'departing';
+                            npc.departPath = fullPath;
+                            npc.departPathIndex = 0;
+                            npc.departDestGx = 0;
+                            npc.departDestGy = 0;
+                            npc.targetX = this.roomX + door.gx * TILE + TILE / 2;
+                            npc.targetY = this.roomY + door.gy * TILE + TILE / 2;
+                            npc.walking = true;
+                            continue;
+                        }
+                    }
+                }
+                // Fallback: just leave through any door
+                const door = this.location.doors[0];
+                if (door) {
+                    npc.transitionState = 'departing';
+                    npc.departPath = [this.location.id, door.targetLocation];
+                    npc.departPathIndex = 0;
+                    npc.departDestGx = 0;
+                    npc.departDestGy = 0;
+                    npc.targetX = this.roomX + door.gx * TILE + TILE / 2;
+                    npc.targetY = this.roomY + door.gy * TILE + TILE / 2;
+                    npc.walking = true;
+                }
+            }
+        }
+
+        // NPCs that should be here but aren't (and not in transit) — trigger arrival
+        for (const exp of expected) {
+            if (this.npcSprites.some(n => n.id === exp.id)) continue;
+            if (this.game._npcTransits && this.game._npcTransits[exp.id]) continue; // in transit
+            const npcDef = getNPC(exp.id);
+            if (!npcDef) continue;
+
+            const spawnDoor = this.location.doors[0];
+            if (spawnDoor) {
+                const sx = this.roomX + spawnDoor.gx * TILE + TILE / 2;
+                const sy = this.roomY + spawnDoor.gy * TILE + TILE / 2;
+                const sprite = this._track(this.add.image(sx, sy, npcDef.spriteKey).setDepth(10).setAlpha(0));
+                this.tweens.add({ targets: sprite, alpha: 1, duration: 300 });
+                this.npcSprites.push({
+                    id: exp.id, gx: spawnDoor.gx, gy: spawnDoor.gy,
+                    homeGx: exp.gx, homeGy: exp.gy, sprite, def: npcDef,
+                    targetX: this.roomX + exp.gx * TILE + TILE / 2,
+                    targetY: this.roomY + exp.gy * TILE + TILE / 2,
+                    walking: true, paused: false, wanderTimer: 0,
+                    transitionState: 'arriving',
+                });
+                this._activeNPCRefs.push({ id: exp.id, gx: spawnDoor.gx, gy: spawnDoor.gy });
+            }
+        }
+
+        // Check for transiting NPCs whose current path step is THIS room
+        for (const [npcId, transit] of Object.entries(this.game._npcTransits || {})) {
+            const { path, pathIndex, destGx, destGy } = transit;
+            if (!path || pathIndex >= path.length) continue;
+            if (path[pathIndex] !== this.location.id) continue;
+            if (this.npcSprites.some(n => n.id === npcId)) continue; // already spawned
+
+            const npcDef = getNPC(npcId);
+            if (!npcDef) continue;
+
+            const prevRoom = pathIndex > 0 ? path[pathIndex - 1] : null;
+            const entryDoor = prevRoom ? this.location.doors.find(d => d.targetLocation === prevRoom) : null;
+            const isFinalRoom = pathIndex === path.length - 1;
+
+            let sx, sy;
+            if (entryDoor) {
+                sx = this.roomX + entryDoor.gx * TILE + TILE / 2;
+                sy = this.roomY + entryDoor.gy * TILE + TILE / 2;
+            } else {
+                const fb = this.location.doors[0];
+                sx = fb ? this.roomX + fb.gx * TILE + TILE / 2 : this.roomX + TILE * 2;
+                sy = fb ? this.roomY + fb.gy * TILE + TILE / 2 : this.roomY + TILE * 2;
+            }
+
+            const sprite = this._track(this.add.image(sx, sy, npcDef.spriteKey).setDepth(10).setAlpha(0));
+            this.tweens.add({ targets: sprite, alpha: 1, duration: 300 });
+            const startGx = Math.floor((sx - this.roomX) / TILE);
+            const startGy = Math.floor((sy - this.roomY) / TILE);
+
+            if (isFinalRoom) {
+                delete this.game._npcTransits[npcId];
+                this.npcSprites.push({
+                    id: npcId, gx: startGx, gy: startGy,
+                    homeGx: destGx, homeGy: destGy, sprite, def: npcDef,
+                    targetX: this.roomX + destGx * TILE + TILE / 2,
+                    targetY: this.roomY + destGy * TILE + TILE / 2,
+                    walking: true, paused: false, wanderTimer: 0,
+                    transitionState: 'arriving',
+                });
+            } else {
+                const nextRoom = path[pathIndex + 1];
+                const exitDoor = findDoorTo(this.location.id, nextRoom);
+                const tx = exitDoor ? this.roomX + exitDoor.gx * TILE + TILE / 2 : sx;
+                const ty = exitDoor ? this.roomY + exitDoor.gy * TILE + TILE / 2 : sy;
+                this.npcSprites.push({
+                    id: npcId, gx: startGx, gy: startGy,
+                    homeGx: startGx, homeGy: startGy, sprite, def: npcDef,
+                    targetX: tx, targetY: ty,
+                    walking: true, paused: false, wanderTimer: 0,
+                    transitionState: 'departing',
+                    departPath: path, departPathIndex: pathIndex,
+                    departDestGx: destGx, departDestGy: destGy,
+                });
+                // Remove from global transits since we're now managing it locally
+                delete this.game._npcTransits[npcId];
+            }
+            if (!this._activeNPCRefs.some(r => r.id === npcId)) {
+                this._activeNPCRefs.push({ id: npcId, gx: startGx, gy: startGy });
+            }
+        }
+    }
+
+    // Stop an NPC from walking (e.g. when player talks to them)
+    pauseNPC(npcId) {
+        const npc = this.npcSprites.find(n => n.id === npcId);
+        if (npc) {
+            npc.paused = true;
+            npc.walking = false;
+        }
+    }
+
+    // Resume NPC wandering (and process any pending transition)
+    resumeNPC(npcId) {
+        const npc = this.npcSprites.find(n => n.id === npcId);
+        if (!npc) return;
+        npc.paused = false;
+
+        if (npc.pendingTransition) {
+            // NPC was waiting to leave — start departure now
+            const dep = npc.pendingTransition;
+            npc.pendingTransition = null;
+            const targetLoc = dep.targetLocation;
+            if (targetLoc) {
+                const fullPath = findFullPath(this.location.id, targetLoc);
+                if (fullPath && fullPath.length >= 2) {
+                    const door = findDoorTo(this.location.id, fullPath[1]);
+                    if (door) {
+                        npc.transitionState = 'departing';
+                        npc.departPath = fullPath;
+                        npc.departPathIndex = 0;
+                        npc.departDestGx = 0;
+                        npc.departDestGy = 0;
+                        npc.targetX = this.roomX + door.gx * TILE + TILE / 2;
+                        npc.targetY = this.roomY + door.gy * TILE + TILE / 2;
+                        npc.walking = true;
+                        return;
+                    }
+                }
+            }
+            // Fallback
+            const door = this.location.doors[0];
+            if (door) {
+                npc.transitionState = 'departing';
+                npc.departPath = [this.location.id, door.targetLocation];
+                npc.departPathIndex = 0;
+                npc.departDestGx = 0;
+                npc.departDestGy = 0;
+                npc.targetX = this.roomX + door.gx * TILE + TILE / 2;
+                npc.targetY = this.roomY + door.gy * TILE + TILE / 2;
+                npc.walking = true;
+                return;
+            }
+        }
+        npc.wanderTimer = 2000 + Math.random() * 3000;
     }
 
     // Rebuild NPC sprites without full location rebuild (for schedule changes)
@@ -331,10 +928,6 @@ export default class MetaWorldScene extends Phaser.Scene {
             if (rx >= f.gx && rx < f.gx + fw && ry >= f.gy && ry < f.gy + fh) return false;
         }
 
-        // NPC collision (dynamic schedule)
-        for (const npcRef of (this._activeNPCRefs || [])) {
-            if (rx === npcRef.gx && ry === npcRef.gy) return false;
-        }
 
         // Interactable collision (job board, bulletin board, etc.)
         for (const ia of this.location.interactables) {
@@ -456,7 +1049,9 @@ export default class MetaWorldScene extends Phaser.Scene {
         this.handleDoors();
         this.handleInteraction();
         this.updateProximityPrompt();
+        this.updateNPCs(delta);
         this.updateTime(delta);
+        this._syncNPCPresence(delta);
         this.updateQuestChecks(delta);
         this.animateWeather(delta);
     }
@@ -467,7 +1062,15 @@ export default class MetaWorldScene extends Phaser.Scene {
         if (this._timeAccum >= tickMs) {
             const mins = Math.floor(this._timeAccum / tickMs);
             this._timeAccum -= mins * tickMs;
+            const prevTime = MetaState.state.timeOfDay;
             MetaState.advanceTime(mins);
+
+            // Check for NPC schedule transitions (small time advances only)
+            if (mins <= 5) {
+                this._checkNPCTransitions(prevTime, MetaState.state.timeOfDay);
+            } else {
+                this.refreshNPCs(); // large jump — just teleport
+            }
             this.game.events.emit('metaTimeUpdate');
 
             // Passive energy drain: -1 per 30 game minutes
@@ -776,6 +1379,9 @@ export default class MetaWorldScene extends Phaser.Scene {
         const npcDef = getNPC(npcId);
         if (!npcDef) return;
 
+        // Stop NPC walking while talking
+        this.pauseNPC(npcId);
+
         const dialogue = npcDef.getDialogue();
         const hudScene = this.scene.get('MetaHUDScene');
 
@@ -788,6 +1394,10 @@ export default class MetaWorldScene extends Phaser.Scene {
                 // Check quests and friendship milestones after NPC interaction
                 this.checkQuests();
                 this._checkFriendshipMilestone(npcId, hudScene);
+                this.resumeNPC(npcId);
+            },
+            onClose: () => {
+                this.resumeNPC(npcId);
             },
         });
     }

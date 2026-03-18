@@ -413,3 +413,56 @@ export function getLocation(id) {
 export function getAllLocationIds() {
     return Object.keys(LOCATIONS);
 }
+
+// BFS to find the full path of locations from fromId to toId.
+// Returns array of location IDs (including fromId and toId), or null if no path.
+export function findFullPath(fromId, toId) {
+    if (fromId === toId) return [fromId];
+    const visited = new Set([fromId]);
+    const queue = [[fromId, [fromId]]];
+    while (queue.length > 0) {
+        const [locId, path] = queue.shift();
+        const loc = LOCATIONS[locId];
+        if (!loc) continue;
+        for (const d of loc.doors) {
+            if (visited.has(d.targetLocation)) continue;
+            visited.add(d.targetLocation);
+            const newPath = [...path, d.targetLocation];
+            if (d.targetLocation === toId) return newPath;
+            queue.push([d.targetLocation, newPath]);
+        }
+    }
+    return null;
+}
+
+// BFS to find the first door in fromId that leads toward toId.
+// Returns { gx, gy } of the door tile, or null if no path.
+export function findDoorTo(fromId, toId) {
+    if (fromId === toId) return null;
+    const visited = new Set([fromId]);
+    // Queue entries: [currentLocId, firstDoorInFrom]
+    const queue = [];
+    // Seed with all doors in the starting location
+    const fromLoc = LOCATIONS[fromId];
+    if (!fromLoc) return null;
+    for (const d of fromLoc.doors) {
+        if (!visited.has(d.targetLocation)) {
+            visited.add(d.targetLocation);
+            if (d.targetLocation === toId) return { gx: d.gx, gy: d.gy };
+            queue.push([d.targetLocation, { gx: d.gx, gy: d.gy }]);
+        }
+    }
+    while (queue.length > 0) {
+        const [locId, firstDoor] = queue.shift();
+        const loc = LOCATIONS[locId];
+        if (!loc) continue;
+        for (const d of loc.doors) {
+            if (!visited.has(d.targetLocation)) {
+                visited.add(d.targetLocation);
+                if (d.targetLocation === toId) return firstDoor;
+                queue.push([d.targetLocation, firstDoor]);
+            }
+        }
+    }
+    return null;
+}
