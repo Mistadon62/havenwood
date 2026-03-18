@@ -306,6 +306,7 @@ export default class MetaWorldScene extends Phaser.Scene {
         };
         this.interactKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
         this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+        this.shiftKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
     }
 
     isWalkable(wx, wy) {
@@ -626,7 +627,7 @@ export default class MetaWorldScene extends Phaser.Scene {
             dx /= len;
             dy /= len;
 
-            const speed = MOVE_SPEED * (delta / 1000);
+            const speed = MOVE_SPEED * (this.shiftKey.isDown ? 1.85 : 1) * (delta / 1000);
             const nx = this.char.x + dx * speed;
             const ny = this.char.y + dy * speed;
             const footX = nx;
