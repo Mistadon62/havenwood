@@ -1,7 +1,13 @@
 // MetaNPCs — NPC definitions for the meta-world.
-// Each NPC has a sprite key, dialogue branches, and action handlers.
+// Each NPC has a sprite key, schedule, dialogue branches, and action handlers.
+// Schedule: array of { days: [0-6], start, end (minutes), location, gx, gy }
+// days: 0=Mon..4=Fri, 5=Sat, 6=Sun
 
 import MetaState from './MetaStateManager.js';
+
+const WEEKDAYS = [0, 1, 2, 3, 4];
+const WEEKEND = [5, 6];
+const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 
 const NPCS = {
     prof_elara: {
@@ -10,8 +16,22 @@ const NPCS = {
         spriteKey: 'npc_elara',
         facing: 'down',
 
+        // Weekdays 8am-5pm on campus quad
+        schedule: [
+            { days: WEEKDAYS, start: 480, end: 1020, location: 'campus_quad', gx: 7, gy: 6 },
+        ],
+
         getDialogue() {
             const s = MetaState.state;
+
+            // Weekend — no classes
+            if (s.dayOfWeek >= 5) {
+                return {
+                    speaker: 'Prof. Elara',
+                    lines: ['No classes on weekends!', 'Enjoy your time off.', 'Try the café — their weekend specials are great.'],
+                };
+            }
+
             const attendedToday = MetaState.hasFlag(`class_day_${s.day}`);
 
             if (s.energy < 15) {
@@ -71,11 +91,20 @@ const NPCS = {
             }
         },
     },
+
     sam: {
         id: 'sam',
         name: 'Sam',
         spriteKey: 'npc_sam',
         facing: 'down',
+
+        // Weekdays: library mornings, quad afternoons
+        // Weekends: café
+        schedule: [
+            { days: WEEKDAYS, start: 540, end: 720, location: 'library', gx: 8, gy: 4 },
+            { days: WEEKDAYS, start: 840, end: 1080, location: 'campus_quad', gx: 6, gy: 2 },
+            { days: WEEKEND, start: 600, end: 960, location: 'cafe', gx: 4, gy: 3 },
+        ],
 
         getDialogue() {
             const s = MetaState.state;
@@ -106,6 +135,18 @@ const NPCS = {
                     choices: [
                         { label: 'Hang out (-10 energy, 30min)', action: 'hangout' },
                         { label: 'Nice to meet you!', action: 'cancel' },
+                    ],
+                };
+            }
+
+            // Weekend flavor
+            if (s.dayOfWeek >= 5) {
+                return {
+                    speaker: 'Sam',
+                    lines: ['Weekend vibes!', 'Want to hang out?'],
+                    choices: [
+                        { label: 'Hang out (-10 energy, 30min)', action: 'hangout' },
+                        { label: 'Just chilling', action: 'cancel' },
                     ],
                 };
             }
@@ -142,6 +183,11 @@ const NPCS = {
         name: 'Mr. Tanaka',
         spriteKey: 'npc_shopkeeper',
         facing: 'down',
+
+        // Every day 8am-8pm
+        schedule: [
+            { days: ALL_DAYS, start: 480, end: 1200, location: 'pet_store', gx: 9, gy: 3 },
+        ],
 
         getDialogue() {
             if (!MetaState.hasMetNPC('shopkeeper')) {
@@ -180,7 +226,6 @@ const NPCS = {
                     hudScene.showNotification('Not enough money!');
                     return;
                 }
-                // Accumulate purchases — applied when switching to Havenwood
                 MetaState.state.pendingFood = (MetaState.state.pendingFood || 0) + 50;
                 hudScene.refreshStatusBar();
                 hudScene.showNotification('Bought food supplies for your sanctuary!');
@@ -205,4 +250,22 @@ export function getNPC(id) {
 
 export function getAllNPCIds() {
     return Object.keys(NPCS);
+}
+
+// Returns NPCs that should be at a given location right now based on schedules
+export function getNPCsAtLocation(locationId) {
+    const s = MetaState.state;
+    const results = [];
+    for (const npc of Object.values(NPCS)) {
+        if (!npc.schedule) continue;
+        for (const slot of npc.schedule) {
+            if (slot.location === locationId &&
+                slot.days.includes(s.dayOfWeek) &&
+                s.timeOfDay >= slot.start && s.timeOfDay < slot.end) {
+                results.push({ id: npc.id, gx: slot.gx, gy: slot.gy });
+                break;
+            }
+        }
+    }
+    return results;
 }

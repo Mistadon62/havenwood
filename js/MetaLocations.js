@@ -111,9 +111,7 @@ const LOCATIONS = {
             { gx: 6, gy: 9, targetLocation: 'cafe', spawnGx: 5, spawnGy: 1 },
             { gx: 7, gy: 9, targetLocation: 'cafe', spawnGx: 6, spawnGy: 1 },
         ],
-        npcs: [
-            { id: 'prof_elara', gx: 7, gy: 6 },
-        ],
+        npcs: [], // Dynamic — see MetaNPCs schedules
         interactables: [
             { id: 'job_board', gx: 12, gy: 1, w: 1, h: 1, name: 'Job Board', action: 'job' },
         ],
@@ -155,9 +153,7 @@ const LOCATIONS = {
             { gx: 11, gy: 4, targetLocation: 'campus_quad', spawnGx: 1, spawnGy: 3 },
             { gx: 11, gy: 5, targetLocation: 'campus_quad', spawnGx: 1, spawnGy: 4 },
         ],
-        npcs: [
-            { id: 'sam', gx: 8, gy: 4 },
-        ],
+        npcs: [], // Dynamic — see MetaNPCs schedules
         interactables: [
             { id: 'lib_study', gx: 4, gy: 2, w: 2, h: 1, name: 'Study Desk', action: 'library_study' },
         ],
@@ -196,9 +192,7 @@ const LOCATIONS = {
             { gx: 0, gy: 4, targetLocation: 'campus_quad', spawnGx: 12, spawnGy: 3 },
             { gx: 0, gy: 5, targetLocation: 'campus_quad', spawnGx: 12, spawnGy: 4 },
         ],
-        npcs: [
-            { id: 'shopkeeper', gx: 9, gy: 3 },
-        ],
+        npcs: [], // Dynamic — see MetaNPCs schedules
         interactables: [],
     },
 

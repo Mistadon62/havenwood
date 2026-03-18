@@ -5,7 +5,7 @@
 
 import { W, H, TILE, CLR } from '../GameData.js';
 import { getLocation } from '../MetaLocations.js';
-import { getNPC } from '../MetaNPCs.js';
+import { getNPC, getNPCsAtLocation } from '../MetaNPCs.js';
 import MetaState from '../MetaStateManager.js';
 import MetaDialogue from '../MetaDialogue.js';
 import MetaCrossModeUnlocks from '../MetaCrossModeUnlocks.js';
@@ -32,10 +32,14 @@ export default class MetaWorldScene extends Phaser.Scene {
         // Background fill (persistent)
         this._bg = this.add.rectangle(W / 2, H / 2, W, H, 0x1a1a2a).setDepth(0);
 
+        // Day/night tint overlay (persistent, not tracked by _roomObjects)
+        this._dayNightOverlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0).setDepth(50);
+
         this.setupInput();
         this.buildLocation(this._locationId, this._spawnGx, this._spawnGy);
 
         this._interactCooldown = false;
+        this._energyDecayAccum = 0;
         this._frozen = this._startWithPhone;
         this._timeAccum = 0;
         this._doorCooldown = true;
@@ -143,7 +147,9 @@ export default class MetaWorldScene extends Phaser.Scene {
 
     placeNPCs() {
         this.npcSprites = [];
-        for (const npcRef of this.location.npcs) {
+        // Dynamic NPC placement based on schedule (time of day + day of week)
+        this._activeNPCRefs = getNPCsAtLocation(this.location.id);
+        for (const npcRef of this._activeNPCRefs) {
             const npcDef = getNPC(npcRef.id);
             if (!npcDef) continue;
             const px = this.roomX + npcRef.gx * TILE + TILE / 2;
@@ -151,6 +157,19 @@ export default class MetaWorldScene extends Phaser.Scene {
             const sprite = this._track(this.add.image(px, py, npcDef.spriteKey).setDepth(10));
             this.npcSprites.push({ id: npcRef.id, gx: npcRef.gx, gy: npcRef.gy, sprite, def: npcDef });
         }
+    }
+
+    // Rebuild NPC sprites without full location rebuild (for schedule changes)
+    refreshNPCs() {
+        // Remove old NPC sprites from tracked objects and destroy them
+        for (const npc of this.npcSprites) {
+            if (npc.sprite) {
+                const idx = this._roomObjects.indexOf(npc.sprite);
+                if (idx >= 0) this._roomObjects.splice(idx, 1);
+                npc.sprite.destroy();
+            }
+        }
+        this.placeNPCs();
     }
 
     createCharacter(spawnGx, spawnGy) {
@@ -197,8 +216,8 @@ export default class MetaWorldScene extends Phaser.Scene {
             if (rx >= f.gx && rx < f.gx + fw && ry >= f.gy && ry < f.gy + fh) return false;
         }
 
-        // NPC collision
-        for (const npcRef of this.location.npcs) {
+        // NPC collision (dynamic schedule)
+        for (const npcRef of (this._activeNPCRefs || [])) {
             if (rx === npcRef.gx && ry === npcRef.gy) return false;
         }
 
@@ -224,8 +243,8 @@ export default class MetaWorldScene extends Phaser.Scene {
 
     // Check what's at a tile position
     getInteractableAt(fx, fy) {
-        // Check NPCs
-        for (const npcRef of this.location.npcs) {
+        // Check NPCs (dynamic schedule)
+        for (const npcRef of (this._activeNPCRefs || [])) {
             if (npcRef.gx === fx && npcRef.gy === fy) {
                 return { type: 'npc', id: npcRef.id };
             }
@@ -269,10 +288,37 @@ export default class MetaWorldScene extends Phaser.Scene {
             MetaState.advanceTime(mins);
             this.game.events.emit('metaTimeUpdate');
 
-            // Late-night dimming
-            if (MetaState.isLate()) {
-                this.cameras.main.setAlpha(0.85);
+            // Passive energy drain: -1 per 30 game minutes
+            this._energyDecayAccum += mins;
+            if (this._energyDecayAccum >= 30) {
+                const drain = Math.floor(this._energyDecayAccum / 30);
+                this._energyDecayAccum -= drain * 30;
+                MetaState.state.energy = Math.max(0, MetaState.state.energy - drain);
             }
+        }
+
+        // Day/night tint
+        this.updateDayNightTint();
+    }
+
+    updateDayNightTint() {
+        if (!this._dayNightOverlay) return;
+        const hour = Math.floor(MetaState.state.timeOfDay / 60);
+        if (hour >= 6 && hour < 8) {
+            // Dawn — warm gold
+            this._dayNightOverlay.fillColor = 0xFF8844;
+            this._dayNightOverlay.fillAlpha = 0.06;
+        } else if (hour >= 8 && hour < 17) {
+            // Daytime — clear
+            this._dayNightOverlay.fillAlpha = 0;
+        } else if (hour >= 17 && hour < 20) {
+            // Dusk — orange
+            this._dayNightOverlay.fillColor = 0xFF6622;
+            this._dayNightOverlay.fillAlpha = 0.1;
+        } else {
+            // Night — dark blue
+            this._dayNightOverlay.fillColor = 0x112244;
+            this._dayNightOverlay.fillAlpha = 0.22;
         }
     }
 
@@ -365,6 +411,7 @@ export default class MetaWorldScene extends Phaser.Scene {
             this.buildLocation(door.targetLocation, door.spawnGx, door.spawnGy);
             this._frozen = false;
             this.cameras.main.fadeIn(200, 0, 0, 0);
+            this.updateDayNightTint();
             // Refresh HUD for new location name
             const hud = this.scene.get('MetaHUDScene');
             if (hud && hud.refreshStatusBar) hud.refreshStatusBar();
@@ -506,12 +553,38 @@ export default class MetaWorldScene extends Phaser.Scene {
             const hudScene = this.scene.get('MetaHUDScene');
             if (hudScene) hudScene.refreshStatusBar();
 
-            this.cameras.main.fadeIn(800, 0, 0, 0);
-            this.cameras.main.setAlpha(1);
-            this._frozen = false;
+            // Roll a random morning event
+            const morningEvent = this.rollMorningEvent();
 
-            if (hudScene) hudScene.showNotification(`Day ${MetaState.state.day} — ${MetaState.getDayName()}`);
+            this.cameras.main.fadeIn(800, 0, 0, 0);
+            this._frozen = false;
+            this.updateDayNightTint();
+
+            const dayLabel = MetaState.state.dayOfWeek >= 5 ? `${MetaState.getDayName()} (Weekend)` : MetaState.getDayName();
+            if (hudScene) hudScene.showNotification(`Day ${MetaState.state.day} — ${dayLabel}`);
+            if (morningEvent && hudScene) {
+                this.time.delayedCall(1500, () => hudScene.showNotification(morningEvent));
+            }
         });
+    }
+
+    rollMorningEvent() {
+        const events = [
+            { text: 'Found $10 in your pocket!', effect: () => MetaState.addMoney(10) },
+            { text: 'Great sleep! +10 Energy', effect: () => MetaState.addEnergy(10) },
+            { text: 'Morning sunshine! +5 Mood', effect: () => MetaState.addMood(5) },
+            { text: 'Feeling inspired! +3 Knowledge', effect: () => MetaState.addKnowledge(3) },
+            { text: 'Restless night... -5 Energy', effect: () => { MetaState.state.energy = Math.max(0, MetaState.state.energy - 5); } },
+            null, null, null, null, // ~45% chance nothing happens
+        ];
+        const pick = events[Math.floor(Math.random() * events.length)];
+        if (pick) {
+            pick.effect();
+            const hudScene = this.scene.get('MetaHUDScene');
+            if (hudScene) hudScene.refreshStatusBar();
+            return pick.text;
+        }
+        return null;
     }
 
     doStudy(hudScene) {
@@ -803,6 +876,11 @@ export default class MetaWorldScene extends Phaser.Scene {
                 this._frozen = false;
                 this._interactCooldown = true;
                 this.time.delayedCall(300, () => { this._interactCooldown = false; });
+                // Refresh after time passed in Havenwood
+                this.updateDayNightTint();
+                this.refreshNPCs();
+                const hud = this.scene.get('MetaHUDScene');
+                if (hud) hud.refreshStatusBar();
             }
         });
     }

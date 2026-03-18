@@ -68,7 +68,15 @@ export default class MetaHUDScene extends Phaser.Scene {
 
     refreshStatusBar() {
         const s = MetaState.state;
-        this.dayTimeText.setText(`Day ${s.day} ${MetaState.getDayName()} ${MetaState.getTimeString()}`);
+        const weekendTag = s.dayOfWeek >= 5 ? ' *' : '';
+        this.dayTimeText.setText(`Day ${s.day} ${MetaState.getDayName()}${weekendTag} ${MetaState.getTimeString()}`);
+
+        // Time-of-day text color
+        const hour = Math.floor(s.timeOfDay / 60);
+        if (hour >= 6 && hour < 8) this.dayTimeText.setColor('#FFCC88');
+        else if (hour >= 8 && hour < 17) this.dayTimeText.setColor('#CCDDEE');
+        else if (hour >= 17 && hour < 20) this.dayTimeText.setColor('#FFAA66');
+        else this.dayTimeText.setColor('#8899BB');
 
         // Energy bar
         const energyPct = Math.max(0, s.energy / 100);
