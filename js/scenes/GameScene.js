@@ -36,6 +36,7 @@ import { TILE, COLS, ROWS, W, H, MAP_Y, TIME_SCALE, START_COINS, HABITATS, SPECI
     TRAITS, TRAIT_IDS, ILLNESSES, ENRICHMENTS, MISSIONS, VISITOR_TYPES, ACHIEVEMENTS,
     RESEARCH, RESEARCH_BRANCHES, DECORATIONS, FACILITIES, GARDEN_PRODUCE, GARDEN_REGROW_TIME, BATHROOM_DIRTY_RATE, TRASH_DROP_CHANCE } from '../GameData.js';
 import { SoundManager } from '../SoundManager.js';
+import MetaState from '../MetaStateManager.js';
 
 let uid = 0;
 // Generates unique IDs for game entities (habitats, animals, staff, missions, trash) to avoid collisions.
@@ -109,6 +110,7 @@ export default class GameScene extends Phaser.Scene {
         this.scene.launch('HUDScene');
 
         if (!this.isNewGame) this.loadGame();
+        else MetaState.reset();
         this.updateSeason();
         const loadedMeta = this._loadedMode === 'meta';
         if (this.state.autoSave) {
@@ -120,12 +122,19 @@ export default class GameScene extends Phaser.Scene {
         // If saved in meta-world mode, auto-transition to the room scene
         if (loadedMeta) {
             this._loadedMode = null;
+            this.game._hasZoomedOut = true; // zoom already happened in a previous session
+            MetaState.load(); // restore meta-world state
             this.time.delayedCall(100, () => {
                 const hud = this.scene.get('HUDScene');
                 if (hud && hud.closeAllPanels) hud.closeAllPanels(true);
                 this.scene.sleep('GameScene');
                 this.scene.sleep('HUDScene');
-                this.scene.launch('MetaWorldScene', { startWithPhone: false });
+                this.scene.launch('MetaWorldScene', {
+                    startWithPhone: false,
+                    locationId: MetaState.state.currentLocation,
+                    spawnGx: MetaState.state.playerTileX,
+                    spawnGy: MetaState.state.playerTileY,
+                });
                 this.scene.launch('MetaHUDScene');
             });
         }
@@ -4691,6 +4700,8 @@ export default class GameScene extends Phaser.Scene {
             })),
         };
         localStorage.setItem('havenwood_save', JSON.stringify(data));
+        // Also save meta-world state when saving in meta mode
+        if (this._saveMode === 'meta') MetaState.save();
     }
 
     loadGame() {

@@ -1,8 +1,10 @@
-// MetaHUDScene — Minimal UI overlay for the meta-world (room scene).
-// Shows controls hint, a persistent prompt to pull out the phone, and a
-// settings/pause menu (ESC) with Save, Exit to Menu, and Resume.
+// MetaHUDScene — UI overlay for the meta-world.
+// Shows status bar (time, energy, mood, money), context-sensitive interaction
+// prompt, settings/pause menu (ESC), and notifications.
 
 import { W, H, CLR } from '../GameData.js';
+import MetaState from '../MetaStateManager.js';
+import MetaDialogue from '../MetaDialogue.js';
 
 export default class MetaHUDScene extends Phaser.Scene {
     constructor() { super('MetaHUDScene'); }
@@ -11,35 +13,109 @@ export default class MetaHUDScene extends Phaser.Scene {
         this.cameras.main.setRoundPixels(true);
         this.settingsPanel = null;
 
-        // Controls hint (bottom of screen, subtle)
-        this.controlsHint = this.add.text(W / 2, H - 20, 'WASD to move', {
-            fontFamily: '"Press Start 2P", monospace',
-            fontSize: '8px',
-            color: '#666677',
-            stroke: '#000000',
-            strokeThickness: 2,
-        }).setOrigin(0.5).setAlpha(0.7);
+        this.createStatusBar();
+        this.createInteractPrompt();
 
-        // Phone prompt — always visible
-        this.interactPrompt = this.add.container(W / 2, H - 60).setAlpha(0.8);
+        // ESC key
+        this.input.keyboard.on('keydown-ESC', () => {
+            if (MetaDialogue.isActive()) {
+                MetaDialogue.close(this);
+                return;
+            }
+            this.toggleSettingsMenu();
+        });
 
-        const promptBg = this.add.graphics();
-        promptBg.fillStyle(0x252F40, 0.85);
-        promptBg.fillRoundedRect(-100, -14, 200, 28, 6);
-        promptBg.lineStyle(1, 0x3D4F6B, 0.8);
-        promptBg.strokeRoundedRect(-100, -14, 200, 28, 6);
-        this.interactPrompt.add(promptBg);
+        // Listen for time updates
+        this.game.events.on('metaTimeUpdate', this.refreshStatusBar, this);
 
-        const promptTxt = this.add.text(0, 0, '[E] Play Havenwood', {
-            fontFamily: '"Press Start 2P", monospace',
-            fontSize: '9px',
-            color: '#88DD88',
-            stroke: '#000000',
-            strokeThickness: 2,
-        }).setOrigin(0.5);
-        this.interactPrompt.add(promptTxt);
+        this.events.once('shutdown', () => {
+            this.game.events.off('metaTimeUpdate', this.refreshStatusBar, this);
+        });
+    }
 
-        // Gentle float animation
+    // ── Status Bar ──
+
+    createStatusBar() {
+        // Dark bar at top
+        this.statusBg = this.add.graphics().setDepth(200);
+        this.statusBg.fillStyle(0x0D1520, 0.85);
+        this.statusBg.fillRect(0, 0, W, 28);
+        this.statusBg.lineStyle(1, 0x2A3A52, 0.6);
+        this.statusBg.lineBetween(0, 28, W, 28);
+
+        // Day & Time
+        this.dayTimeText = this.txt(10, 14, '', 8, '#CCDDEE').setOrigin(0, 0.5).setDepth(201);
+
+        // Energy bar
+        this.energyLabel = this.txt(260, 14, 'EN', 7, '#88CC88').setOrigin(0, 0.5).setDepth(201);
+        this.energyBarBg = this.add.rectangle(290, 14, 60, 8, 0x333344).setOrigin(0, 0.5).setDepth(201);
+        this.energyBarFill = this.add.rectangle(290, 14, 60, 8, 0x44CC44).setOrigin(0, 0.5).setDepth(201);
+
+        // Mood
+        this.moodText = this.txt(370, 14, '', 8, '#DDBB88').setOrigin(0, 0.5).setDepth(201);
+
+        // Money
+        this.moneyText = this.txt(460, 14, '', 8, '#AADDAA').setOrigin(0, 0.5).setDepth(201);
+
+        // Knowledge
+        this.knowledgeText = this.txt(560, 14, '', 8, '#AABBDD').setOrigin(0, 0.5).setDepth(201);
+
+        // Location name (right side)
+        this.locationText = this.txt(W - 10, 14, '', 7, '#667788').setOrigin(1, 0.5).setDepth(201);
+
+        this.refreshStatusBar();
+    }
+
+    refreshStatusBar() {
+        const s = MetaState.state;
+        this.dayTimeText.setText(`Day ${s.day} ${MetaState.getDayName()} ${MetaState.getTimeString()}`);
+
+        // Energy bar
+        const energyPct = Math.max(0, s.energy / 100);
+        this.energyBarFill.width = 60 * energyPct;
+        if (s.energy > 50) this.energyBarFill.fillColor = 0x44CC44;
+        else if (s.energy > 25) this.energyBarFill.fillColor = 0xCCAA44;
+        else this.energyBarFill.fillColor = 0xCC4444;
+
+        // Mood emoji
+        let moodIcon = ':)';
+        if (s.mood >= 80) moodIcon = ':D';
+        else if (s.mood >= 60) moodIcon = ':)';
+        else if (s.mood >= 40) moodIcon = ':|';
+        else if (s.mood >= 20) moodIcon = ':(';
+        else moodIcon = 'D:';
+        this.moodText.setText(`${moodIcon} ${s.mood}`);
+
+        this.moneyText.setText(`$${s.money}`);
+        this.knowledgeText.setText(`KN ${s.knowledge}`);
+
+        // Location
+        const metaScene = this.scene.get('MetaWorldScene');
+        if (metaScene && metaScene.location) {
+            this.locationText.setText(metaScene.location.name);
+        }
+    }
+
+    // ── Interact Prompt ──
+
+    createInteractPrompt() {
+        this.interactPrompt = this.add.container(W / 2, H - 60).setAlpha(0.8).setDepth(200);
+
+        this.promptBg = this.add.graphics();
+        this.promptBg.fillStyle(0x252F40, 0.85);
+        this.promptBg.fillRoundedRect(-100, -14, 200, 28, 6);
+        this.promptBg.lineStyle(1, 0x3D4F6B, 0.8);
+        this.promptBg.strokeRoundedRect(-100, -14, 200, 28, 6);
+        this.interactPrompt.add(this.promptBg);
+
+        this.promptText = this.txt(0, 0, '[E] Play Havenwood', 9, '#88DD88').setOrigin(0.5);
+        this.interactPrompt.add(this.promptText);
+
+        // Controls hint
+        this.controlsHint = this.txt(W / 2, H - 20, 'WASD to move', 8, '#666677')
+            .setOrigin(0.5).setAlpha(0.7).setDepth(200);
+
+        // Gentle float
         this.tweens.add({
             targets: this.interactPrompt,
             y: H - 65,
@@ -48,12 +124,14 @@ export default class MetaHUDScene extends Phaser.Scene {
             repeat: -1,
             ease: 'Sine.easeInOut'
         });
-
-        // ESC key
-        this.input.keyboard.on('keydown-ESC', () => {
-            this.toggleSettingsMenu();
-        });
     }
+
+    // Update the prompt text based on what the player is facing
+    updatePrompt(text) {
+        if (this.promptText) this.promptText.setText(text);
+    }
+
+    // ── Settings Menu ──
 
     txt(x, y, str, size, color) {
         return this.add.text(x, y, str, {
@@ -68,7 +146,6 @@ export default class MetaHUDScene extends Phaser.Scene {
     toggleSettingsMenu() {
         if (this.settingsPanel) { this.closeSettingsMenu(); return; }
 
-        // Freeze the meta-world
         const metaScene = this.scene.get('MetaWorldScene');
         if (metaScene) metaScene._frozen = true;
 
@@ -105,6 +182,7 @@ export default class MetaHUDScene extends Phaser.Scene {
                 gs.saveGame();
                 gs._saveMode = null;
             }
+            MetaState.save();
             this.showNotification('Game saved!');
             this.closeSettingsMenu();
         });
@@ -125,6 +203,7 @@ export default class MetaHUDScene extends Phaser.Scene {
                 gs.saveGame();
                 gs._saveMode = null;
             }
+            MetaState.save();
             this.closeSettingsMenu();
             this.scene.stop('MetaHUDScene');
             this.scene.stop('MetaWorldScene');
@@ -167,7 +246,6 @@ export default class MetaHUDScene extends Phaser.Scene {
 
     closeSettingsMenu() {
         if (this.settingsPanel) { this.settingsPanel.destroy(); this.settingsPanel = null; }
-        // Unfreeze the meta-world (only if not in a phone animation)
         const metaScene = this.scene.get('MetaWorldScene');
         if (metaScene && !metaScene._startWithPhone) metaScene._frozen = false;
     }
@@ -177,7 +255,7 @@ export default class MetaHUDScene extends Phaser.Scene {
             fontFamily: '"Press Start 2P", monospace', fontSize: '9px', color: CLR.uiText,
             stroke: '#000000', strokeThickness: 2,
             backgroundColor: '#1A2438DD', padding: { x: 10, y: 8 }
-        }).setOrigin(0.5).setAlpha(0).setDepth(200);
+        }).setOrigin(0.5).setAlpha(0).setDepth(500);
 
         this.tweens.add({ targets: n, alpha: 1, y: 42, duration: 300 });
         this.tweens.add({

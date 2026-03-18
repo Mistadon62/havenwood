@@ -33,7 +33,9 @@ export class MetaSpriteGenerator {
         this.phone(scene);
         this.character(scene);
         this.room(scene);
+        this.outdoor(scene);
         this.furniture(scene);
+        this.npcs(scene);
     }
 
     // Phone bezel — drawn large enough to frame a scaled-down game screen.
@@ -466,12 +468,146 @@ export class MetaSpriteGenerator {
         tex(scene, 'furniture_phone', 12, 20, g => {
             g.fillStyle(0x222233);
             g.fillRoundedRect(0, 0, 12, 20, 2);
-            // Screen (will show a tiny color to suggest the game is running)
             g.fillStyle(0x3a5a3a);
             g.fillRect(2, 3, 8, 13);
-            // Home button
             g.fillStyle(0x333344);
             g.fillCircle(6, 18, 1);
+        });
+
+        // Bench (2 tiles wide, 1 tile tall — outdoor seating)
+        tex(scene, 'furniture_bench', 64, TILE, g => {
+            // Seat
+            g.fillStyle(0x7A5C3A);
+            g.fillRect(4, 12, 56, 8);
+            // Back
+            g.fillStyle(0x6B4E2E);
+            g.fillRect(6, 6, 52, 8);
+            g.fillStyle(0x7A5C3A);
+            g.fillRect(8, 7, 48, 6);
+            // Legs
+            g.fillStyle(0x444444);
+            g.fillRect(8, 20, 3, 8);
+            g.fillRect(53, 20, 3, 8);
+            g.fillRect(28, 20, 3, 8);
+        });
+
+        // Job board (single tile — bulletin board)
+        tex(scene, 'furniture_job_board', TILE, TILE, g => {
+            // Board
+            g.fillStyle(0x8B7355);
+            g.fillRect(4, 4, 24, 24);
+            // Cork
+            g.fillStyle(0xC4A86B);
+            g.fillRect(6, 6, 20, 20);
+            // Papers
+            g.fillStyle(0xEEEEDD);
+            g.fillRect(8, 8, 7, 8);
+            g.fillStyle(0xDDDDCC);
+            g.fillRect(17, 8, 7, 8);
+            g.fillStyle(0xEEEEDD);
+            g.fillRect(10, 17, 8, 7);
+            // Pins
+            g.fillStyle(0xDD4444);
+            g.fillCircle(11, 8, 1);
+            g.fillStyle(0x4488DD);
+            g.fillCircle(20, 8, 1);
+            g.fillStyle(0x44DD44);
+            g.fillCircle(14, 17, 1);
+            // Posts
+            g.fillStyle(0x6B4E2E);
+            g.fillRect(14, 28, 4, 4);
+        });
+    }
+
+    // Outdoor tiles — grass, stone path, exterior wall.
+    static outdoor(scene) {
+        tex(scene, 'floor_grass', TILE, TILE, g => {
+            g.fillStyle(0x4A8B4A);
+            g.fillRect(0, 0, TILE, TILE);
+            const rng = new Phaser.Math.RandomDataGenerator(['fg']);
+            // Grass variation
+            g.fillStyle(0x5A9B5A);
+            for (let j = 0; j < 5; j++) {
+                g.fillRect(rng.between(1, 28), rng.between(1, 28), 3, 2);
+            }
+            g.fillStyle(0x3A7B3A);
+            for (let j = 0; j < 3; j++) {
+                g.fillRect(rng.between(1, 28), rng.between(1, 28), 2, 2);
+            }
+        });
+
+        tex(scene, 'floor_stone', TILE, TILE, g => {
+            g.fillStyle(0x999988);
+            g.fillRect(0, 0, TILE, TILE);
+            // Stone borders
+            g.fillStyle(0x888877);
+            g.fillRect(0, 0, TILE, 1);
+            g.fillRect(0, 0, 1, TILE);
+            // Variation
+            g.fillStyle(0xAAAA99);
+            const rng = new Phaser.Math.RandomDataGenerator(['fs']);
+            for (let j = 0; j < 3; j++) {
+                g.fillRect(rng.between(2, 26), rng.between(2, 26), 4, 2);
+            }
+        });
+
+        tex(scene, 'wall_exterior', TILE, TILE, g => {
+            // Brick-style exterior
+            g.fillStyle(0x8B6B55);
+            g.fillRect(0, 0, TILE, TILE);
+            // Brick lines
+            g.fillStyle(0x7A5A44);
+            g.fillRect(0, 7, TILE, 1);
+            g.fillRect(0, 15, TILE, 1);
+            g.fillRect(0, 23, TILE, 1);
+            // Offset brick pattern
+            g.fillRect(8, 0, 1, 7);
+            g.fillRect(24, 0, 1, 7);
+            g.fillRect(0, 8, 1, 7);
+            g.fillRect(16, 8, 1, 7);
+            g.fillRect(8, 16, 1, 7);
+            g.fillRect(24, 16, 1, 7);
+            g.fillRect(0, 24, 1, 8);
+            g.fillRect(16, 24, 1, 8);
+        });
+    }
+
+    // NPC sprites
+    static npcs(scene) {
+        const skinColor = 0xDDBB99;
+        const hairColor = 0x884422;
+        const coatColor = 0xEEEEDD; // lab coat
+        const shirtColor = 0x4488AA;
+
+        // Professor Elara — facing down, lab coat
+        tex(scene, 'npc_elara', TILE, TILE, g => {
+            // Hair
+            rect(g, 11, 2, 10, 5, hairColor);
+            rect(g, 10, 5, 12, 3, hairColor); // wider at sides
+            // Head
+            rect(g, 12, 5, 8, 7, skinColor);
+            // Eyes
+            rect(g, 14, 8, 2, 2, 0x222222);
+            rect(g, 18, 8, 2, 2, 0x222222);
+            // Glasses
+            rect(g, 13, 7, 4, 3, 0x666688);
+            rect(g, 17, 7, 4, 3, 0x666688);
+            rect(g, 14, 8, 2, 1, 0xAABBDD);
+            rect(g, 18, 8, 2, 1, 0xAABBDD);
+            rect(g, 16, 8, 2, 1, 0x666688); // bridge
+            // Lab coat
+            rect(g, 9, 12, 14, 10, coatColor);
+            // Shirt underneath
+            rect(g, 12, 13, 8, 8, shirtColor);
+            // Arms (coat sleeves)
+            rect(g, 7, 14, 3, 7, coatColor);
+            rect(g, 22, 14, 3, 7, coatColor);
+            // Legs
+            rect(g, 11, 22, 4, 6, 0x445566);
+            rect(g, 17, 22, 4, 6, 0x445566);
+            // Shoes
+            rect(g, 11, 27, 4, 3, 0x333333);
+            rect(g, 17, 27, 4, 3, 0x333333);
         });
     }
 }

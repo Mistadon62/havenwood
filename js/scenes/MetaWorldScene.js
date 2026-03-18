@@ -1,85 +1,75 @@
-// MetaWorldScene — The "real world" top-down room where the character lives.
-// The player controls the character with WASD/arrow keys. Pressing E/Space
-// anywhere makes the character pull out their phone and switches to Havenwood.
-// When arriving from Havenwood, the character starts holding the phone and
-// plays a "put away" animation before becoming controllable.
+// MetaWorldScene — The "real world" top-down scene where the character lives.
+// Data-driven: loads room layout, furniture, NPCs, and interactables from MetaLocations.
+// Supports door transitions between locations, proximity-based interaction,
+// time progression, and cross-mode unlocks.
 
 import { W, H, TILE, CLR } from '../GameData.js';
+import { getLocation } from '../MetaLocations.js';
+import { getNPC } from '../MetaNPCs.js';
+import MetaState from '../MetaStateManager.js';
+import MetaDialogue from '../MetaDialogue.js';
+import MetaCrossModeUnlocks from '../MetaCrossModeUnlocks.js';
 
-// Room dimensions in tiles
-const ROOM_COLS = 14;
-const ROOM_ROWS = 10;
-// Offset to center the room on the canvas
-const ROOM_X = Math.floor((W - ROOM_COLS * TILE) / 2);
-const ROOM_Y = Math.floor((H - ROOM_ROWS * TILE) / 2);
-
-// Room layout: 0=floor, 1=wall, 2=wall_window, 9=door
-const ROOM_MAP = [
-    [1, 1, 1, 1, 2, 1, 1, 1, 2, 1, 1, 1, 1, 1],
-    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-    [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-    [1, 1, 1, 1, 1, 1, 9, 9, 1, 1, 1, 1, 1, 1],
-];
-
-// Furniture placement: { type, gx, gy } — gx/gy in room-tile coords
-const FURNITURE = [
-    { type: 'desk', gx: 2, gy: 1 },
-    { type: 'chair', gx: 3, gy: 2 },
-    { type: 'bed', gx: 10, gy: 1 },
-    { type: 'bookshelf', gx: 1, gy: 4 },
-    { type: 'bookshelf', gx: 1, gy: 5 },
-    { type: 'nightstand', gx: 9, gy: 1 },
-    { type: 'lamp', gx: 9, gy: 1 },
-    { type: 'rug', gx: 5, gy: 4 },
-];
-
-// Character movement speed in pixels per second
 const MOVE_SPEED = 120;
+// 1 real second = 1 game minute
+const META_TIME_SCALE = 1;
 
 export default class MetaWorldScene extends Phaser.Scene {
     constructor() { super('MetaWorldScene'); }
 
     init(data) {
-        // If arriving from Havenwood, character starts holding phone
         this._startWithPhone = data?.startWithPhone || false;
+        this._locationId = data?.locationId || MetaState.state.currentLocation || 'bedroom';
+        this._spawnGx = data?.spawnGx;
+        this._spawnGy = data?.spawnGy;
     }
 
     create() {
         this.cameras.main.setRoundPixels(true);
 
+        this.location = getLocation(this._locationId);
+        MetaState.state.currentLocation = this._locationId;
+
         // Background fill
         this.add.rectangle(W / 2, H / 2, W, H, 0x1a1a2a).setDepth(0);
 
+        this.roomX = Math.floor((W - this.location.cols * TILE) / 2);
+        this.roomY = Math.floor((H - this.location.rows * TILE) / 2);
+
         this.drawRoom();
         this.placeFurniture();
+        this.placeNPCs();
         this.createCharacter();
         this.setupInput();
 
         this._interactCooldown = false;
-        this._frozen = this._startWithPhone; // frozen until put-away animation completes
+        this._frozen = this._startWithPhone;
+        this._timeAccum = 0;
+        this._doorCooldown = false;
 
-        // If starting with phone, show the phone-holding pose immediately
         if (this._startWithPhone) {
             this.char.setTexture('char_phone');
         }
     }
 
     drawRoom() {
-        for (let ry = 0; ry < ROOM_ROWS; ry++) {
-            for (let rx = 0; rx < ROOM_COLS; rx++) {
-                const tile = ROOM_MAP[ry][rx];
-                const px = ROOM_X + rx * TILE + TILE / 2;
-                const py = ROOM_Y + ry * TILE + TILE / 2;
-                let texKey = 'floor_wood';
-                if (tile === 1) texKey = 'wall';
-                else if (tile === 2) texKey = 'wall_window';
-                else if (tile === 9) texKey = 'floor_wood'; // door (walkable)
+        const loc = this.location;
+        const tileTextures = {
+            0: loc.floorTile || 'floor_wood',
+            1: 'wall',
+            2: 'wall_window',
+            3: 'floor_grass',
+            4: 'floor_stone',
+            5: 'wall_exterior',
+            9: loc.floorTile || 'floor_wood', // door (walkable)
+        };
+
+        for (let ry = 0; ry < loc.rows; ry++) {
+            for (let rx = 0; rx < loc.cols; rx++) {
+                const tile = loc.tileMap[ry][rx];
+                const px = this.roomX + rx * TILE + TILE / 2;
+                const py = this.roomY + ry * TILE + TILE / 2;
+                const texKey = tileTextures[tile] || 'floor_wood';
                 this.add.image(px, py, texKey).setDepth(1);
             }
         }
@@ -87,9 +77,9 @@ export default class MetaWorldScene extends Phaser.Scene {
 
     placeFurniture() {
         this.furnitureSprites = [];
-        for (const f of FURNITURE) {
-            const px = ROOM_X + f.gx * TILE;
-            const py = ROOM_Y + f.gy * TILE;
+        for (const f of this.location.furniture) {
+            const px = this.roomX + f.gx * TILE;
+            const py = this.roomY + f.gy * TILE;
 
             if (f.type === 'rug') {
                 const rug = this.add.image(px + 48, py + 32, 'furniture_rug').setDepth(2);
@@ -104,6 +94,12 @@ export default class MetaWorldScene extends Phaser.Scene {
                 const lamp = this.add.image(px + TILE / 2, py + TILE / 2 - 8, 'furniture_lamp').setDepth(7);
                 this.furnitureSprites.push(lamp);
                 this.add.circle(px + TILE / 2, py + TILE / 2, 40, 0xFFFF88, 0.06).setDepth(3);
+            } else if (f.type === 'bench') {
+                const bench = this.add.image(px + 32, py + TILE / 2, 'furniture_bench').setDepth(5);
+                this.furnitureSprites.push(bench);
+            } else if (f.type === 'job_board') {
+                const jb = this.add.image(px + TILE / 2, py + TILE / 2, 'furniture_job_board').setDepth(5);
+                this.furnitureSprites.push(jb);
             } else {
                 const key = `furniture_${f.type}`;
                 if (this.textures.exists(key)) {
@@ -112,12 +108,37 @@ export default class MetaWorldScene extends Phaser.Scene {
                 }
             }
         }
+
+        // Place interactable-only objects (like job_board) that aren't in furniture
+        for (const ia of this.location.interactables) {
+            if (ia.action === 'job' && !this.location.furniture.some(f => f.type === 'job_board' && f.gx === ia.gx && f.gy === ia.gy)) {
+                const px = this.roomX + ia.gx * TILE;
+                const py = this.roomY + ia.gy * TILE;
+                this.add.image(px + TILE / 2, py + TILE / 2, 'furniture_job_board').setDepth(5);
+            }
+        }
+    }
+
+    placeNPCs() {
+        this.npcSprites = [];
+        for (const npcRef of this.location.npcs) {
+            const npcDef = getNPC(npcRef.id);
+            if (!npcDef) continue;
+            const px = this.roomX + npcRef.gx * TILE + TILE / 2;
+            const py = this.roomY + npcRef.gy * TILE + TILE / 2;
+            const sprite = this.add.image(px, py, npcDef.spriteKey).setDepth(10);
+            this.npcSprites.push({ id: npcRef.id, gx: npcRef.gx, gy: npcRef.gy, sprite, def: npcDef });
+        }
     }
 
     createCharacter() {
-        const startGx = 6, startGy = 5;
-        const px = ROOM_X + startGx * TILE + TILE / 2;
-        const py = ROOM_Y + startGy * TILE + TILE / 2;
+        const gx = this._spawnGx ?? MetaState.state.playerTileX ?? 6;
+        const gy = this._spawnGy ?? MetaState.state.playerTileY ?? 5;
+        // Clamp to room bounds
+        const clampedGx = Math.max(1, Math.min(gx, this.location.cols - 2));
+        const clampedGy = Math.max(1, Math.min(gy, this.location.rows - 2));
+        const px = this.roomX + clampedGx * TILE + TILE / 2;
+        const py = this.roomY + clampedGy * TILE + TILE / 2;
 
         this.char = this.add.image(px, py, 'char_down').setDepth(10);
         this.charDir = 'down';
@@ -139,26 +160,97 @@ export default class MetaWorldScene extends Phaser.Scene {
     }
 
     isWalkable(wx, wy) {
-        const rx = Math.floor((wx - ROOM_X) / TILE);
-        const ry = Math.floor((wy - ROOM_Y) / TILE);
-        if (rx < 0 || rx >= ROOM_COLS || ry < 0 || ry >= ROOM_ROWS) return false;
-        const tile = ROOM_MAP[ry][rx];
-        if (tile === 1 || tile === 2) return false;
+        const rx = Math.floor((wx - this.roomX) / TILE);
+        const ry = Math.floor((wy - this.roomY) / TILE);
+        if (rx < 0 || rx >= this.location.cols || ry < 0 || ry >= this.location.rows) return false;
+        const tile = this.location.tileMap[ry][rx];
+        if (tile === 1 || tile === 2 || tile === 5) return false;
 
-        for (const f of FURNITURE) {
+        // Furniture collision
+        for (const f of this.location.furniture) {
             if (f.type === 'rug' || f.type === 'lamp') continue;
             let fw = 1, fh = 1;
-            if (f.type === 'desk') { fw = 2; fh = 1; }
+            if (f.type === 'desk' || f.type === 'bench') { fw = 2; fh = 1; }
             if (f.type === 'bed') { fw = 2; fh = 3; }
             if (rx >= f.gx && rx < f.gx + fw && ry >= f.gy && ry < f.gy + fh) return false;
         }
+
+        // NPC collision
+        for (const npcRef of this.location.npcs) {
+            if (rx === npcRef.gx && ry === npcRef.gy) return false;
+        }
+
+        // Interactable collision (job board etc.)
+        for (const ia of this.location.interactables) {
+            if (ia.action === 'job' && rx >= ia.gx && rx < ia.gx + (ia.w || 1) && ry >= ia.gy && ry < ia.gy + (ia.h || 1)) return false;
+        }
+
         return true;
     }
 
+    // Get the tile the character is facing
+    getFacingTile() {
+        const rx = Math.floor((this.char.x - this.roomX) / TILE);
+        const ry = Math.floor((this.char.y + 6 - this.roomY) / TILE);
+        let fx = rx, fy = ry;
+        if (this.charDir === 'up') fy--;
+        else if (this.charDir === 'down') fy++;
+        else if (this.charDir === 'left') fx--;
+        else if (this.charDir === 'right') fx++;
+        return { fx, fy };
+    }
+
+    // Check what's at a tile position
+    getInteractableAt(fx, fy) {
+        // Check NPCs
+        for (const npcRef of this.location.npcs) {
+            if (npcRef.gx === fx && npcRef.gy === fy) {
+                return { type: 'npc', id: npcRef.id };
+            }
+        }
+        // Check interactables
+        for (const ia of this.location.interactables) {
+            const w = ia.w || 1, h = ia.h || 1;
+            if (fx >= ia.gx && fx < ia.gx + w && fy >= ia.gy && fy < ia.gy + h) {
+                return { type: 'interactable', data: ia };
+            }
+        }
+        return null;
+    }
+
     update(time, delta) {
+        // Handle dialogue advancement even when frozen
+        if (MetaDialogue.isActive()) {
+            if (Phaser.Input.Keyboard.JustDown(this.interactKey) ||
+                Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
+                const hudScene = this.scene.get('MetaHUDScene');
+                MetaDialogue.advance(hudScene);
+            }
+            return;
+        }
+
         if (this._frozen) return;
+
         this.handleMovement(delta);
+        this.handleDoors();
         this.handleInteraction();
+        this.updateTime(delta);
+    }
+
+    updateTime(delta) {
+        this._timeAccum += delta;
+        const tickMs = 1000 / META_TIME_SCALE;
+        if (this._timeAccum >= tickMs) {
+            const mins = Math.floor(this._timeAccum / tickMs);
+            this._timeAccum -= mins * tickMs;
+            MetaState.advanceTime(mins);
+            this.game.events.emit('metaTimeUpdate');
+
+            // Late-night dimming
+            if (MetaState.isLate()) {
+                this.cameras.main.setAlpha(0.85);
+            }
+        }
     }
 
     handleMovement(delta) {
@@ -221,6 +313,37 @@ export default class MetaWorldScene extends Phaser.Scene {
             this.walkTimer = 0;
             this.walkFrame = 0;
         }
+
+        // Save player position
+        MetaState.state.playerTileX = Math.floor((this.char.x - this.roomX) / TILE);
+        MetaState.state.playerTileY = Math.floor((this.char.y + 6 - this.roomY) / TILE);
+    }
+
+    handleDoors() {
+        if (this._doorCooldown) return;
+        const rx = Math.floor((this.char.x - this.roomX) / TILE);
+        const ry = Math.floor((this.char.y + 6 - this.roomY) / TILE);
+
+        for (const door of this.location.doors) {
+            if (rx === door.gx && ry === door.gy) {
+                this._doorCooldown = true;
+                this._frozen = true;
+
+                // Brief fade transition
+                this.cameras.main.fadeOut(200, 0, 0, 0);
+                this.cameras.main.once('camerafadeoutcomplete', () => {
+                    // Stop meta HUD and restart this scene with new location
+                    this.scene.get('MetaHUDScene')?.scene.restart();
+                    this.scene.restart({
+                        locationId: door.targetLocation,
+                        spawnGx: door.spawnGx,
+                        spawnGy: door.spawnGy,
+                        startWithPhone: false,
+                    });
+                });
+                return;
+            }
+        }
     }
 
     handleInteraction() {
@@ -228,10 +351,165 @@ export default class MetaWorldScene extends Phaser.Scene {
 
         if (Phaser.Input.Keyboard.JustDown(this.interactKey) ||
             Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
-            this._interactCooldown = true;
-            this.time.delayedCall(500, () => { this._interactCooldown = false; });
-            this.zoomIntoPhone();
+
+            const { fx, fy } = this.getFacingTile();
+            const target = this.getInteractableAt(fx, fy);
+
+            if (target) {
+                this._interactCooldown = true;
+                this.time.delayedCall(300, () => { this._interactCooldown = false; });
+
+                if (target.type === 'npc') {
+                    this.interactWithNPC(target.id);
+                } else if (target.type === 'interactable') {
+                    this.interactWithObject(target.data);
+                }
+            } else {
+                // No target — pull out phone
+                this._interactCooldown = true;
+                this.time.delayedCall(500, () => { this._interactCooldown = false; });
+                this.zoomIntoPhone();
+            }
         }
+    }
+
+    interactWithNPC(npcId) {
+        const npcDef = getNPC(npcId);
+        if (!npcDef) return;
+
+        const dialogue = npcDef.getDialogue();
+        const hudScene = this.scene.get('MetaHUDScene');
+
+        MetaDialogue.show(hudScene, {
+            speaker: dialogue.speaker,
+            lines: dialogue.lines,
+            choices: dialogue.choices,
+            onChoice: (action) => {
+                npcDef.handleAction(action, hudScene);
+            },
+        });
+    }
+
+    interactWithObject(ia) {
+        const hudScene = this.scene.get('MetaHUDScene');
+
+        if (ia.action === 'sleep') {
+            this.doSleep(hudScene);
+        } else if (ia.action === 'study') {
+            this.doStudy(hudScene);
+        } else if (ia.action === 'job') {
+            this.doJob(hudScene);
+        }
+    }
+
+    doSleep(hudScene) {
+        if (MetaState.state.timeOfDay < 1080) { // before 6 PM
+            MetaDialogue.show(hudScene, {
+                speaker: null,
+                lines: ['It\'s still early...'],
+                choices: [
+                    { label: 'Sleep anyway', action: 'sleep' },
+                    { label: 'Never mind', action: 'cancel' },
+                ],
+                onChoice: (action) => {
+                    if (action === 'sleep') this.executeSleep();
+                },
+            });
+        } else {
+            this.executeSleep();
+        }
+    }
+
+    executeSleep() {
+        this._frozen = true;
+        this.cameras.main.fadeOut(800, 0, 0, 0);
+        this.cameras.main.once('camerafadeoutcomplete', () => {
+            MetaState.nextDay();
+            MetaState.save();
+            const hudScene = this.scene.get('MetaHUDScene');
+            if (hudScene) hudScene.refreshStatusBar();
+
+            this.cameras.main.fadeIn(800, 0, 0, 0);
+            this.cameras.main.setAlpha(1);
+            this._frozen = false;
+
+            if (hudScene) hudScene.showNotification(`Day ${MetaState.state.day} — ${MetaState.getDayName()}`);
+        });
+    }
+
+    doStudy(hudScene) {
+        const studied = MetaState.hasFlag(`study_day_${MetaState.state.day}`);
+        if (studied) {
+            MetaDialogue.show(hudScene, {
+                speaker: null,
+                lines: ['You\'ve already studied today.', 'Take a break!'],
+            });
+            return;
+        }
+        if (MetaState.state.energy < 10) {
+            MetaDialogue.show(hudScene, {
+                speaker: null,
+                lines: ['Too tired to focus...'],
+            });
+            return;
+        }
+
+        MetaDialogue.show(hudScene, {
+            speaker: null,
+            lines: ['Textbooks on wildlife conservation...'],
+            choices: [
+                { label: 'Study (-10 energy, 30min)', action: 'study' },
+                { label: 'Not now', action: 'cancel' },
+            ],
+            onChoice: (action) => {
+                if (action !== 'study') return;
+                MetaState.spendEnergy(10);
+                MetaState.advanceTime(30);
+                MetaState.addKnowledge(5);
+                MetaState.addMood(2);
+                MetaState.setFlag(`study_day_${MetaState.state.day}`);
+                hudScene.refreshStatusBar();
+                hudScene.showNotification('+5 Knowledge');
+            },
+        });
+    }
+
+    doJob(hudScene) {
+        const workedToday = MetaState.hasFlag(`job_day_${MetaState.state.day}`);
+        if (workedToday) {
+            MetaDialogue.show(hudScene, {
+                speaker: null,
+                lines: ['You already worked a shift today.', 'Come back tomorrow.'],
+            });
+            return;
+        }
+        if (MetaState.state.energy < 25) {
+            MetaDialogue.show(hudScene, {
+                speaker: null,
+                lines: ['You\'re too tired to work right now.'],
+            });
+            return;
+        }
+
+        MetaDialogue.show(hudScene, {
+            speaker: null,
+            lines: ['Campus Pet Store — Help Wanted', 'Part-time position available.'],
+            choices: [
+                { label: 'Work shift (-25 energy, 2hrs)', action: 'work' },
+                { label: 'Not today', action: 'cancel' },
+            ],
+            onChoice: (action) => {
+                if (action !== 'work') return;
+                MetaState.spendEnergy(25);
+                MetaState.advanceTime(120);
+                MetaState.addMoney(30);
+                MetaState.addMood(-5);
+                MetaState.state.shiftsWorked++;
+                MetaState.setFlag(`job_day_${MetaState.state.day}`);
+                hudScene.refreshStatusBar();
+                hudScene.showNotification('+$30 — Hard work pays off!');
+            },
+        });
     }
 
     // ── Pull out phone → switch to Havenwood ──
@@ -239,11 +517,21 @@ export default class MetaWorldScene extends Phaser.Scene {
     zoomIntoPhone() {
         this._frozen = true;
 
-        // Face down and show pull-out animation
+        // Check cross-mode unlocks (meta -> havenwood)
+        const gs = this.scene.get('GameScene');
+        if (gs) {
+            const notifications = MetaCrossModeUnlocks.checkAndApply('meta->havenwood', gs.state);
+            const hudScene = this.scene.get('MetaHUDScene');
+            for (const n of notifications) {
+                if (hudScene) hudScene.showNotification(n);
+            }
+        }
+
+        MetaState.save();
+
         this.charDir = 'down';
         this.char.setTexture('char_down');
 
-        // Phone rises from pocket to hands
         const phoneX = this.char.x;
         const phoneStartY = this.char.y + 4;
         const phoneEndY = this.char.y - 6;
@@ -259,11 +547,9 @@ export default class MetaWorldScene extends Phaser.Scene {
             duration: 300,
             ease: 'Quad.easeOut',
             onComplete: () => {
-                // Swap to phone-holding pose
                 this.char.setTexture('char_phone');
                 phoneSpr.destroy();
 
-                // Screen glow expands then flashes white to cover the scene switch
                 const glow = this.add.circle(this.char.x, this.char.y - 2, 6, 0x55AA55, 0)
                     .setDepth(12);
                 this.tweens.add({
@@ -275,7 +561,6 @@ export default class MetaWorldScene extends Phaser.Scene {
                     ease: 'Quad.easeIn',
                     onComplete: () => {
                         glow.destroy();
-                        // Flash overlay to mask the switch
                         const flash = this.add.rectangle(W / 2, H / 2, W, H, 0xffffff, 0)
                             .setDepth(100);
                         this.tweens.add({
@@ -283,7 +568,6 @@ export default class MetaWorldScene extends Phaser.Scene {
                             alpha: 0.8,
                             duration: 150,
                             onComplete: () => {
-                                // Switch scenes
                                 this.scene.sleep('MetaWorldScene');
                                 this.scene.sleep('MetaHUDScene');
                                 this.scene.wake('GameScene');
@@ -300,25 +584,31 @@ export default class MetaWorldScene extends Phaser.Scene {
         });
     }
 
-    // ── Put away phone (called by TransitionScene after zoom-out completes) ──
+    // ── Put away phone (called after arriving from Havenwood) ──
 
     playPutAwayPhone() {
-        // Character is currently in char_phone pose. Animate putting it away.
         this._frozen = true;
         this.charDir = 'down';
         this.char.setTexture('char_phone');
 
-        // 1) Phone sprite appears from the character's hands
+        // Check cross-mode unlocks (havenwood -> meta)
+        const gs = this.scene.get('GameScene');
+        if (gs) {
+            const notifications = MetaCrossModeUnlocks.checkAndApply('havenwood->meta', gs.state);
+            const hudScene = this.scene.get('MetaHUDScene');
+            for (const n of notifications) {
+                if (hudScene) hudScene.showNotification(n);
+            }
+        }
+
         const phoneX = this.char.x;
         const phoneStartY = this.char.y - 6;
         const phoneEndY = this.char.y + 4;
         const phoneSpr = this.add.image(phoneX, phoneStartY, 'furniture_phone')
             .setDepth(11).setAlpha(1);
 
-        // Swap character back to normal immediately (phone sprite covers the transition)
         this.char.setTexture('char_down');
 
-        // 2) Phone drops back to pocket and fades
         this.tweens.add({
             targets: phoneSpr,
             y: phoneEndY,
@@ -329,7 +619,6 @@ export default class MetaWorldScene extends Phaser.Scene {
             ease: 'Quad.easeIn',
             onComplete: () => {
                 phoneSpr.destroy();
-                // 3) Clear phone flag and unfreeze — player can now move
                 this._startWithPhone = false;
                 this._frozen = false;
                 this._interactCooldown = true;
