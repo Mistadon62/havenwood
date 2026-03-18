@@ -18,6 +18,12 @@ const DEFAULTS = {
     money: 50,
     knowledge: 0,
 
+    // Weather (rolled each morning)
+    weather: 'sunny', // sunny, cloudy, rainy, snowy
+
+    // Inventory (array of item IDs, max 8)
+    inventory: [],
+
     // Progression
     classesAttended: 0,
     shiftsWorked: 0,
@@ -26,6 +32,13 @@ const DEFAULTS = {
 
     // Cross-mode unlock tracking
     unlocksGranted: [],
+
+    // Friendships (npcId → 0-100)
+    friendships: {},
+
+    // Quests (questId → { status: 'active'|'complete', progress: {} })
+    quests: {},
+    questsCompleted: 0,
 
     // Pending purchases (applied when switching to Havenwood)
     pendingFood: 0,
@@ -93,6 +106,20 @@ class MetaStateManager {
         // Mood drifts toward 50 overnight
         if (this.state.mood > 50) this.state.mood = Math.max(50, this.state.mood - 5);
         else if (this.state.mood < 50) this.state.mood = Math.min(50, this.state.mood + 5);
+        // Roll weather
+        this.rollWeather();
+    }
+
+    rollWeather() {
+        const r = Math.random();
+        if (r < 0.40) this.state.weather = 'sunny';
+        else if (r < 0.70) this.state.weather = 'cloudy';
+        else if (r < 0.90) this.state.weather = 'rainy';
+        else this.state.weather = 'snowy';
+    }
+
+    getWeatherLabel() {
+        return { sunny: 'Sunny', cloudy: 'Cloudy', rainy: 'Rainy', snowy: 'Snowy' }[this.state.weather] || 'Sunny';
     }
 
     passOut() {
@@ -167,12 +194,97 @@ class MetaStateManager {
     }
     hasMetNPC(id) { return this.state.npcsMetSet.includes(id); }
 
+    // ── Friendships ──
+
+    getFriendship(npcId) {
+        return this.state.friendships[npcId] || 0;
+    }
+
+    addFriendship(npcId, amount) {
+        const cur = this.state.friendships[npcId] || 0;
+        this.state.friendships[npcId] = Math.min(100, Math.max(0, cur + amount));
+        return this.state.friendships[npcId];
+    }
+
+    getFriendshipTier(npcId) {
+        const f = this.getFriendship(npcId);
+        if (f >= 80) return 'close';    // Close friend
+        if (f >= 50) return 'friend';   // Friend
+        if (f >= 20) return 'acquaintance'; // Acquaintance
+        return 'stranger';              // Stranger
+    }
+
+    // ── Quests ──
+
+    getQuest(questId) {
+        return this.state.quests[questId] || null;
+    }
+
+    startQuest(questId) {
+        if (this.state.quests[questId]) return false;
+        this.state.quests[questId] = { status: 'active', progress: {} };
+        return true;
+    }
+
+    updateQuestProgress(questId, key, value) {
+        const q = this.state.quests[questId];
+        if (!q || q.status !== 'active') return;
+        q.progress[key] = value;
+    }
+
+    incrementQuestProgress(questId, key, amount = 1) {
+        const q = this.state.quests[questId];
+        if (!q || q.status !== 'active') return;
+        q.progress[key] = (q.progress[key] || 0) + amount;
+    }
+
+    completeQuest(questId) {
+        const q = this.state.quests[questId];
+        if (!q || q.status !== 'active') return false;
+        q.status = 'complete';
+        this.state.questsCompleted++;
+        return true;
+    }
+
+    isQuestActive(questId) {
+        const q = this.state.quests[questId];
+        return q && q.status === 'active';
+    }
+
+    isQuestComplete(questId) {
+        const q = this.state.quests[questId];
+        return q && q.status === 'complete';
+    }
+
     // ── Cross-mode unlocks ──
 
     grantUnlock(id) {
         if (!this.state.unlocksGranted.includes(id)) this.state.unlocksGranted.push(id);
     }
     hasUnlock(id) { return this.state.unlocksGranted.includes(id); }
+
+    // ── Inventory ──
+
+    addItem(itemId) {
+        if (this.state.inventory.length >= 8) return false;
+        this.state.inventory.push(itemId);
+        return true;
+    }
+
+    removeItem(itemId) {
+        const idx = this.state.inventory.indexOf(itemId);
+        if (idx < 0) return false;
+        this.state.inventory.splice(idx, 1);
+        return true;
+    }
+
+    hasItem(itemId) {
+        return this.state.inventory.includes(itemId);
+    }
+
+    countItem(itemId) {
+        return this.state.inventory.filter(i => i === itemId).length;
+    }
 }
 
 // Singleton

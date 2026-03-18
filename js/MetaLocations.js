@@ -10,6 +10,7 @@ const LOCATIONS = {
         cols: 14,
         rows: 10,
         floorTile: 'floor_wood',
+        outdoor: false,
         tileMap: [
             [1, 1, 1, 1, 2, 1, 1, 1, 2, 1, 1, 1, 1, 1],
             [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
@@ -49,11 +50,12 @@ const LOCATIONS = {
         cols: 14,
         rows: 6,
         floorTile: 'floor_wood',
+        outdoor: false,
         tileMap: [
             [1, 1, 1, 1, 1, 1, 9, 9, 1, 1, 1, 1, 1, 1],
             [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9],
+            [9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9],
             [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
             [1, 1, 1, 1, 1, 1, 9, 9, 1, 1, 1, 1, 1, 1],
         ],
@@ -65,11 +67,104 @@ const LOCATIONS = {
             // Back to bedroom (top)
             { gx: 6, gy: 0, targetLocation: 'bedroom', spawnGx: 6, spawnGy: 8 },
             { gx: 7, gy: 0, targetLocation: 'bedroom', spawnGx: 7, spawnGy: 8 },
+            // Common Room (left)
+            { gx: 0, gy: 2, targetLocation: 'common_room', spawnGx: 10, spawnGy: 3 },
+            { gx: 0, gy: 3, targetLocation: 'common_room', spawnGx: 10, spawnGy: 4 },
+            // Classroom (right)
+            { gx: 13, gy: 2, targetLocation: 'classroom', spawnGx: 1, spawnGy: 4 },
+            { gx: 13, gy: 3, targetLocation: 'classroom', spawnGx: 1, spawnGy: 5 },
             // Out to campus (bottom)
             { gx: 6, gy: 5, targetLocation: 'campus_quad', spawnGx: 7, spawnGy: 1 },
             { gx: 7, gy: 5, targetLocation: 'campus_quad', spawnGx: 7, spawnGy: 1 },
         ],
         npcs: [],
+        interactables: [],
+    },
+
+    common_room: {
+        id: 'common_room',
+        name: 'Common Room',
+        cols: 12,
+        rows: 8,
+        floorTile: 'floor_carpet',
+        outdoor: false,
+        tileMap: [
+            [1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        ],
+        furniture: [
+            { type: 'couch', gx: 1, gy: 2 },
+            { type: 'couch', gx: 1, gy: 4 },
+            { type: 'table_cafe', gx: 3, gy: 3 },
+            { type: 'vending_machine', gx: 8, gy: 1 },
+            { type: 'lamp', gx: 5, gy: 1 },
+            { type: 'tv', gx: 1, gy: 1 },
+            { type: 'rug', gx: 3, gy: 4 },
+        ],
+        doors: [
+            { gx: 11, gy: 3, targetLocation: 'hallway', spawnGx: 1, spawnGy: 2 },
+            { gx: 11, gy: 4, targetLocation: 'hallway', spawnGx: 1, spawnGy: 3 },
+        ],
+        npcs: [], // Dynamic
+        interactables: [
+            { id: 'vending', gx: 8, gy: 1, w: 1, h: 1, name: 'Vending Machine', action: 'vending_machine' },
+            { id: 'couch_rest', gx: 1, gy: 2, w: 2, h: 1, name: 'Couch', action: 'couch_rest' },
+        ],
+    },
+
+    classroom: {
+        id: 'classroom',
+        name: 'Classroom',
+        cols: 12,
+        rows: 10,
+        floorTile: 'floor_wood',
+        outdoor: false,
+        tileMap: [
+            [1, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+            [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+        ],
+        furniture: [
+            // Teacher area (front/top)
+            { type: 'chalkboard', gx: 3, gy: 1 },
+            { type: 'podium', gx: 6, gy: 2 },
+            { type: 'desk', gx: 8, gy: 1 },
+            // Student desks (3 rows)
+            { type: 'desk', gx: 2, gy: 4 },
+            { type: 'desk', gx: 5, gy: 4 },
+            { type: 'desk', gx: 8, gy: 4 },
+            { type: 'desk', gx: 2, gy: 6 },
+            { type: 'desk', gx: 5, gy: 6 },
+            { type: 'desk', gx: 8, gy: 6 },
+            { type: 'desk', gx: 2, gy: 8 },
+            { type: 'desk', gx: 5, gy: 8 },
+            { type: 'desk', gx: 8, gy: 8 },
+            // Chairs for students
+            { type: 'chair', gx: 3, gy: 5 },
+            { type: 'chair', gx: 6, gy: 5 },
+            { type: 'chair', gx: 9, gy: 5 },
+            { type: 'chair', gx: 3, gy: 7 },
+            { type: 'chair', gx: 6, gy: 7 },
+            { type: 'chair', gx: 9, gy: 7 },
+        ],
+        doors: [
+            { gx: 0, gy: 4, targetLocation: 'hallway', spawnGx: 12, spawnGy: 2 },
+            { gx: 0, gy: 5, targetLocation: 'hallway', spawnGx: 12, spawnGy: 3 },
+        ],
+        npcs: [], // Dynamic — Prof. Elara during class
         interactables: [],
     },
 
@@ -79,6 +174,7 @@ const LOCATIONS = {
         cols: 14,
         rows: 10,
         floorTile: 'floor_grass',
+        outdoor: true,
         tileMap: [
             [5, 5, 5, 5, 5, 5, 9, 9, 5, 5, 5, 5, 5, 5],
             [3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 3, 3, 3, 3],
@@ -86,24 +182,26 @@ const LOCATIONS = {
             [9, 3, 3, 3, 4, 3, 3, 3, 3, 4, 3, 3, 3, 9],
             [9, 3, 3, 3, 4, 4, 4, 4, 4, 4, 3, 3, 3, 9],
             [3, 3, 3, 3, 4, 3, 3, 3, 3, 4, 3, 3, 3, 3],
-            [3, 3, 3, 3, 4, 3, 3, 3, 3, 4, 3, 3, 3, 3],
-            [3, 3, 3, 3, 4, 3, 3, 3, 3, 4, 3, 3, 3, 3],
+            [9, 3, 3, 3, 4, 3, 3, 3, 3, 4, 3, 3, 3, 3],
+            [9, 3, 3, 3, 4, 3, 3, 3, 3, 4, 3, 3, 3, 3],
             [3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 3, 3, 3, 3],
             [5, 5, 5, 5, 5, 5, 9, 9, 5, 5, 5, 5, 5, 5],
         ],
         furniture: [
             { type: 'bench', gx: 2, gy: 5 },
             { type: 'bench', gx: 11, gy: 5 },
-            { type: 'bench', gx: 2, gy: 7 },
             { type: 'bench', gx: 11, gy: 7 },
         ],
         doors: [
             // Hallway (top)
             { gx: 6, gy: 0, targetLocation: 'hallway', spawnGx: 6, spawnGy: 4 },
             { gx: 7, gy: 0, targetLocation: 'hallway', spawnGx: 7, spawnGy: 4 },
-            // Library (left)
+            // Library (left, rows 3-4)
             { gx: 0, gy: 3, targetLocation: 'library', spawnGx: 10, spawnGy: 4 },
             { gx: 0, gy: 4, targetLocation: 'library', spawnGx: 10, spawnGy: 5 },
+            // Park (left, rows 6-7)
+            { gx: 0, gy: 6, targetLocation: 'park', spawnGx: 12, spawnGy: 4 },
+            { gx: 0, gy: 7, targetLocation: 'park', spawnGx: 12, spawnGy: 5 },
             // Pet Store (right)
             { gx: 13, gy: 3, targetLocation: 'pet_store', spawnGx: 1, spawnGy: 4 },
             { gx: 13, gy: 4, targetLocation: 'pet_store', spawnGx: 1, spawnGy: 5 },
@@ -123,6 +221,7 @@ const LOCATIONS = {
         cols: 12,
         rows: 10,
         floorTile: 'floor_wood',
+        outdoor: false,
         tileMap: [
             [1, 2, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1],
             [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
@@ -153,9 +252,53 @@ const LOCATIONS = {
             { gx: 11, gy: 4, targetLocation: 'campus_quad', spawnGx: 1, spawnGy: 3 },
             { gx: 11, gy: 5, targetLocation: 'campus_quad', spawnGx: 1, spawnGy: 4 },
         ],
-        npcs: [], // Dynamic — see MetaNPCs schedules
+        npcs: [], // Dynamic
         interactables: [
             { id: 'lib_study', gx: 4, gy: 2, w: 2, h: 1, name: 'Study Desk', action: 'library_study' },
+        ],
+    },
+
+    park: {
+        id: 'park',
+        name: 'Campus Park',
+        cols: 14,
+        rows: 10,
+        floorTile: 'floor_grass',
+        outdoor: true,
+        tileMap: [
+            [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+            [3, 3, 3, 3, 3, 4, 4, 4, 4, 3, 3, 3, 3, 3],
+            [3, 3, 3, 3, 3, 4, 3, 3, 4, 3, 3, 3, 3, 3],
+            [3, 3, 3, 3, 3, 4, 3, 3, 4, 3, 3, 3, 3, 3],
+            [3, 3, 3, 4, 4, 4, 3, 3, 4, 4, 4, 3, 3, 9],
+            [3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 4, 3, 3, 9],
+            [3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 4, 3, 3, 3],
+            [3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 3, 3, 3],
+            [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+            [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+        ],
+        furniture: [
+            { type: 'tree', gx: 1, gy: 1 },
+            { type: 'tree', gx: 12, gy: 1 },
+            { type: 'tree', gx: 1, gy: 8 },
+            { type: 'tree', gx: 12, gy: 8 },
+            { type: 'tree', gx: 1, gy: 5 },
+            { type: 'pond', gx: 6, gy: 5 },
+            { type: 'bench', gx: 4, gy: 2 },
+            { type: 'bench', gx: 9, gy: 6 },
+            { type: 'flower', gx: 3, gy: 8 },
+            { type: 'flower', gx: 5, gy: 9 },
+            { type: 'flower', gx: 10, gy: 9 },
+            { type: 'flower', gx: 11, gy: 3 },
+        ],
+        doors: [
+            { gx: 13, gy: 4, targetLocation: 'campus_quad', spawnGx: 1, spawnGy: 6 },
+            { gx: 13, gy: 5, targetLocation: 'campus_quad', spawnGx: 1, spawnGy: 7 },
+        ],
+        npcs: [], // Dynamic
+        interactables: [
+            { id: 'park_walk', gx: 6, gy: 3, w: 2, h: 1, name: 'Nature Walk', action: 'park_walk' },
+            { id: 'pick_flowers', gx: 3, gy: 8, w: 1, h: 1, name: 'Flowers', action: 'pick_flowers' },
         ],
     },
 
@@ -165,6 +308,7 @@ const LOCATIONS = {
         cols: 12,
         rows: 8,
         floorTile: 'floor_tile',
+        outdoor: false,
         tileMap: [
             [1, 1, 1, 2, 1, 1, 1, 1, 2, 1, 1, 1],
             [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
@@ -192,7 +336,7 @@ const LOCATIONS = {
             { gx: 0, gy: 4, targetLocation: 'campus_quad', spawnGx: 12, spawnGy: 3 },
             { gx: 0, gy: 5, targetLocation: 'campus_quad', spawnGx: 12, spawnGy: 4 },
         ],
-        npcs: [], // Dynamic — see MetaNPCs schedules
+        npcs: [], // Dynamic
         interactables: [],
     },
 
@@ -202,6 +346,7 @@ const LOCATIONS = {
         cols: 12,
         rows: 8,
         floorTile: 'floor_tile',
+        outdoor: false,
         tileMap: [
             [1, 1, 1, 1, 9, 9, 1, 1, 1, 1, 1, 1],
             [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],

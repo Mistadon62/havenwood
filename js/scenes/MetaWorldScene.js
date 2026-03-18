@@ -1,7 +1,7 @@
 // MetaWorldScene — The "real world" top-down scene where the character lives.
 // Data-driven: loads room layout, furniture, NPCs, and interactables from MetaLocations.
 // Supports door transitions between locations, proximity-based interaction,
-// time progression, and cross-mode unlocks.
+// time progression, weather overlays, and cross-mode unlocks.
 
 import { W, H, TILE, CLR } from '../GameData.js';
 import { getLocation } from '../MetaLocations.js';
@@ -9,6 +9,7 @@ import { getNPC, getNPCsAtLocation } from '../MetaNPCs.js';
 import MetaState from '../MetaStateManager.js';
 import MetaDialogue from '../MetaDialogue.js';
 import MetaCrossModeUnlocks from '../MetaCrossModeUnlocks.js';
+import MetaQuests from '../MetaQuests.js';
 
 const MOVE_SPEED = 120;
 // 1 real second = 1 game minute
@@ -35,6 +36,9 @@ export default class MetaWorldScene extends Phaser.Scene {
         // Day/night tint overlay (persistent, not tracked by _roomObjects)
         this._dayNightOverlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0).setDepth(50);
 
+        // Weather overlay container (persistent)
+        this._weatherParticles = [];
+
         this.setupInput();
         this.buildLocation(this._locationId, this._spawnGx, this._spawnGy);
 
@@ -47,6 +51,10 @@ export default class MetaWorldScene extends Phaser.Scene {
         if (this._startWithPhone) {
             this.char.setTexture('char_phone');
         }
+
+        // Initial quest check
+        this._questCheckAccum = 0;
+        this.checkQuests();
     }
 
     // Build or rebuild a location without restarting the scene (preserves input)
@@ -62,6 +70,10 @@ export default class MetaWorldScene extends Phaser.Scene {
         this.location = getLocation(locationId);
         MetaState.state.currentLocation = locationId;
 
+        // Track location visits for quests
+        if (locationId === 'library') MetaState.setFlag('visited_library');
+        if (locationId === 'park') MetaState.setFlag('visited_park');
+
         this.roomX = Math.floor((W - this.location.cols * TILE) / 2);
         this.roomY = Math.floor((H - this.location.rows * TILE) / 2);
 
@@ -69,6 +81,7 @@ export default class MetaWorldScene extends Phaser.Scene {
         this.placeFurniture();
         this.placeNPCs();
         this.createCharacter(spawnGx, spawnGy);
+        this.updateWeatherOverlay();
 
         this._doorCooldown = true;
     }
@@ -85,7 +98,6 @@ export default class MetaWorldScene extends Phaser.Scene {
             3: 'floor_grass',
             4: 'floor_stone',
             5: 'wall_exterior',
-            9: loc.floorTile || 'floor_wood',
         };
 
         for (let ry = 0; ry < loc.rows; ry++) {
@@ -93,10 +105,35 @@ export default class MetaWorldScene extends Phaser.Scene {
                 const tile = loc.tileMap[ry][rx];
                 const px = this.roomX + rx * TILE + TILE / 2;
                 const py = this.roomY + ry * TILE + TILE / 2;
-                const texKey = tileTextures[tile] || 'floor_wood';
+
+                let texKey;
+                if (tile === 9) {
+                    // Door tile — pick texture based on whether adjacent to exterior walls
+                    texKey = this._getDoorTexture(loc, rx, ry);
+                } else {
+                    texKey = tileTextures[tile] || 'floor_wood';
+                }
                 this._track(this.add.image(px, py, texKey).setDepth(1));
             }
         }
+    }
+
+    // Determine which door texture to use based on neighboring wall types
+    _getDoorTexture(loc, rx, ry) {
+        const neighbors = [
+            ry > 0 ? loc.tileMap[ry - 1][rx] : -1,
+            ry < loc.rows - 1 ? loc.tileMap[ry + 1][rx] : -1,
+            rx > 0 ? loc.tileMap[ry][rx - 1] : -1,
+            rx < loc.cols - 1 ? loc.tileMap[ry][rx + 1] : -1,
+        ];
+        // If any neighbor is an exterior wall (5), use exterior door
+        if (neighbors.includes(5)) return 'door_exterior';
+        // If any neighbor is an interior wall (1 or 2), use interior door
+        if (neighbors.includes(1) || neighbors.includes(2)) return 'door_interior';
+        // Edge of map (could be a border door)
+        if (ry === 0 || ry === loc.rows - 1 || rx === 0 || rx === loc.cols - 1) return 'door_interior';
+        // Fallback to floor
+        return loc.floorTile || 'floor_wood';
     }
 
     placeFurniture() {
@@ -127,6 +164,23 @@ export default class MetaWorldScene extends Phaser.Scene {
             } else if (f.type === 'job_board') {
                 const jb = this._track(this.add.image(px + TILE / 2, py + TILE / 2, 'furniture_job_board').setDepth(5));
                 this.furnitureSprites.push(jb);
+            } else if (f.type === 'chalkboard') {
+                const cb = this._track(this.add.image(px + 32, py + TILE / 2, 'furniture_chalkboard').setDepth(5));
+                this.furnitureSprites.push(cb);
+            } else if (f.type === 'couch') {
+                const couch = this._track(this.add.image(px + 32, py + TILE / 2, 'furniture_couch').setDepth(5));
+                this.furnitureSprites.push(couch);
+            } else if (f.type === 'pond') {
+                const pond = this._track(this.add.image(px + 32, py + 32, 'furniture_pond').setDepth(2));
+                this.furnitureSprites.push(pond);
+            } else if (f.type === 'tree') {
+                const tree = this._track(this.add.image(px + TILE / 2, py + TILE / 2, 'furniture_tree').setDepth(7));
+                this.furnitureSprites.push(tree);
+                // Shadow under tree
+                this._track(this.add.circle(px + TILE / 2, py + TILE / 2 + 4, 14, 0x000000, 0.1).setDepth(2));
+            } else if (f.type === 'flower') {
+                const fl = this._track(this.add.image(px + TILE / 2, py + TILE / 2, 'furniture_flower').setDepth(3));
+                this.furnitureSprites.push(fl);
             } else {
                 const key = `furniture_${f.type}`;
                 if (this.textures.exists(key)) {
@@ -209,10 +263,11 @@ export default class MetaWorldScene extends Phaser.Scene {
 
         // Furniture collision
         for (const f of this.location.furniture) {
-            if (f.type === 'rug' || f.type === 'lamp' || f.type === 'stool') continue;
+            if (f.type === 'rug' || f.type === 'lamp' || f.type === 'stool' || f.type === 'flower') continue;
             let fw = 1, fh = 1;
-            if (f.type === 'desk' || f.type === 'bench' || f.type === 'counter') { fw = 2; fh = 1; }
+            if (f.type === 'desk' || f.type === 'bench' || f.type === 'counter' || f.type === 'chalkboard' || f.type === 'couch') { fw = 2; fh = 1; }
             if (f.type === 'bed') { fw = 2; fh = 3; }
+            if (f.type === 'pond') { fw = 2; fh = 2; }
             if (rx >= f.gx && rx < f.gx + fw && ry >= f.gy && ry < f.gy + fh) return false;
         }
 
@@ -277,6 +332,8 @@ export default class MetaWorldScene extends Phaser.Scene {
         this.handleInteraction();
         this.updateProximityPrompt();
         this.updateTime(delta);
+        this.updateQuestChecks(delta);
+        this.animateWeather(delta);
     }
 
     updateTime(delta) {
@@ -319,6 +376,95 @@ export default class MetaWorldScene extends Phaser.Scene {
             // Night — dark blue
             this._dayNightOverlay.fillColor = 0x112244;
             this._dayNightOverlay.fillAlpha = 0.22;
+        }
+    }
+
+    // ── Weather Overlay ──
+
+    updateWeatherOverlay() {
+        // Clear old weather particles
+        for (const p of this._weatherParticles) {
+            if (p && p.destroy) p.destroy();
+        }
+        this._weatherParticles = [];
+
+        // Only show weather on outdoor locations
+        if (!this.location.outdoor) return;
+
+        const weather = MetaState.state.weather;
+        if (weather === 'rainy') {
+            this.createRainOverlay();
+        } else if (weather === 'snowy') {
+            this.createSnowOverlay();
+        } else if (weather === 'cloudy') {
+            // Subtle dark tint for cloudy
+            const cloud = this.add.rectangle(W / 2, H / 2, W, H, 0x334455, 0.08).setDepth(45);
+            this._weatherParticles.push(cloud);
+        }
+        // sunny = no overlay
+    }
+
+    createRainOverlay() {
+        // Dim overlay
+        const overlay = this.add.rectangle(W / 2, H / 2, W, H, 0x223344, 0.12).setDepth(45);
+        this._weatherParticles.push(overlay);
+
+        // Rain drop sprites falling
+        const roomW = this.location.cols * TILE;
+        const roomH = this.location.rows * TILE;
+        for (let i = 0; i < 30; i++) {
+            const x = this.roomX + Math.random() * roomW;
+            const y = this.roomY + Math.random() * roomH;
+            const drop = this.add.image(x, y, 'particle_rain').setDepth(46).setAlpha(0.5);
+            drop._rainSpeed = 100 + Math.random() * 80;
+            drop._baseX = x;
+            this._weatherParticles.push(drop);
+        }
+    }
+
+    createSnowOverlay() {
+        const overlay = this.add.rectangle(W / 2, H / 2, W, H, 0xCCDDEE, 0.06).setDepth(45);
+        this._weatherParticles.push(overlay);
+
+        const roomW = this.location.cols * TILE;
+        const roomH = this.location.rows * TILE;
+        for (let i = 0; i < 20; i++) {
+            const x = this.roomX + Math.random() * roomW;
+            const y = this.roomY + Math.random() * roomH;
+            const flake = this.add.image(x, y, 'particle_snow').setDepth(46).setAlpha(0.6);
+            flake._snowSpeed = 20 + Math.random() * 30;
+            flake._wobble = Math.random() * Math.PI * 2;
+            flake._baseX = x;
+            this._weatherParticles.push(flake);
+        }
+    }
+
+    animateWeather(delta) {
+        if (!this.location.outdoor) return;
+        const weather = MetaState.state.weather;
+        const roomBottom = this.roomY + this.location.rows * TILE;
+        const roomTop = this.roomY;
+        const roomW = this.location.cols * TILE;
+
+        for (const p of this._weatherParticles) {
+            if (!p || !p.active) continue;
+
+            if (weather === 'rainy' && p._rainSpeed) {
+                p.y += p._rainSpeed * (delta / 1000);
+                if (p.y > roomBottom) {
+                    p.y = roomTop - 10;
+                    p.x = this.roomX + Math.random() * roomW;
+                }
+            } else if (weather === 'snowy' && p._snowSpeed) {
+                p.y += p._snowSpeed * (delta / 1000);
+                p._wobble += delta * 0.002;
+                p.x = p._baseX + Math.sin(p._wobble) * 15;
+                if (p.y > roomBottom) {
+                    p.y = roomTop - 6;
+                    p._baseX = this.roomX + Math.random() * roomW;
+                    p.x = p._baseX;
+                }
+            }
         }
     }
 
@@ -456,9 +602,17 @@ export default class MetaWorldScene extends Phaser.Scene {
         if (target) {
             if (target.type === 'npc') {
                 const npcDef = getNPC(target.id);
-                hudScene.updatePrompt(`[E] Talk to ${npcDef ? npcDef.name : 'NPC'}`);
+                const tier = MetaState.getFriendshipTier(target.id);
+                const tierIcons = { stranger: '', acquaintance: ' *', friend: ' **', close: ' ***' };
+                const tierSuffix = tierIcons[tier] || '';
+                hudScene.updatePrompt(`[E] Talk to ${npcDef ? npcDef.name : 'NPC'}${tierSuffix}`);
             } else if (target.type === 'interactable') {
-                const labels = { sleep: 'Sleep', study: 'Study', job: 'Job Board', buy_coffee: 'Order', library_study: 'Study (Library)' };
+                const labels = {
+                    sleep: 'Sleep', study: 'Study', job: 'Job Board',
+                    buy_coffee: 'Order', library_study: 'Study (Library)',
+                    vending_machine: 'Vending Machine', couch_rest: 'Rest',
+                    park_walk: 'Nature Walk', pick_flowers: 'Pick Flowers',
+                };
                 hudScene.updatePrompt(`[E] ${labels[target.data.action] || target.data.name}`);
             }
         } else {
@@ -506,6 +660,8 @@ export default class MetaWorldScene extends Phaser.Scene {
             choices: dialogue.choices,
             onChoice: (action) => {
                 npcDef.handleAction(action, hudScene);
+                // Check quests after NPC interaction
+                this.checkQuests();
             },
         });
     }
@@ -523,6 +679,14 @@ export default class MetaWorldScene extends Phaser.Scene {
             this.doCafe(hudScene);
         } else if (ia.action === 'library_study') {
             this.doLibraryStudy(hudScene);
+        } else if (ia.action === 'vending_machine') {
+            this.doVendingMachine(hudScene);
+        } else if (ia.action === 'couch_rest') {
+            this.doCouchRest(hudScene);
+        } else if (ia.action === 'park_walk') {
+            this.doParkWalk(hudScene);
+        } else if (ia.action === 'pick_flowers') {
+            this.doPickFlowers(hudScene);
         }
     }
 
@@ -556,12 +720,17 @@ export default class MetaWorldScene extends Phaser.Scene {
             // Roll a random morning event
             const morningEvent = this.rollMorningEvent();
 
+            // Rebuild location to update weather overlay
+            this.buildLocation(MetaState.state.currentLocation,
+                MetaState.state.playerTileX, MetaState.state.playerTileY);
+
             this.cameras.main.fadeIn(800, 0, 0, 0);
             this._frozen = false;
             this.updateDayNightTint();
 
             const dayLabel = MetaState.state.dayOfWeek >= 5 ? `${MetaState.getDayName()} (Weekend)` : MetaState.getDayName();
-            if (hudScene) hudScene.showNotification(`Day ${MetaState.state.day} — ${dayLabel}`);
+            const weatherLabel = MetaState.getWeatherLabel();
+            if (hudScene) hudScene.showNotification(`Day ${MetaState.state.day} — ${dayLabel} — ${weatherLabel}`);
             if (morningEvent && hudScene) {
                 this.time.delayedCall(1500, () => hudScene.showNotification(morningEvent));
             }
@@ -663,14 +832,20 @@ export default class MetaWorldScene extends Phaser.Scene {
     }
 
     doCafe(hudScene) {
+        const choices = [
+            { label: 'Coffee ($5, +15 energy)', action: 'coffee' },
+            { label: 'Meal ($10, +15 mood)', action: 'meal' },
+        ];
+        // Can buy a gift coffee if inventory not full
+        if (MetaState.state.inventory.length < 8) {
+            choices.push({ label: 'Gift Coffee ($5, for a friend)', action: 'buy_gift_coffee' });
+        }
+        choices.push({ label: 'Never mind', action: 'cancel' });
+
         MetaDialogue.show(hudScene, {
             speaker: null,
             lines: ['Campus Café — What would you like?'],
-            choices: [
-                { label: 'Coffee ($5, +15 energy)', action: 'coffee' },
-                { label: 'Meal ($10, +15 mood)', action: 'meal' },
-                { label: 'Never mind', action: 'cancel' },
-            ],
+            choices,
             onChoice: (action) => {
                 if (action === 'coffee') {
                     if (!MetaState.spendMoney(5)) {
@@ -680,8 +855,10 @@ export default class MetaWorldScene extends Phaser.Scene {
                     MetaState.addEnergy(15);
                     MetaState.addMood(5);
                     MetaState.advanceTime(15);
+                    MetaState.setFlag('bought_coffee');
                     hudScene.refreshStatusBar();
                     hudScene.showNotification('+15 Energy — Coffee time!');
+                    this.checkQuests();
                 } else if (action === 'meal') {
                     if (!MetaState.spendMoney(10)) {
                         hudScene.showNotification('Not enough money!');
@@ -690,14 +867,25 @@ export default class MetaWorldScene extends Phaser.Scene {
                     MetaState.addEnergy(10);
                     MetaState.addMood(15);
                     MetaState.advanceTime(30);
+                    MetaState.setFlag('bought_coffee');
                     hudScene.refreshStatusBar();
                     hudScene.showNotification('+15 Mood — Delicious!');
+                    this.checkQuests();
+                } else if (action === 'buy_gift_coffee') {
+                    if (!MetaState.spendMoney(5)) {
+                        hudScene.showNotification('Not enough money!');
+                        return;
+                    }
+                    MetaState.addItem('coffee');
+                    hudScene.refreshStatusBar();
+                    hudScene.showNotification('Bought a coffee to give as a gift!');
                 }
             },
         });
     }
 
     doLibraryStudy(hudScene) {
+        MetaState.setFlag('visited_library');
         const studied = MetaState.hasFlag(`lib_study_day_${MetaState.state.day}`);
         if (studied) {
             MetaDialogue.show(hudScene, {
@@ -732,6 +920,185 @@ export default class MetaWorldScene extends Phaser.Scene {
                 hudScene.showNotification('+12 Knowledge — Great session!');
             },
         });
+    }
+
+    // ── New Phase 5 Interactions ──
+
+    doVendingMachine(hudScene) {
+        const choices = [
+            { label: 'Soda ($3, +10 energy)', action: 'soda' },
+            { label: 'Snack ($3, +5 mood)', action: 'snack' },
+        ];
+        // Can buy gift treat if inventory not full
+        if (MetaState.state.inventory.length < 8) {
+            choices.push({ label: 'Treat Box ($5, gift item)', action: 'buy_treat' });
+        }
+        choices.push({ label: 'Never mind', action: 'cancel' });
+
+        MetaDialogue.show(hudScene, {
+            speaker: null,
+            lines: ['The vending machine hums invitingly...'],
+            choices,
+            onChoice: (action) => {
+                if (action === 'soda') {
+                    if (!MetaState.spendMoney(3)) {
+                        hudScene.showNotification('Not enough money!');
+                        return;
+                    }
+                    MetaState.addEnergy(10);
+                    MetaState.advanceTime(5);
+                    hudScene.refreshStatusBar();
+                    hudScene.showNotification('+10 Energy — Refreshing!');
+                } else if (action === 'snack') {
+                    if (!MetaState.spendMoney(3)) {
+                        hudScene.showNotification('Not enough money!');
+                        return;
+                    }
+                    MetaState.addMood(5);
+                    MetaState.advanceTime(5);
+                    hudScene.refreshStatusBar();
+                    hudScene.showNotification('+5 Mood — Tasty snack!');
+                } else if (action === 'buy_treat') {
+                    if (!MetaState.spendMoney(5)) {
+                        hudScene.showNotification('Not enough money!');
+                        return;
+                    }
+                    MetaState.addItem('treat');
+                    hudScene.refreshStatusBar();
+                    hudScene.showNotification('Got a Treat Box — great for gifting!');
+                }
+            },
+        });
+    }
+
+    doCouchRest(hudScene) {
+        if (MetaState.state.energy >= 95) {
+            MetaDialogue.show(hudScene, {
+                speaker: null,
+                lines: ['You\'re already well-rested!'],
+            });
+            return;
+        }
+
+        MetaDialogue.show(hudScene, {
+            speaker: null,
+            lines: ['A comfy couch... perfect for a quick rest.'],
+            choices: [
+                { label: 'Rest (20min, +15 energy)', action: 'rest' },
+                { label: 'Not now', action: 'cancel' },
+            ],
+            onChoice: (action) => {
+                if (action !== 'rest') return;
+                MetaState.advanceTime(20);
+                MetaState.addEnergy(15);
+                MetaState.addMood(3);
+                hudScene.refreshStatusBar();
+                hudScene.showNotification('+15 Energy, +3 Mood — Nice nap!');
+            },
+        });
+    }
+
+    doParkWalk(hudScene) {
+        const walkedToday = MetaState.hasFlag(`walk_day_${MetaState.state.day}`);
+        if (walkedToday) {
+            MetaDialogue.show(hudScene, {
+                speaker: null,
+                lines: ['You\'ve already taken a walk today.', 'The park will be here tomorrow!'],
+            });
+            return;
+        }
+        if (MetaState.state.energy < 10) {
+            MetaDialogue.show(hudScene, {
+                speaker: null,
+                lines: ['Too tired for a walk right now...'],
+            });
+            return;
+        }
+
+        const weatherBonus = MetaState.state.weather === 'sunny' ? 5 : 0;
+        const moodGain = 12 + weatherBonus;
+        const weatherNote = weatherBonus > 0 ? ' (Sunny bonus!)' : '';
+
+        MetaDialogue.show(hudScene, {
+            speaker: null,
+            lines: ['The park is peaceful...', 'A walk among the trees would be nice.'],
+            choices: [
+                { label: `Walk (-10 energy, 30min, +${moodGain} mood)`, action: 'walk' },
+                { label: 'Not now', action: 'cancel' },
+            ],
+            onChoice: (action) => {
+                if (action !== 'walk') return;
+                MetaState.spendEnergy(10);
+                MetaState.advanceTime(30);
+                MetaState.addMood(moodGain);
+                MetaState.addKnowledge(2);
+                MetaState.setFlag(`walk_day_${MetaState.state.day}`);
+                hudScene.refreshStatusBar();
+                hudScene.showNotification(`+${moodGain} Mood, +2 Knowledge${weatherNote}`);
+            },
+        });
+    }
+
+    doPickFlowers(hudScene) {
+        if (MetaState.state.inventory.length >= 8) {
+            MetaDialogue.show(hudScene, {
+                speaker: null,
+                lines: ['Your inventory is full!', 'Use or gift some items first.'],
+            });
+            return;
+        }
+
+        const pickedToday = MetaState.hasFlag(`flowers_day_${MetaState.state.day}`);
+        if (pickedToday) {
+            MetaDialogue.show(hudScene, {
+                speaker: null,
+                lines: ['No more flowers to pick today.', 'Let them grow back!'],
+            });
+            return;
+        }
+
+        MetaDialogue.show(hudScene, {
+            speaker: null,
+            lines: ['Pretty wildflowers growing here...'],
+            choices: [
+                { label: 'Pick a flower (gift item)', action: 'pick' },
+                { label: 'Leave them', action: 'cancel' },
+            ],
+            onChoice: (action) => {
+                if (action !== 'pick') return;
+                MetaState.addItem('flower');
+                MetaState.addMood(3);
+                MetaState.setFlag(`flowers_day_${MetaState.state.day}`);
+                hudScene.refreshStatusBar();
+                hudScene.showNotification('Picked a flower! +3 Mood');
+            },
+        });
+    }
+
+    // ── Quest System ──
+
+    checkQuests() {
+        const hudScene = this.scene.get('MetaHUDScene');
+        // Check for new quests
+        const newQuests = MetaQuests.checkForNewQuests();
+        for (const n of newQuests) {
+            if (hudScene) hudScene.showNotification(n);
+        }
+        // Check for completions
+        const completed = MetaQuests.checkForCompletions();
+        for (const n of completed) {
+            if (hudScene) hudScene.showNotification(n);
+            if (hudScene) hudScene.refreshStatusBar();
+        }
+    }
+
+    updateQuestChecks(delta) {
+        this._questCheckAccum += delta;
+        // Check quests every 2 seconds (not every frame)
+        if (this._questCheckAccum >= 2000) {
+            this._questCheckAccum = 0;
+            this.checkQuests();
+        }
     }
 
     // ── Pull out phone → switch to Havenwood ──

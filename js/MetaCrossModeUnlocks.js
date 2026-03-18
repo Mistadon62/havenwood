@@ -76,6 +76,36 @@ const UNLOCKS = [
         apply: (gameState) => { gameState.researchPoints = (gameState.researchPoints || 0) + 10; },
         notification: '+10 Research Points — Your expertise pays off!',
     },
+    {
+        id: 'close_friends',
+        name: 'Inner Circle',
+        desc: 'Having close friends boosts everything',
+        direction: 'meta->havenwood',
+        condition: () => {
+            let closeFriends = 0;
+            for (const id of MetaState.state.npcsMetSet) {
+                if (MetaState.getFriendship(id) >= 80) closeFriends++;
+            }
+            return closeFriends >= 2;
+        },
+        apply: (gameState) => {
+            gameState.researchPoints = (gameState.researchPoints || 0) + 8;
+            gameState.coins += 100;
+        },
+        notification: '+8 Research, +100 Coins — Your friends help out!',
+    },
+    {
+        id: 'quest_master',
+        name: 'Quest Master',
+        desc: 'Completing quests earns sanctuary rewards',
+        direction: 'meta->havenwood',
+        condition: () => MetaState.state.questsCompleted >= 3,
+        apply: (gameState) => {
+            gameState.rep = (gameState.rep || 0) + 100;
+            gameState.food = (gameState.food || 0) + 200;
+        },
+        notification: '+100 Rep, +200 Food — Quest mastery!',
+    },
 ];
 
 const MetaCrossModeUnlocks = {

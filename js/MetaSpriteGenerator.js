@@ -564,6 +564,225 @@ export class MetaSpriteGenerator {
             g.fillStyle(0x99BB66); g.fillRect(22, 21, 4, 6);
         });
 
+        // Chalkboard (2 tiles wide, 1 tile tall — classroom)
+        tex(scene, 'furniture_chalkboard', 64, TILE, g => {
+            // Frame
+            g.fillStyle(0x5A4020);
+            g.fillRect(2, 2, 60, 28);
+            // Board surface (dark green)
+            g.fillStyle(0x2A4A2A);
+            g.fillRect(5, 4, 54, 24);
+            // Chalk writing
+            g.fillStyle(0xCCCCBB);
+            g.fillRect(10, 8, 20, 2);
+            g.fillRect(10, 14, 28, 2);
+            g.fillRect(10, 20, 16, 2);
+            g.fillStyle(0xAAAA99);
+            g.fillRect(38, 8, 12, 2);
+            // Chalk tray
+            g.fillStyle(0x6B4E2E);
+            g.fillRect(8, 27, 48, 3);
+            // Chalk pieces
+            g.fillStyle(0xEEEEDD);
+            g.fillRect(14, 27, 6, 2);
+            g.fillStyle(0xFFCC66);
+            g.fillRect(24, 27, 4, 2);
+        });
+
+        // Podium (single tile)
+        tex(scene, 'furniture_podium', TILE, TILE, g => {
+            // Top surface
+            g.fillStyle(0x7A5C3A);
+            g.fillRect(8, 6, 16, 4);
+            // Front panel
+            g.fillStyle(0x6B4E2E);
+            g.fillRect(9, 10, 14, 14);
+            // Side shading
+            g.fillStyle(0x5A4020);
+            g.fillRect(9, 10, 2, 14);
+            g.fillRect(21, 10, 2, 14);
+            // Legs
+            g.fillStyle(0x5A4020);
+            g.fillRect(10, 24, 3, 6);
+            g.fillRect(19, 24, 3, 6);
+            // Book/paper on top
+            g.fillStyle(0xEEEEDD);
+            g.fillRect(11, 7, 10, 2);
+        });
+
+        // Tree (single tile — top-down view)
+        tex(scene, 'furniture_tree', TILE, TILE, g => {
+            // Trunk
+            g.fillStyle(0x6B4E2E);
+            g.fillRect(13, 13, 6, 8);
+            // Canopy layers (top-down circular)
+            g.fillStyle(0x2A6B2A);
+            g.fillCircle(16, 14, 12);
+            g.fillStyle(0x3A8B3A);
+            g.fillCircle(15, 13, 9);
+            g.fillStyle(0x4A9B4A);
+            g.fillCircle(16, 12, 6);
+            // Highlight
+            g.fillStyle(0x5AAB5A);
+            g.fillCircle(13, 10, 3);
+        });
+
+        // Pond (2x2 tiles — top-down water body)
+        tex(scene, 'furniture_pond', 64, 64, g => {
+            // Water body (irregular oval)
+            g.fillStyle(0x3366AA);
+            g.fillCircle(32, 32, 26);
+            // Lighter inner water
+            g.fillStyle(0x4488CC);
+            g.fillCircle(30, 30, 20);
+            // Ripple highlights
+            g.fillStyle(0x66AADD);
+            g.fillCircle(26, 28, 8);
+            g.fillStyle(0x77BBEE);
+            g.fillCircle(24, 26, 4);
+            // Edge detail (reeds)
+            g.fillStyle(0x3A7B3A);
+            g.fillRect(6, 26, 3, 6);
+            g.fillRect(8, 24, 2, 4);
+            g.fillRect(50, 34, 3, 6);
+            g.fillRect(52, 32, 2, 4);
+        });
+
+        // Flower (single tile — small colorful plant)
+        tex(scene, 'furniture_flower', TILE, TILE, g => {
+            // Stem
+            g.fillStyle(0x3A7B3A);
+            g.fillRect(15, 16, 2, 10);
+            // Leaves
+            g.fillStyle(0x4A9B4A);
+            g.fillRect(12, 20, 4, 2);
+            g.fillRect(16, 18, 4, 2);
+            // Petals
+            g.fillStyle(0xDD6688);
+            g.fillCircle(16, 13, 4);
+            g.fillStyle(0xFF88AA);
+            g.fillCircle(14, 12, 3);
+            g.fillCircle(18, 12, 3);
+            g.fillCircle(16, 10, 3);
+            // Center
+            g.fillStyle(0xFFDD44);
+            g.fillCircle(16, 12, 2);
+        });
+
+        // Vending Machine (single tile)
+        tex(scene, 'furniture_vending_machine', TILE, TILE, g => {
+            // Body
+            g.fillStyle(0x445566);
+            g.fillRect(6, 2, 20, 28);
+            // Front panel (lighter)
+            g.fillStyle(0x556677);
+            g.fillRect(8, 4, 16, 18);
+            // Display window
+            g.fillStyle(0x88CCEE);
+            g.fillRect(10, 5, 12, 8);
+            // Product rows
+            g.fillStyle(0xDD4444);
+            g.fillRect(11, 6, 3, 3);
+            g.fillStyle(0x44DD44);
+            g.fillRect(15, 6, 3, 3);
+            g.fillStyle(0x4488DD);
+            g.fillRect(19, 6, 3, 3);
+            g.fillStyle(0xDDAA44);
+            g.fillRect(11, 10, 3, 2);
+            g.fillStyle(0xDD66AA);
+            g.fillRect(15, 10, 3, 2);
+            // Buttons
+            g.fillStyle(0x888888);
+            g.fillRect(10, 15, 4, 3);
+            g.fillRect(16, 15, 4, 3);
+            // Dispenser slot
+            g.fillStyle(0x333344);
+            g.fillRect(10, 20, 12, 4);
+            // Coin slot
+            g.fillStyle(0xAA9060);
+            g.fillRect(22, 14, 2, 4);
+        });
+
+        // Couch (2 tiles wide, 1 tile tall)
+        tex(scene, 'furniture_couch', 64, TILE, g => {
+            // Back rest
+            g.fillStyle(0x6B4455);
+            g.fillRect(4, 4, 56, 10);
+            // Seat cushions
+            g.fillStyle(0x885566);
+            g.fillRect(4, 12, 56, 12);
+            // Cushion divider
+            g.fillStyle(0x7A4E5A);
+            g.fillRect(31, 12, 2, 12);
+            // Arm rests
+            g.fillStyle(0x5A3344);
+            g.fillRect(2, 6, 4, 20);
+            g.fillRect(58, 6, 4, 20);
+            // Highlights
+            g.fillStyle(0x996677);
+            g.fillRect(8, 14, 20, 4);
+            g.fillRect(36, 14, 20, 4);
+        });
+
+        // TV (single tile — wall-mounted flat screen)
+        tex(scene, 'furniture_tv', TILE, TILE, g => {
+            // Bezel
+            g.fillStyle(0x222233);
+            g.fillRect(4, 6, 24, 16);
+            // Screen
+            g.fillStyle(0x4466AA);
+            g.fillRect(6, 8, 20, 12);
+            // Screen content (simple gradient)
+            g.fillStyle(0x5588CC);
+            g.fillRect(8, 10, 16, 4);
+            g.fillStyle(0x3355AA);
+            g.fillRect(8, 14, 16, 4);
+            // Stand
+            g.fillStyle(0x333344);
+            g.fillRect(14, 22, 4, 4);
+            g.fillRect(10, 26, 12, 2);
+            // Power LED
+            g.fillStyle(0x44DD44);
+            g.fillRect(15, 20, 2, 1);
+        });
+
+        // Gift item icons (small 16x16 for inventory display)
+        tex(scene, 'item_coffee', 16, 16, g => {
+            g.fillStyle(0x8B6B4A); g.fillRect(4, 4, 8, 10);
+            g.fillStyle(0xFFFFFF); g.fillRect(4, 4, 8, 2);
+            g.fillStyle(0x6B4E2E); g.fillRect(12, 6, 2, 4);
+            g.fillStyle(0xCCCCCC); g.fillRect(6, 2, 4, 3); // steam
+        });
+        tex(scene, 'item_book', 16, 16, g => {
+            g.fillStyle(0xCC4444); g.fillRect(4, 3, 8, 10);
+            g.fillStyle(0xEEEEDD); g.fillRect(5, 4, 6, 8);
+            g.fillStyle(0xBB3333); g.fillRect(4, 3, 1, 10);
+        });
+        tex(scene, 'item_flower', 16, 16, g => {
+            g.fillStyle(0x3A7B3A); g.fillRect(7, 9, 2, 5);
+            g.fillStyle(0xFF88AA); g.fillCircle(8, 7, 3);
+            g.fillStyle(0xFFDD44); g.fillCircle(8, 7, 1);
+        });
+        tex(scene, 'item_treat', 16, 16, g => {
+            g.fillStyle(0xDDAA44); g.fillRect(3, 5, 10, 6);
+            g.fillStyle(0xCC9933); g.fillRect(3, 5, 10, 2);
+            g.fillStyle(0xDD4444); g.fillRect(6, 4, 4, 2); // bow
+        });
+
+        // Weather particle textures
+        tex(scene, 'particle_rain', 4, 12, g => {
+            g.fillStyle(0x6699CC);
+            g.fillRect(1, 0, 2, 12);
+            g.fillStyle(0x88BBEE);
+            g.fillRect(1, 0, 1, 8);
+        });
+        tex(scene, 'particle_snow', 6, 6, g => {
+            g.fillStyle(0xDDEEFF);
+            g.fillCircle(3, 3, 2);
+            g.fillStyle(0xFFFFFF);
+            g.fillCircle(2, 2, 1);
+        });
+
         // Menu board (single tile — café chalkboard)
         tex(scene, 'furniture_menu_board', TILE, TILE, g => {
             g.fillStyle(0x333333);
@@ -667,6 +886,46 @@ export class MetaSpriteGenerator {
             g.fillRect(24, 16, 1, 7);
             g.fillRect(0, 24, 1, 8);
             g.fillRect(16, 24, 1, 8);
+        });
+
+        // Door / entrance on exterior wall — dark archway with visible opening
+        tex(scene, 'door_exterior', TILE, TILE, g => {
+            // Darker opening
+            g.fillStyle(0x2A2A2A);
+            g.fillRect(0, 0, TILE, TILE);
+            // Door frame (lighter wood)
+            g.fillStyle(0x8B7355);
+            g.fillRect(0, 0, 4, TILE);
+            g.fillRect(TILE - 4, 0, 4, TILE);
+            g.fillRect(0, 0, TILE, 4);
+            // Interior visible (dark floor hint)
+            g.fillStyle(0x3A3A3A);
+            g.fillRect(4, 4, 24, 24);
+            // Arrow/indicator — bright chevron
+            g.fillStyle(0xCCDD88);
+            g.fillTriangle(16, 10, 10, 20, 22, 20);
+            g.fillStyle(0x3A3A3A);
+            g.fillTriangle(16, 14, 12, 20, 20, 20);
+        });
+
+        // Door tile for indoor walls (hallway-style doorframe)
+        tex(scene, 'door_interior', TILE, TILE, g => {
+            // Floor base
+            g.fillStyle(0x8B6B4A);
+            g.fillRect(0, 0, TILE, TILE);
+            // Door frame
+            g.fillStyle(0x6B4E2E);
+            g.fillRect(0, 0, 4, TILE);
+            g.fillRect(TILE - 4, 0, 4, TILE);
+            g.fillRect(0, 0, TILE, 3);
+            // Lighter inner floor
+            g.fillStyle(0x9B7B5A);
+            g.fillRect(4, 3, 24, 26);
+            // Arrow hint
+            g.fillStyle(0xAABB88);
+            g.fillTriangle(16, 11, 11, 21, 21, 21);
+            g.fillStyle(0x9B7B5A);
+            g.fillTriangle(16, 15, 13, 21, 19, 21);
         });
     }
 

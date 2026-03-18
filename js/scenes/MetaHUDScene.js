@@ -1,10 +1,12 @@
 // MetaHUDScene — UI overlay for the meta-world.
-// Shows status bar (time, energy, mood, money), context-sensitive interaction
-// prompt, settings/pause menu (ESC), and notifications.
+// Shows status bar (time, energy, mood, money, weather), context-sensitive interaction
+// prompt, settings/pause menu (ESC), quest log (Q/Tab), inventory (I), and notifications.
 
 import { W, H, CLR } from '../GameData.js';
 import MetaState from '../MetaStateManager.js';
 import MetaDialogue from '../MetaDialogue.js';
+import MetaQuests from '../MetaQuests.js';
+import { getNPC, getGiftItemInfo } from '../MetaNPCs.js';
 
 export default class MetaHUDScene extends Phaser.Scene {
     constructor() { super('MetaHUDScene'); }
@@ -12,6 +14,8 @@ export default class MetaHUDScene extends Phaser.Scene {
     create() {
         this.cameras.main.setRoundPixels(true);
         this.settingsPanel = null;
+        this.questPanel = null;
+        this.inventoryPanel = null;
 
         this.createStatusBar();
         this.createInteractPrompt();
@@ -22,7 +26,32 @@ export default class MetaHUDScene extends Phaser.Scene {
                 MetaDialogue.close(this);
                 return;
             }
+            if (this.inventoryPanel) {
+                this.closeInventory();
+                return;
+            }
+            if (this.questPanel) {
+                this.closeQuestLog();
+                return;
+            }
             this.toggleSettingsMenu();
+        });
+
+        // Q / Tab key for quest log (handled here since MetaWorldScene is frozen when panel is open)
+        this.input.keyboard.on('keydown-Q', () => {
+            if (MetaDialogue.isActive() || this.settingsPanel || this.inventoryPanel) return;
+            this.toggleQuestLog();
+        });
+        this.input.keyboard.on('keydown-TAB', (e) => {
+            e.preventDefault();
+            if (MetaDialogue.isActive() || this.settingsPanel || this.inventoryPanel) return;
+            this.toggleQuestLog();
+        });
+
+        // I key for inventory
+        this.input.keyboard.on('keydown-I', () => {
+            if (MetaDialogue.isActive() || this.settingsPanel || this.questPanel) return;
+            this.toggleInventory();
         });
 
         // Listen for time updates
@@ -59,6 +88,15 @@ export default class MetaHUDScene extends Phaser.Scene {
 
         // Knowledge
         this.knowledgeText = this.txt(560, 14, '', 8, '#AABBDD').setOrigin(0, 0.5).setDepth(201);
+
+        // Quest count
+        this.questText = this.txt(650, 14, '', 7, '#BBAA88').setOrigin(0, 0.5).setDepth(201);
+
+        // Weather icon
+        this.weatherText = this.txt(710, 14, '', 7, '#AABBCC').setOrigin(0, 0.5).setDepth(201);
+
+        // Inventory count
+        this.invText = this.txt(780, 14, '', 7, '#AABB88').setOrigin(0, 0.5).setDepth(201);
 
         // Location name (right side)
         this.locationText = this.txt(W - 10, 14, '', 7, '#667788').setOrigin(1, 0.5).setDepth(201);
@@ -97,6 +135,27 @@ export default class MetaHUDScene extends Phaser.Scene {
         this.moneyText.setText(`$${s.money}`);
         this.knowledgeText.setText(`KN ${s.knowledge}`);
 
+        // Active quest count
+        const activeQuests = MetaQuests.getActiveQuestsDisplay();
+        if (activeQuests.length > 0) {
+            this.questText.setText(`Q:${activeQuests.length}`);
+        } else {
+            this.questText.setText('');
+        }
+
+        // Weather
+        const weatherIcons = { sunny: 'Sun', cloudy: 'Cld', rainy: 'Rain', snowy: 'Snow' };
+        const weatherColors = { sunny: '#FFDD66', cloudy: '#AABBCC', rainy: '#6699CC', snowy: '#DDEEFF' };
+        this.weatherText.setText(weatherIcons[s.weather] || '');
+        this.weatherText.setColor(weatherColors[s.weather] || '#AABBCC');
+
+        // Inventory count
+        if (s.inventory.length > 0) {
+            this.invText.setText(`Inv:${s.inventory.length}/8`);
+        } else {
+            this.invText.setText('');
+        }
+
         // Location
         const metaScene = this.scene.get('MetaWorldScene');
         if (metaScene && metaScene.location) {
@@ -120,7 +179,7 @@ export default class MetaHUDScene extends Phaser.Scene {
         this.interactPrompt.add(this.promptText);
 
         // Controls hint
-        this.controlsHint = this.txt(W / 2, H - 20, 'WASD to move', 8, '#666677')
+        this.controlsHint = this.txt(W / 2, H - 20, 'WASD move | Q quests | I inventory', 8, '#666677')
             .setOrigin(0.5).setAlpha(0.7).setDepth(200);
 
         // Gentle float
@@ -254,6 +313,213 @@ export default class MetaHUDScene extends Phaser.Scene {
 
     closeSettingsMenu() {
         if (this.settingsPanel) { this.settingsPanel.destroy(); this.settingsPanel = null; }
+        const metaScene = this.scene.get('MetaWorldScene');
+        if (metaScene && !metaScene._startWithPhone) metaScene._frozen = false;
+    }
+
+    // ── Quest Log ──
+
+    toggleQuestLog() {
+        if (this.questPanel) { this.closeQuestLog(); return; }
+        if (this.settingsPanel) return; // settings open, don't overlap
+        if (MetaDialogue.isActive()) return;
+
+        const metaScene = this.scene.get('MetaWorldScene');
+        if (metaScene) metaScene._frozen = true;
+
+        const pw = 380, ph = 420;
+        const px = W / 2 - pw / 2, py = Math.max(36, (H - ph) / 2);
+        const ct = this.add.container(px, py).setDepth(310);
+
+        const overlay = this.add.rectangle(W / 2 - px, H / 2 - py, W, H, 0x000000, 0.45).setInteractive();
+        ct.add(overlay);
+
+        const bg = this.add.graphics();
+        bg.fillStyle(CLR.uiPanelBg, 0.97); bg.fillRoundedRect(0, 0, pw, ph, 8);
+        bg.lineStyle(2, CLR.uiBorder); bg.strokeRoundedRect(0, 0, pw, ph, 8);
+        ct.add(bg);
+
+        ct.add(this.txt(pw / 2, 18, 'Quest Log', 11, CLR.gold).setOrigin(0.5));
+        ct.add(this.txt(pw / 2, 34, '[Q/Tab] Close', 7, '#666688').setOrigin(0.5));
+
+        const activeQuests = MetaQuests.getActiveQuestsDisplay();
+        const completedQuests = MetaQuests.getCompletedQuests();
+
+        let yOff = 54;
+
+        if (activeQuests.length === 0 && completedQuests.length === 0) {
+            ct.add(this.txt(pw / 2, yOff + 20, 'No quests yet...', 8, '#888899').setOrigin(0.5));
+            ct.add(this.txt(pw / 2, yOff + 40, 'Explore campus and talk to people!', 7, '#667788').setOrigin(0.5));
+        }
+
+        // Active quests
+        for (const quest of activeQuests) {
+            if (yOff > ph - 60) break;
+
+            // Quest name with giver
+            const giverTag = quest.giver ? ` (${getNPC(quest.giver)?.name || quest.giver})` : '';
+            ct.add(this.txt(14, yOff, `${quest.name}${giverTag}`, 8, '#DDCC88').setOrigin(0, 0));
+            yOff += 16;
+
+            // Description (with word wrap)
+            const descText = this.txt(20, yOff, quest.desc, 7, '#99AABB').setOrigin(0, 0);
+            descText.setWordWrapWidth(pw - 40);
+            ct.add(descText);
+            yOff += descText.height + 4;
+
+            // Steps
+            for (const step of quest.steps) {
+                const icon = step.done ? '[x]' : '[ ]';
+                const color = step.done ? '#66AA66' : '#AABBCC';
+                ct.add(this.txt(24, yOff, `${icon} ${step.label}`, 7, color).setOrigin(0, 0));
+                yOff += 13;
+            }
+
+            // Reward
+            ct.add(this.txt(24, yOff, `Reward: ${quest.rewardText}`, 7, '#AABB88').setOrigin(0, 0));
+            yOff += 18;
+
+            // Separator
+            const sep = this.add.graphics();
+            sep.lineStyle(1, 0x3D4F6B, 0.4);
+            sep.lineBetween(20, yOff, pw - 20, yOff);
+            ct.add(sep);
+            yOff += 8;
+        }
+
+        // Completed quests
+        if (completedQuests.length > 0 && yOff < ph - 40) {
+            ct.add(this.txt(14, yOff, 'Completed', 8, '#668866').setOrigin(0, 0));
+            yOff += 16;
+            for (const quest of completedQuests) {
+                if (yOff > ph - 20) break;
+                ct.add(this.txt(24, yOff, `[x] ${quest.name}`, 7, '#557755').setOrigin(0, 0));
+                yOff += 14;
+            }
+        }
+
+        // Friendship summary at bottom
+        if (yOff < ph - 50 && MetaState.state.npcsMetSet.length > 0) {
+            yOff = Math.max(yOff + 10, ph - 80);
+            const fsep = this.add.graphics();
+            fsep.lineStyle(1, 0x3D4F6B, 0.4);
+            fsep.lineBetween(20, yOff, pw - 20, yOff);
+            ct.add(fsep);
+            yOff += 8;
+            ct.add(this.txt(14, yOff, 'Friendships', 8, '#BBAA88').setOrigin(0, 0));
+            yOff += 16;
+            for (const npcId of MetaState.state.npcsMetSet) {
+                if (yOff > ph - 10) break;
+                const npcDef = getNPC(npcId);
+                const name = npcDef ? npcDef.name : npcId;
+                const fp = MetaState.getFriendship(npcId);
+                const tier = MetaState.getFriendshipTier(npcId);
+                const tierLabels = { stranger: 'Stranger', acquaintance: 'Acquaintance', friend: 'Friend', close: 'Close Friend' };
+                const tierColors = { stranger: '#888899', acquaintance: '#AABBCC', friend: '#88CCAA', close: '#FFDD88' };
+                ct.add(this.txt(24, yOff, `${name}: ${fp}/100 — ${tierLabels[tier]}`, 7, tierColors[tier]).setOrigin(0, 0));
+                yOff += 14;
+            }
+        }
+
+        this.questPanel = ct;
+    }
+
+    closeQuestLog() {
+        if (this.questPanel) { this.questPanel.destroy(); this.questPanel = null; }
+        const metaScene = this.scene.get('MetaWorldScene');
+        if (metaScene && !metaScene._startWithPhone) metaScene._frozen = false;
+    }
+
+    // ── Inventory Panel ──
+
+    toggleInventory() {
+        if (this.inventoryPanel) { this.closeInventory(); return; }
+        if (this.settingsPanel || this.questPanel) return;
+        if (MetaDialogue.isActive()) return;
+
+        const metaScene = this.scene.get('MetaWorldScene');
+        if (metaScene) metaScene._frozen = true;
+
+        const pw = 320, ph = 280;
+        const px = W / 2 - pw / 2, py = Math.max(36, (H - ph) / 2);
+        const ct = this.add.container(px, py).setDepth(310);
+
+        const overlay = this.add.rectangle(W / 2 - px, H / 2 - py, W, H, 0x000000, 0.45).setInteractive();
+        ct.add(overlay);
+
+        const bg = this.add.graphics();
+        bg.fillStyle(CLR.uiPanelBg, 0.97); bg.fillRoundedRect(0, 0, pw, ph, 8);
+        bg.lineStyle(2, CLR.uiBorder); bg.strokeRoundedRect(0, 0, pw, ph, 8);
+        ct.add(bg);
+
+        ct.add(this.txt(pw / 2, 18, 'Inventory', 11, CLR.gold).setOrigin(0.5));
+        ct.add(this.txt(pw / 2, 34, '[I] Close', 7, '#666688').setOrigin(0.5));
+
+        const inv = MetaState.state.inventory;
+        const giftItems = getGiftItemInfo();
+
+        if (inv.length === 0) {
+            ct.add(this.txt(pw / 2, ph / 2, 'Empty', 9, '#888899').setOrigin(0.5));
+            ct.add(this.txt(pw / 2, ph / 2 + 20, 'Buy items at the cafe or', 7, '#667788').setOrigin(0.5));
+            ct.add(this.txt(pw / 2, ph / 2 + 34, 'pick flowers in the park!', 7, '#667788').setOrigin(0.5));
+        } else {
+            // Grid layout: 4 columns, 2 rows of slots
+            const slotSize = 48;
+            const gap = 12;
+            const gridW = 4 * slotSize + 3 * gap;
+            const startX = (pw - gridW) / 2;
+            const startY = 56;
+
+            // Count items by type
+            const counts = {};
+            for (const item of inv) {
+                counts[item] = (counts[item] || 0) + 1;
+            }
+
+            let slotIdx = 0;
+            for (const [itemId, count] of Object.entries(counts)) {
+                const col = slotIdx % 4;
+                const row = Math.floor(slotIdx / 4);
+                const sx = startX + col * (slotSize + gap);
+                const sy = startY + row * (slotSize + gap + 20);
+
+                // Slot background
+                const slotBg = this.add.graphics();
+                slotBg.fillStyle(0x2A3444, 0.8);
+                slotBg.fillRoundedRect(sx, sy, slotSize, slotSize, 4);
+                slotBg.lineStyle(1, 0x3D4F6B, 0.6);
+                slotBg.strokeRoundedRect(sx, sy, slotSize, slotSize, 4);
+                ct.add(slotBg);
+
+                // Item icon
+                const iconKey = giftItems[itemId]?.icon;
+                if (iconKey && this.textures.exists(iconKey)) {
+                    const icon = this.add.image(sx + slotSize / 2, sy + slotSize / 2, iconKey).setScale(2);
+                    ct.add(icon);
+                }
+
+                // Item name and count
+                const name = giftItems[itemId]?.name || itemId;
+                ct.add(this.txt(sx + slotSize / 2, sy + slotSize + 4, name, 6, '#CCBBAA').setOrigin(0.5, 0));
+                if (count > 1) {
+                    ct.add(this.txt(sx + slotSize - 4, sy + slotSize - 4, `x${count}`, 7, '#DDDD88').setOrigin(1, 1));
+                }
+
+                slotIdx++;
+            }
+
+            // Capacity
+            ct.add(this.txt(pw / 2, ph - 30, `${inv.length}/8 slots used`, 7, '#778899').setOrigin(0.5));
+        }
+
+        // Hint
+        ct.add(this.txt(pw / 2, ph - 14, 'Give gifts to NPCs to boost friendship!', 7, '#557766').setOrigin(0.5));
+
+        this.inventoryPanel = ct;
+    }
+
+    closeInventory() {
+        if (this.inventoryPanel) { this.inventoryPanel.destroy(); this.inventoryPanel = null; }
         const metaScene = this.scene.get('MetaWorldScene');
         if (metaScene && !metaScene._startWithPhone) metaScene._frozen = false;
     }
