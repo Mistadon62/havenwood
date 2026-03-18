@@ -822,6 +822,92 @@ export class MetaSpriteGenerator {
             g.fillStyle(0x6B4E2E);
             g.fillRect(14, 28, 4, 4);
         });
+
+        // Bulletin board — colorful with header
+        tex(scene, 'furniture_bulletin_board', TILE, TILE, g => {
+            // Board frame
+            g.fillStyle(0x6B4E2E);
+            g.fillRect(3, 2, 26, 28);
+            // Header strip
+            g.fillStyle(0xCC4444);
+            g.fillRect(5, 3, 22, 5);
+            // Cork background
+            g.fillStyle(0xD4B87A);
+            g.fillRect(5, 9, 22, 19);
+            // Papers (colorful)
+            g.fillStyle(0xFFFF99);
+            g.fillRect(7, 11, 8, 7);
+            g.fillStyle(0x99DDFF);
+            g.fillRect(17, 11, 8, 7);
+            g.fillStyle(0xFFBB88);
+            g.fillRect(9, 19, 8, 7);
+            g.fillStyle(0xBBFFBB);
+            g.fillRect(19, 19, 5, 7);
+            // Pushpins
+            g.fillStyle(0xFF2222);
+            g.fillCircle(10, 11, 1.5);
+            g.fillStyle(0x2222FF);
+            g.fillCircle(20, 11, 1.5);
+            g.fillStyle(0x22CC22);
+            g.fillCircle(13, 19, 1.5);
+            g.fillStyle(0xFFAA00);
+            g.fillCircle(21, 19, 1.5);
+            // Post legs
+            g.fillStyle(0x5A3E1E);
+            g.fillRect(14, 30, 4, 2);
+        });
+
+        // Fair booth / event stall
+        tex(scene, 'furniture_fair_booth', TILE, TILE, g => {
+            // Canopy frame
+            g.fillStyle(0xCC3333);
+            g.fillRect(2, 2, 28, 4);
+            g.fillStyle(0xFFFFFF);
+            g.fillRect(2, 2, 7, 4);
+            g.fillRect(16, 2, 7, 4);
+            // Counter
+            g.fillStyle(0x8B7355);
+            g.fillRect(4, 6, 24, 14);
+            // Counter top
+            g.fillStyle(0xA68B5B);
+            g.fillRect(4, 6, 24, 3);
+            // Items on counter
+            g.fillStyle(0xEEDD88);
+            g.fillRect(8, 9, 5, 4);
+            g.fillStyle(0x88CCEE);
+            g.fillRect(16, 9, 5, 4);
+            g.fillStyle(0xDDAA66);
+            g.fillRect(23, 9, 3, 3);
+            // Legs
+            g.fillStyle(0x6B4E2E);
+            g.fillRect(5, 20, 3, 8);
+            g.fillRect(24, 20, 3, 8);
+        });
+
+        // Lost cat sprite
+        tex(scene, 'furniture_lost_cat', TILE, TILE, g => {
+            // Body
+            g.fillStyle(0xFF9944);
+            g.fillRect(10, 14, 12, 8);
+            // Head
+            g.fillStyle(0xFF9944);
+            g.fillCircle(16, 12, 5);
+            // Ears
+            g.fillTriangle(12, 8, 13, 12, 10, 10);
+            g.fillTriangle(20, 8, 19, 12, 22, 10);
+            // Eyes
+            g.fillStyle(0x44AA44);
+            g.fillCircle(14, 11, 1.5);
+            g.fillCircle(18, 11, 1.5);
+            // Nose
+            g.fillStyle(0xFF6688);
+            g.fillCircle(16, 13, 1);
+            // Tail
+            g.fillStyle(0xDD7733);
+            g.fillRect(21, 14, 3, 2);
+            g.fillRect(23, 12, 2, 4);
+            g.fillRect(24, 10, 2, 3);
+        });
     }
 
     // Outdoor & commercial tiles

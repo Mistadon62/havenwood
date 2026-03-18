@@ -44,6 +44,17 @@ const DEFAULTS = {
     pendingFood: 0,
     pendingTreats: 0,
 
+    // Events
+    currentEvent: null,       // { id, name, location, desc } or null
+    eventHistory: [],          // IDs of scripted events already fired
+
+    // Jobs
+    totalJobEarnings: 0,
+    lastJobRating: null,       // 'poor' | 'ok' | 'good' | 'excellent'
+
+    // Friendship milestones triggered (milestoneId → true)
+    friendshipMilestones: {},
+
     // NPC sanctuary visit cooldowns (npcId → last meta-day they visited)
     npcVisitCooldowns: {},
     // Total NPC visits to sanctuary
@@ -169,9 +180,14 @@ class MetaStateManager {
 
     // ── Stats ──
 
+    getEnergyCostMultiplier() {
+        return this.state.timeOfDay >= 1320 ? 2 : 1; // Double energy cost after 10 PM
+    }
+
     spendEnergy(amount) {
-        if (this.state.energy < amount) return false;
-        this.state.energy -= amount;
+        const actual = amount * this.getEnergyCostMultiplier();
+        if (this.state.energy < actual) return false;
+        this.state.energy -= actual;
         return true;
     }
 

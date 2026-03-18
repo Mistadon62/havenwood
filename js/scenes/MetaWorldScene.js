@@ -10,6 +10,10 @@ import MetaState from '../MetaStateManager.js';
 import MetaDialogue from '../MetaDialogue.js';
 import MetaCrossModeUnlocks from '../MetaCrossModeUnlocks.js';
 import MetaQuests from '../MetaQuests.js';
+import MetaEvents from '../MetaEvents.js';
+import MetaJobs from '../MetaJobs.js';
+import MetaBulletinBoard from '../MetaBulletinBoard.js';
+import MetaFriendshipMilestones from '../MetaFriendshipMilestones.js';
 
 const MOVE_SPEED = 120;
 // 1 real second = 1 game minute
@@ -72,7 +76,18 @@ export default class MetaWorldScene extends Phaser.Scene {
 
         // Track location visits for quests
         if (locationId === 'library') MetaState.setFlag('visited_library');
-        if (locationId === 'park') MetaState.setFlag('visited_park');
+        if (locationId === 'park') {
+            MetaState.setFlag('visited_park');
+            if (MetaState.isQuestActive('campus_cleanup')) {
+                MetaState.incrementQuestProgress('campus_cleanup', 'visits');
+            }
+        }
+        if (locationId === 'classroom') {
+            // Quest: lost textbook — return to classroom after finding it
+            if (MetaState.isQuestActive('lost_textbook') && MetaState.hasFlag('quest_lt_library') && !MetaState.hasFlag('quest_lt_returned')) {
+                MetaState.setFlag('quest_lt_returned');
+            }
+        }
 
         this.roomX = Math.floor((W - this.location.cols * TILE) / 2);
         this.roomY = Math.floor((H - this.location.rows * TILE) / 2);
@@ -197,6 +212,18 @@ export default class MetaWorldScene extends Phaser.Scene {
                 this._track(this.add.image(px + TILE / 2, py + TILE / 2, 'furniture_job_board').setDepth(5));
             }
         }
+
+        // Place event furniture (temporary, tracked for cleanup)
+        const eventFurniture = MetaEvents.getEventFurniture(this.location.id);
+        for (const f of eventFurniture) {
+            const px = this.roomX + f.gx * TILE;
+            const py = this.roomY + f.gy * TILE;
+            const key = `furniture_${f.type}`;
+            if (this.textures.exists(key)) {
+                const sprite = this._track(this.add.image(px + TILE / 2, py + TILE / 2, key).setDepth(5));
+                this.furnitureSprites.push(sprite);
+            }
+        }
     }
 
     placeNPCs() {
@@ -276,9 +303,18 @@ export default class MetaWorldScene extends Phaser.Scene {
             if (rx === npcRef.gx && ry === npcRef.gy) return false;
         }
 
-        // Interactable collision (job board etc.)
+        // Interactable collision (job board, bulletin board, etc.)
         for (const ia of this.location.interactables) {
-            if (ia.action === 'job' && rx >= ia.gx && rx < ia.gx + (ia.w || 1) && ry >= ia.gy && ry < ia.gy + (ia.h || 1)) return false;
+            if ((ia.action === 'job' || ia.action === 'bulletin_board') &&
+                rx >= ia.gx && rx < ia.gx + (ia.w || 1) && ry >= ia.gy && ry < ia.gy + (ia.h || 1)) return false;
+        }
+
+        // Event furniture collision
+        const eventFurniture = MetaEvents.getEventFurniture(this.location.id);
+        for (const f of eventFurniture) {
+            const fw = f.type === 'fair_booth' ? 2 : 1;
+            const fh = 1;
+            if (rx >= f.gx && rx < f.gx + fw && ry >= f.gy && ry < f.gy + fh) return false;
         }
 
         return true;
@@ -304,8 +340,12 @@ export default class MetaWorldScene extends Phaser.Scene {
                 return { type: 'npc', id: npcRef.id };
             }
         }
-        // Check interactables
-        for (const ia of this.location.interactables) {
+        // Check interactables (location + event)
+        const allInteractables = [
+            ...this.location.interactables,
+            ...MetaEvents.getEventInteractables(this.location.id),
+        ];
+        for (const ia of allInteractables) {
             const w = ia.w || 1, h = ia.h || 1;
             if (fx >= ia.gx && fx < ia.gx + w && fy >= ia.gy && fy < ia.gy + h) {
                 return { type: 'interactable', data: ia };
@@ -351,6 +391,12 @@ export default class MetaWorldScene extends Phaser.Scene {
                 const drain = Math.floor(this._energyDecayAccum / 30);
                 this._energyDecayAccum -= drain * 30;
                 MetaState.state.energy = Math.max(0, MetaState.state.energy - drain);
+            }
+
+            // Auto pass-out at midnight
+            if (MetaState.state.timeOfDay >= 1440) {
+                this._doPassOut();
+                return;
             }
         }
 
@@ -612,6 +658,7 @@ export default class MetaWorldScene extends Phaser.Scene {
                     buy_coffee: 'Order', library_study: 'Study (Library)',
                     vending_machine: 'Vending Machine', couch_rest: 'Rest',
                     park_walk: 'Nature Walk', pick_flowers: 'Pick Flowers',
+                    bulletin_board: 'Bulletin Board',
                 };
                 hudScene.updatePrompt(`[E] ${labels[target.data.action] || target.data.name}`);
             }
@@ -660,8 +707,9 @@ export default class MetaWorldScene extends Phaser.Scene {
             choices: dialogue.choices,
             onChoice: (action) => {
                 npcDef.handleAction(action, hudScene);
-                // Check quests after NPC interaction
+                // Check quests and friendship milestones after NPC interaction
                 this.checkQuests();
+                this._checkFriendshipMilestone(npcId, hudScene);
             },
         });
     }
@@ -687,6 +735,10 @@ export default class MetaWorldScene extends Phaser.Scene {
             this.doParkWalk(hudScene);
         } else if (ia.action === 'pick_flowers') {
             this.doPickFlowers(hudScene);
+        } else if (ia.action === 'bulletin_board') {
+            this.doBulletinBoard(hudScene);
+        } else if (ia.action && ia.action.startsWith('evt_')) {
+            MetaEvents.handleEventAction(ia.action, hudScene);
         }
     }
 
@@ -712,29 +764,77 @@ export default class MetaWorldScene extends Phaser.Scene {
         this._frozen = true;
         this.cameras.main.fadeOut(800, 0, 0, 0);
         this.cameras.main.once('camerafadeoutcomplete', () => {
-            MetaState.nextDay();
-            MetaState.save();
             const hudScene = this.scene.get('MetaHUDScene');
-            if (hudScene) hudScene.refreshStatusBar();
 
-            // Roll a random morning event
-            const morningEvent = this.rollMorningEvent();
-
-            // Rebuild location to update weather overlay
-            this.buildLocation(MetaState.state.currentLocation,
-                MetaState.state.playerTileX, MetaState.state.playerTileY);
-
-            this.cameras.main.fadeIn(800, 0, 0, 0);
-            this._frozen = false;
-            this.updateDayNightTint();
-
-            const dayLabel = MetaState.state.dayOfWeek >= 5 ? `${MetaState.getDayName()} (Weekend)` : MetaState.getDayName();
-            const weatherLabel = MetaState.getWeatherLabel();
-            if (hudScene) hudScene.showNotification(`Day ${MetaState.state.day} — ${dayLabel} — ${weatherLabel}`);
-            if (morningEvent && hudScene) {
-                this.time.delayedCall(1500, () => hudScene.showNotification(morningEvent));
-            }
+            // Show alarm choice dialogue
+            this.cameras.main.fadeIn(400, 0, 0, 0);
+            MetaDialogue.show(hudScene, {
+                speaker: null,
+                lines: ['Morning! Your alarm is going off...'],
+                choices: [
+                    { label: 'Wake early (6 AM, 90 energy)', action: 'early' },
+                    { label: 'Sleep in (9 AM, full energy)', action: 'sleepin' },
+                ],
+                onChoice: (action) => {
+                    this._applyMorning(action === 'early' ? 'early' : 'sleepin', hudScene);
+                },
+            });
         });
+    }
+
+    _applyMorning(choice, hudScene) {
+        MetaState.state.day++;
+        MetaState.state.dayOfWeek = (MetaState.state.dayOfWeek + 1) % 7;
+        MetaState.rollWeather();
+
+        if (choice === 'early') {
+            MetaState.state.timeOfDay = 360; // 6 AM
+            MetaState.state.energy = 90;
+        } else {
+            MetaState.state.timeOfDay = 540; // 9 AM
+            MetaState.state.energy = 100;
+        }
+
+        // Mood drift toward 50 overnight
+        if (MetaState.state.mood > 50) MetaState.state.mood = Math.max(50, MetaState.state.mood - 5);
+        else if (MetaState.state.mood < 50) MetaState.state.mood = Math.min(50, MetaState.state.mood + 5);
+
+        // Apply friendship milestone daily passives
+        const passives = MetaFriendshipMilestones.applyDailyPassives();
+
+        // Roll daily campus event
+        const evt = MetaEvents.rollDailyEvent(MetaState.state.day);
+
+        // Roll morning micro-event
+        const morningEvent = this.rollMorningEvent();
+
+        MetaState.save();
+        if (hudScene) hudScene.refreshStatusBar();
+
+        // Rebuild location
+        this.buildLocation(MetaState.state.currentLocation,
+            MetaState.state.playerTileX, MetaState.state.playerTileY);
+
+        this._frozen = false;
+        this.updateDayNightTint();
+
+        const dayLabel = MetaState.state.dayOfWeek >= 5 ? `${MetaState.getDayName()} (Weekend)` : MetaState.getDayName();
+        const weatherLabel = MetaState.getWeatherLabel();
+        if (hudScene) hudScene.showNotification(`Day ${MetaState.state.day} — ${dayLabel} — ${weatherLabel}`);
+
+        let delay = 1500;
+        if (evt && evt.name && hudScene) {
+            this.time.delayedCall(delay, () => hudScene.showNotification(`Event: ${evt.name}!`));
+            delay += 1500;
+        }
+        if (morningEvent && hudScene) {
+            this.time.delayedCall(delay, () => hudScene.showNotification(morningEvent));
+            delay += 1500;
+        }
+        for (const p of passives) {
+            this.time.delayedCall(delay, () => { if (hudScene) hudScene.showNotification(p); });
+            delay += 1200;
+        }
     }
 
     rollMorningEvent() {
@@ -773,6 +873,9 @@ export default class MetaWorldScene extends Phaser.Scene {
             return;
         }
 
+        const studyBonus = MetaEvents.isStudyBonusActive() ? 5 : 0;
+        const totalKnow = 5 + studyBonus;
+        const bonusNote = studyBonus > 0 ? ' (Midterm bonus!)' : '';
         MetaDialogue.show(hudScene, {
             speaker: null,
             lines: ['Textbooks on wildlife conservation...'],
@@ -784,49 +887,11 @@ export default class MetaWorldScene extends Phaser.Scene {
                 if (action !== 'study') return;
                 MetaState.spendEnergy(10);
                 MetaState.advanceTime(30);
-                MetaState.addKnowledge(5);
+                MetaState.addKnowledge(totalKnow);
                 MetaState.addMood(2);
                 MetaState.setFlag(`study_day_${MetaState.state.day}`);
                 hudScene.refreshStatusBar();
-                hudScene.showNotification('+5 Knowledge');
-            },
-        });
-    }
-
-    doJob(hudScene) {
-        const workedToday = MetaState.hasFlag(`job_day_${MetaState.state.day}`);
-        if (workedToday) {
-            MetaDialogue.show(hudScene, {
-                speaker: null,
-                lines: ['You already worked a shift today.', 'Come back tomorrow.'],
-            });
-            return;
-        }
-        if (MetaState.state.energy < 25) {
-            MetaDialogue.show(hudScene, {
-                speaker: null,
-                lines: ['You\'re too tired to work right now.'],
-            });
-            return;
-        }
-
-        MetaDialogue.show(hudScene, {
-            speaker: null,
-            lines: ['Campus Pet Store — Help Wanted', 'Part-time position available.'],
-            choices: [
-                { label: 'Work shift (-25 energy, 2hrs)', action: 'work' },
-                { label: 'Not today', action: 'cancel' },
-            ],
-            onChoice: (action) => {
-                if (action !== 'work') return;
-                MetaState.spendEnergy(25);
-                MetaState.advanceTime(120);
-                MetaState.addMoney(30);
-                MetaState.addMood(-5);
-                MetaState.state.shiftsWorked++;
-                MetaState.setFlag(`job_day_${MetaState.state.day}`);
-                hudScene.refreshStatusBar();
-                hudScene.showNotification('+$30 — Hard work pays off!');
+                hudScene.showNotification(`+${totalKnow} Knowledge${bonusNote}`);
             },
         });
     }
@@ -886,6 +951,18 @@ export default class MetaWorldScene extends Phaser.Scene {
 
     doLibraryStudy(hudScene) {
         MetaState.setFlag('visited_library');
+        // Quest: lost textbook — flag library searched
+        if (MetaState.isQuestActive('lost_textbook') && !MetaState.hasFlag('quest_lt_library')) {
+            MetaState.setFlag('quest_lt_library');
+            hudScene.showNotification('Found a textbook under the desk!');
+        }
+        // Quest: campus cleanup — count park visits
+        if (MetaState.isQuestActive('book_donations') && MetaState.state.inventory.includes('book')) {
+            MetaState.removeItem('book');
+            MetaState.incrementQuestProgress('book_donations', 'books');
+            hudScene.showNotification('Donated a book to the library!');
+            this.checkQuests();
+        }
         const studied = MetaState.hasFlag(`lib_study_day_${MetaState.state.day}`);
         if (studied) {
             MetaDialogue.show(hudScene, {
@@ -902,6 +979,14 @@ export default class MetaWorldScene extends Phaser.Scene {
             return;
         }
 
+        const samBonus = MetaState.hasFlag('sam_study_spot') ? 4 : 0;
+        const midtermBonus = MetaEvents.isStudyBonusActive() ? 5 : 0;
+        const totalKnow = 12 + samBonus + midtermBonus;
+        const notes = [];
+        if (samBonus > 0) notes.push('Study spot bonus!');
+        if (midtermBonus > 0) notes.push('Midterm bonus!');
+        const bonusNote = notes.length > 0 ? ` (${notes.join(' ')})` : '';
+
         MetaDialogue.show(hudScene, {
             speaker: null,
             lines: ['The library has an excellent wildlife section...'],
@@ -913,11 +998,11 @@ export default class MetaWorldScene extends Phaser.Scene {
                 if (action !== 'study') return;
                 MetaState.spendEnergy(15);
                 MetaState.advanceTime(60);
-                MetaState.addKnowledge(12);
+                MetaState.addKnowledge(totalKnow);
                 MetaState.addMood(3);
                 MetaState.setFlag(`lib_study_day_${MetaState.state.day}`);
                 hudScene.refreshStatusBar();
-                hudScene.showNotification('+12 Knowledge — Great session!');
+                hudScene.showNotification(`+${totalKnow} Knowledge — Great session!${bonusNote}`);
             },
         });
     }
@@ -1073,6 +1158,129 @@ export default class MetaWorldScene extends Phaser.Scene {
                 hudScene.showNotification('Picked a flower! +3 Mood');
             },
         });
+    }
+
+    // ── Pass Out ──
+
+    _doPassOut() {
+        if (this._frozen) return;
+        this._frozen = true;
+        const hudScene = this.scene.get('MetaHUDScene');
+        if (hudScene) hudScene.showNotification('You passed out from exhaustion!');
+        this.cameras.main.fadeOut(600, 0, 0, 0);
+        this.cameras.main.once('camerafadeoutcomplete', () => {
+            MetaState.passOut();
+            MetaEvents.rollDailyEvent(MetaState.state.day);
+            MetaFriendshipMilestones.applyDailyPassives();
+            MetaState.save();
+            if (hudScene) hudScene.refreshStatusBar();
+            this.buildLocation(MetaState.state.currentLocation,
+                MetaState.state.playerTileX, MetaState.state.playerTileY);
+            this.cameras.main.fadeIn(800, 0, 0, 0);
+            this._frozen = false;
+            this.updateDayNightTint();
+            if (hudScene) hudScene.showNotification(`Day ${MetaState.state.day} — Rough night... -10 Mood`);
+        });
+    }
+
+    // ── Bulletin Board ──
+
+    doBulletinBoard(hudScene) {
+        const posts = MetaBulletinBoard.getContent(MetaState.state.day);
+        const lines = [];
+        let questPost = null;
+        for (const post of posts) {
+            lines.push(`[${post.title}]`);
+            lines.push(post.body);
+            lines.push('');
+            if (post.type === 'quest' && post.questId) questPost = post;
+        }
+        // Remove trailing empty line
+        if (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+
+        const choices = [];
+        if (questPost) {
+            choices.push({ label: `Accept: ${questPost.title}`, action: 'accept_quest' });
+        }
+        choices.push({ label: 'Walk away', action: 'cancel' });
+
+        MetaDialogue.show(hudScene, {
+            speaker: 'Bulletin Board',
+            lines,
+            choices,
+            onChoice: (action) => {
+                if (action === 'accept_quest' && questPost) {
+                    MetaState.startQuest(questPost.questId);
+                    hudScene.showNotification(`New Quest: ${questPost.title}`);
+                }
+            },
+        });
+    }
+
+    // ── Job System (expanded) ──
+
+    doJob(hudScene) {
+        if (MetaJobs.hasWorkedToday()) {
+            MetaDialogue.show(hudScene, {
+                speaker: null,
+                lines: ['You already worked a shift today.', 'Come back tomorrow.'],
+            });
+            return;
+        }
+
+        const available = MetaJobs.getAvailableJobs();
+        const choices = available.map(job => {
+            const mult = MetaState.getEnergyCostMultiplier();
+            const eCost = job.energyCost * mult;
+            const hrs = Math.floor(job.time / 60);
+            const mins = job.time % 60;
+            const timeLabel = hrs > 0 ? (mins > 0 ? `${hrs}h${mins}m` : `${hrs}h`) : `${mins}m`;
+            return {
+                label: `${job.name} (-${eCost} EN, ${timeLabel}, ~$${job.basePay})`,
+                action: job.id,
+            };
+        });
+        choices.push({ label: 'Not today', action: 'cancel' });
+
+        const level = MetaJobs.getJobLevel();
+        const levelLabel = level === 0 ? 'Basic' : level === 1 ? 'Intermediate' : 'Advanced';
+
+        MetaDialogue.show(hudScene, {
+            speaker: null,
+            lines: [`Campus Job Board — Level: ${levelLabel}`, 'Pick a task:'],
+            choices,
+            onChoice: (action) => {
+                if (action === 'cancel') return;
+                const result = MetaJobs.doJob(action);
+                if (!result) {
+                    hudScene.showNotification('Not enough energy!');
+                    return;
+                }
+                hudScene.refreshStatusBar();
+                const bonusLabel = result.hasTanakaBonus ? ' (Tanaka bonus!)' : '';
+                hudScene.showNotification(`+$${result.pay} — ${result.performance.label}${bonusLabel}`);
+                this.checkQuests();
+
+                // Check Tanaka friendship milestones
+                this._checkFriendshipMilestone('shopkeeper', hudScene);
+            },
+        });
+    }
+
+    // ── Friendship Milestone Check ──
+
+    _checkFriendshipMilestone(npcId, hudScene) {
+        const val = MetaState.getFriendship(npcId);
+        const milestone = MetaFriendshipMilestones.checkMilestones(npcId, val);
+        if (milestone) {
+            this.time.delayedCall(800, () => {
+                MetaDialogue.show(hudScene, milestone.dialogue);
+                hudScene.refreshStatusBar();
+                this.time.delayedCall(500, () => {
+                    hudScene.showNotification(milestone.notification);
+                });
+            });
+        }
     }
 
     // ── Quest System ──

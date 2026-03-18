@@ -76,6 +76,46 @@ const QUESTS = {
         startCondition: () => MetaState.state.shiftsWorked >= 1,
     },
 
+    lost_textbook: {
+        id: 'lost_textbook',
+        name: 'Lost Textbook',
+        giver: 'prof_elara',
+        desc: 'Prof. Elara lost her wildlife textbook. Check the library, then return to the classroom.',
+        steps: [
+            { key: 'checked_library', label: 'Search the library', check: () => MetaState.hasFlag('quest_lt_library') },
+            { key: 'returned_book', label: 'Return to classroom', check: () => MetaState.hasFlag('quest_lt_returned') },
+        ],
+        reward: { money: 15 },
+        rewardText: '+$15, +5 Friendship with Elara',
+        onComplete: () => { MetaState.addFriendship('prof_elara', 5); },
+    },
+
+    campus_cleanup: {
+        id: 'campus_cleanup',
+        name: 'Campus Cleanup',
+        giver: null,
+        desc: 'Help clean up the campus park. Visit the park twice to help out.',
+        steps: [
+            { key: 'visits', label: 'Visit the park (0/2)', target: 2, counter: true,
+              check: () => (MetaState.getQuest('campus_cleanup')?.progress.visits || 0) >= 2 },
+        ],
+        reward: { mood: 10, money: 10 },
+        rewardText: '+10 Mood, +$10',
+    },
+
+    book_donations: {
+        id: 'book_donations',
+        name: 'Book Donations',
+        giver: null,
+        desc: 'The library needs book donations. Bring 2 books to the library.',
+        steps: [
+            { key: 'books', label: 'Donate books (0/2)', target: 2, counter: true,
+              check: () => (MetaState.getQuest('book_donations')?.progress.books || 0) >= 2 },
+        ],
+        reward: { knowledge: 15, mood: 5 },
+        rewardText: '+15 Knowledge, +5 Mood',
+    },
+
     campus_socialite: {
         id: 'campus_socialite',
         name: 'Campus Socialite',
@@ -138,6 +178,7 @@ const MetaQuests = {
                 if (quest.reward.mood) MetaState.addMood(quest.reward.mood);
                 if (quest.reward.knowledge) MetaState.addKnowledge(quest.reward.knowledge);
                 if (quest.reward.energy) MetaState.addEnergy(quest.reward.energy);
+                if (quest.onComplete) quest.onComplete();
                 notifications.push(`Quest Complete: ${quest.name} — ${quest.rewardText}`);
             }
         }

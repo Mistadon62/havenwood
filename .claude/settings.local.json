@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -c js/MetaEvents.js)",
+      "Bash(node -c js/MetaJobs.js)",
+      "Bash(node -c js/MetaBulletinBoard.js)",
+      "Bash(node -c js/MetaFriendshipMilestones.js)",
+      "Bash(where.exe node:*)"
+    ]
+  }
+}

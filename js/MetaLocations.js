@@ -62,6 +62,7 @@ const LOCATIONS = {
         furniture: [
             { type: 'lamp', gx: 3, gy: 1 },
             { type: 'lamp', gx: 10, gy: 1 },
+            { type: 'bulletin_board', gx: 5, gy: 1 },
         ],
         doors: [
             // Back to bedroom (top)
@@ -78,7 +79,9 @@ const LOCATIONS = {
             { gx: 7, gy: 5, targetLocation: 'campus_quad', spawnGx: 7, spawnGy: 1 },
         ],
         npcs: [],
-        interactables: [],
+        interactables: [
+            { id: 'bulletin_board', gx: 5, gy: 1, w: 1, h: 1, name: 'Bulletin Board', action: 'bulletin_board' },
+        ],
     },
 
     common_room: {

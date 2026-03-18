@@ -143,6 +143,15 @@ const UNLOCKS = [
         notification: '+10 Mood, +$30 — Your friends love visiting!',
     },
     {
+        id: 'job_savings',
+        name: 'Job Savings',
+        desc: 'Earning $100+ from jobs converts to sanctuary coins',
+        direction: 'meta->havenwood',
+        condition: () => (MetaState.state.totalJobEarnings || 0) >= 100,
+        apply: (gameState) => { gameState.coins += Math.floor((MetaState.state.totalJobEarnings || 0) * 0.5); },
+        notification: 'Job earnings converted to sanctuary coins!',
+    },
+    {
         id: 'happy_animals',
         name: 'Happy Animals',
         desc: 'High sanctuary reputation means happier animals and happier you',

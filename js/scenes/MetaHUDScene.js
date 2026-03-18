@@ -109,8 +109,11 @@ export default class MetaHUDScene extends Phaser.Scene {
         // Inventory count
         this.invText = this.txt(780, 14, '', 7, '#AABB88').setOrigin(0, 0.5).setDepth(201);
 
+        // Event indicator
+        this.eventText = this.txt(840, 14, '', 7, '#FFDD66').setOrigin(0, 0.5).setDepth(201);
+
         // Phone notification badge
-        this.phoneBadge = this.txt(840, 14, '', 7, '#FF8866').setOrigin(0, 0.5).setDepth(201);
+        this.phoneBadge = this.txt(920, 14, '', 7, '#FF8866').setOrigin(0, 0.5).setDepth(201);
 
         // Location name (right side)
         this.locationText = this.txt(W - 10, 14, '', 7, '#667788').setOrigin(1, 0.5).setDepth(201);
@@ -170,12 +173,27 @@ export default class MetaHUDScene extends Phaser.Scene {
             this.invText.setText('');
         }
 
+        // Event indicator
+        const evt = s.currentEvent;
+        if (evt && evt.name) {
+            this.eventText.setText(`EVT:${evt.name}`);
+        } else {
+            this.eventText.setText('');
+        }
+
         // Phone notification badge
         const notifCount = (s.phoneNotifications || []).length;
         if (notifCount > 0) {
-            this.phoneBadge.setText(`! ${notifCount}`);
+            this.phoneBadge.setText(`!${notifCount}`);
         } else {
             this.phoneBadge.setText('');
+        }
+
+        // Late-night warning
+        if (s.timeOfDay >= 1380) {
+            this.dayTimeText.setColor('#FF4444');
+        } else if (s.timeOfDay >= 1320) {
+            this.dayTimeText.setColor('#FF8866');
         }
 
         // Location

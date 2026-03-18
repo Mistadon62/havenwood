@@ -6,6 +6,7 @@
 // Gift system: each NPC has giftPreferences mapping item IDs to friendship bonuses.
 
 import MetaState from './MetaStateManager.js';
+import MetaEvents from './MetaEvents.js';
 
 const WEEKDAYS = [0, 1, 2, 3, 4];
 const WEEKEND = [5, 6];
@@ -328,7 +329,12 @@ const NPCS = {
         },
 
         getDialogue() {
+            const s = MetaState.state;
             const tier = MetaState.getFriendshipTier('shopkeeper');
+            const disc = MetaState.hasFlag('tanaka_discount');
+            const foodPrice = disc ? 16 : 20;
+            const treatPrice = disc ? 12 : 15;
+            const premPrice = disc ? 24 : 30;
 
             if (!MetaState.hasMetNPC('shopkeeper')) {
                 return {
@@ -339,8 +345,8 @@ const NPCS = {
                         'What can I get you?',
                     ],
                     choices: [
-                        { label: 'Food Supplies ($20)', action: 'buy_food_supplies' },
-                        { label: 'Treats ($15)', action: 'buy_treats' },
+                        { label: `Food Supplies ($${foodPrice})`, action: 'buy_food_supplies' },
+                        { label: `Treats ($${treatPrice})`, action: 'buy_treats' },
                         { label: 'Just browsing', action: 'cancel' },
                     ],
                 };
@@ -363,10 +369,10 @@ const NPCS = {
             const choices = [];
             // Loyalty discount at high friendship
             if (tier === 'close') {
-                choices.push({ label: 'Premium Pack ($30, extra value!)', action: 'buy_premium' });
+                choices.push({ label: `Premium Pack ($${premPrice}, extra value!)`, action: 'buy_premium' });
             }
-            choices.push({ label: 'Food Supplies ($20)', action: 'buy_food_supplies' });
-            choices.push({ label: 'Treats ($15)', action: 'buy_treats' });
+            choices.push({ label: `Food Supplies ($${foodPrice})`, action: 'buy_food_supplies' });
+            choices.push({ label: `Treats ($${treatPrice})`, action: 'buy_treats' });
             if (tier === 'friend' || tier === 'close') {
                 choices.push({ label: 'Chat', action: 'chat' });
             }
@@ -386,8 +392,13 @@ const NPCS = {
             if (action === 'cancel') return;
             MetaState.meetNPC('shopkeeper');
 
+            const disc = MetaState.hasFlag('tanaka_discount');
+            const foodPrice = disc ? 16 : 20;
+            const treatPrice = disc ? 12 : 15;
+            const premPrice = disc ? 24 : 30;
+
             if (action === 'buy_food_supplies') {
-                if (!MetaState.spendMoney(20)) {
+                if (!MetaState.spendMoney(foodPrice)) {
                     hudScene.showNotification('Not enough money!');
                     return;
                 }
@@ -399,7 +410,7 @@ const NPCS = {
             }
 
             if (action === 'buy_treats') {
-                if (!MetaState.spendMoney(15)) {
+                if (!MetaState.spendMoney(treatPrice)) {
                     hudScene.showNotification('Not enough money!');
                     return;
                 }
@@ -411,7 +422,7 @@ const NPCS = {
             }
 
             if (action === 'buy_premium') {
-                if (!MetaState.spendMoney(30)) {
+                if (!MetaState.spendMoney(premPrice)) {
                     hudScene.showNotification('Not enough money!');
                     return;
                 }
@@ -512,9 +523,19 @@ export function getGiftItemInfo() {
 export function getNPCsAtLocation(locationId) {
     const s = MetaState.state;
     const isRainy = s.weather === 'rainy' || s.weather === 'snowy';
+    const eventOverrides = MetaEvents.getEventNPCOverrides();
     const results = [];
 
     for (const npc of Object.values(NPCS)) {
+        // Check event override first
+        const override = eventOverrides[npc.id];
+        if (override) {
+            if (override.location === locationId) {
+                results.push({ id: npc.id, gx: override.gx, gy: override.gy });
+            }
+            continue; // Event override takes priority over schedule
+        }
+
         if (!npc.schedule) continue;
         for (const slot of npc.schedule) {
             if (!slot.days.includes(s.dayOfWeek)) continue;
