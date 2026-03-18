@@ -183,8 +183,8 @@ const LOCATIONS = {
             [3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 3, 3, 3, 3, 3, 3, 3, 3],
             [3, 3, 3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 3],
             [3, 3, 3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 3],
-            [9, 3, 3, 3, 4, 4, 4, 4, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 3, 3, 3, 9, 3],
-            [9, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 3, 3, 3, 9, 3],
+            [9, 3, 3, 3, 4, 4, 4, 4, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 3, 3, 3, 3, 9],
+            [9, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 9],
             [3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3],
             [3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 3, 3, 3, 3, 3],
             [3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3],
@@ -213,8 +213,8 @@ const LOCATIONS = {
             { gx: 0, gy: 10, targetLocation: 'park', spawnGx: 21, spawnGy: 6 },
             { gx: 0, gy: 11, targetLocation: 'park', spawnGx: 21, spawnGy: 7 },
             // Pet Store (right)
-            { gx: 21, gy: 4, targetLocation: 'pet_store', spawnGx: 1, spawnGy: 4 },
-            { gx: 21, gy: 5, targetLocation: 'pet_store', spawnGx: 1, spawnGy: 5 },
+            { gx: 22, gy: 4, targetLocation: 'pet_store', spawnGx: 1, spawnGy: 4 },
+            { gx: 22, gy: 5, targetLocation: 'pet_store', spawnGx: 1, spawnGy: 5 },
             // Café (bottom)
             { gx: 10, gy: 14, targetLocation: 'cafe', spawnGx: 5, spawnGy: 1 },
             { gx: 11, gy: 14, targetLocation: 'cafe', spawnGx: 6, spawnGy: 1 },
@@ -282,8 +282,8 @@ const LOCATIONS = {
             [3, 3, 3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 3],
             [3, 3, 3, 3, 3, 4, 4, 4, 3, 3, 3, 3, 3, 3, 4, 4, 4, 3, 3, 3, 3, 3, 3],
             [3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3],
-            [3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 9, 3],
-            [3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 9, 3],
+            [3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 9],
+            [3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 9],
             [3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3, 3],
             [3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 3, 3, 3, 3, 3, 3],
             [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
@@ -314,8 +314,8 @@ const LOCATIONS = {
             { type: 'flower', gx: 8, gy: 11 },
         ],
         doors: [
-            { gx: 21, gy: 6, targetLocation: 'campus_quad', spawnGx: 1, spawnGy: 10 },
-            { gx: 21, gy: 7, targetLocation: 'campus_quad', spawnGx: 1, spawnGy: 11 },
+            { gx: 22, gy: 6, targetLocation: 'campus_quad', spawnGx: 1, spawnGy: 10 },
+            { gx: 22, gy: 7, targetLocation: 'campus_quad', spawnGx: 1, spawnGy: 11 },
         ],
         npcs: [], // Dynamic
         interactables: [
@@ -355,9 +355,8 @@ const LOCATIONS = {
             { type: 'shelf_store', gx: 10, gy: 6 },
         ],
         doors: [
-            { gx: 0, gy: 4, targetLocation: 'campus_quad', spawnGx: 20, spawnGy: 4 },
-            { gx: 0, gy: 5, targetLocation: 'campus_quad', spawnGx: 20, spawnGy: 5 },
-
+            { gx: 0, gy: 4, targetLocation: 'campus_quad', spawnGx: 21, spawnGy: 4 },
+            { gx: 0, gy: 5, targetLocation: 'campus_quad', spawnGx: 21, spawnGy: 5 },
         ],
         npcs: [], // Dynamic
         interactables: [],

@@ -162,8 +162,9 @@ export default class MetaWorldScene extends Phaser.Scene {
         if (neighbors.includes(5)) return 'door_exterior';
         // If any neighbor is an interior wall (1 or 2), use interior door
         if (neighbors.includes(1) || neighbors.includes(2)) return 'door_interior';
-        // Edge of map (could be a border door)
+        // Edge of map or near-edge on outdoor maps (border doors)
         if (ry === 0 || ry === loc.rows - 1 || rx === 0 || rx === loc.cols - 1) return 'door_interior';
+        if (loc.outdoor && (rx <= 1 || rx >= loc.cols - 2)) return 'door_exterior';
         // Fallback to floor
         return loc.floorTile || 'floor_wood';
     }
@@ -302,6 +303,11 @@ export default class MetaWorldScene extends Phaser.Scene {
         const rx = Math.floor((wx - this.roomX) / TILE);
         const ry = Math.floor((wy - this.roomY) / TILE);
         if (rx < 0 || rx >= this.location.cols || ry < 0 || ry >= this.location.rows) return false;
+        // Block edge columns on outdoor areas (they overflow off-screen)
+        if (this.location.outdoor && (rx === 0 || rx === this.location.cols - 1)) {
+            const tile = this.location.tileMap[ry][rx];
+            if (tile !== 9) return false; // only doors are walkable on edges
+        }
         const tile = this.location.tileMap[ry][rx];
         if (tile === 1 || tile === 2 || tile === 5) return false;
 
