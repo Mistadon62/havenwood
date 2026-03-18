@@ -67,8 +67,9 @@ const MetaDialogue = {
         const lineText = txt(hudScene, boxX + 14, textY, lines[0] || '', 9, '#DDDDEE');
         container.add(lineText);
 
-        // Hint
-        const hint = txt(hudScene, boxX + boxW - 14, boxY + boxH - 16, '[E] Continue', 8, '#666688');
+        // Hint — show "[E] Close" immediately if this is the only line with no choices
+        const isFinalLine = lines.length <= 1 && (!choices || choices.length === 0);
+        const hint = txt(hudScene, boxX + boxW - 14, boxY + boxH - 16, isFinalLine ? '[E] Close' : '[E] Continue', 8, '#666688');
         hint.setOrigin(1, 0.5);
         container.add(hint);
 
@@ -127,8 +128,8 @@ const MetaDialogue = {
 
         const advance = () => {
             if (choiceContainer) return; // choices visible, ignore E
-            if (lineIdx.current === -1) {
-                // Close
+            // If we're on the last line with no choices, close immediately
+            if (lineIdx.current === lines.length - 1 && (!choices || choices.length === 0)) {
                 MetaDialogue.close(hudScene);
                 if (onClose) onClose();
                 return;
@@ -138,28 +139,32 @@ const MetaDialogue = {
                 showChoices();
             } else {
                 lineText.setText(lines[lineIdx.current]);
+                // Show "[E] Close" on the last line if there are no choices
+                if (lineIdx.current === lines.length - 1 && (!choices || choices.length === 0)) {
+                    hint.setText('[E] Close');
+                }
             }
         };
 
         activeDialogue = { container, advance, _choiceKeys: null, onChoice, onClose };
     },
 
-    advance(hudScene) {
-        if (!activeDialogue) return;
-
-        // Check choice key presses
-        if (activeDialogue._choiceKeys) {
-            for (const ck of activeDialogue._choiceKeys) {
-                if (Phaser.Input.Keyboard.JustDown(ck.key)) {
-                    const action = ck.action;
-                    const onChoice = activeDialogue.onChoice;
-                    MetaDialogue.close(hudScene);
-                    if (onChoice) onChoice(action);
-                    return;
-                }
+    // Check number key presses for choice selection (called every frame during dialogue)
+    checkChoiceKeys(hudScene) {
+        if (!activeDialogue || !activeDialogue._choiceKeys) return;
+        for (const ck of activeDialogue._choiceKeys) {
+            if (Phaser.Input.Keyboard.JustDown(ck.key)) {
+                const action = ck.action;
+                const onChoice = activeDialogue.onChoice;
+                MetaDialogue.close(hudScene);
+                if (onChoice) onChoice(action);
+                return;
             }
         }
+    },
 
+    advance(hudScene) {
+        if (!activeDialogue) return;
         activeDialogue.advance();
     },
 

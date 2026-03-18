@@ -71,7 +71,11 @@ export default class MetaWorldScene extends Phaser.Scene {
             if (obj && obj.destroy) obj.destroy();
         }
         this._roomObjects = [];
-        if (this._highlightRect) { this._highlightRect.destroy(); this._highlightRect = null; }
+        if (this._highlightSprite && this._highlightSprite.preFX && this._highlightGlow) {
+            this._highlightSprite.preFX.remove(this._highlightGlow);
+        }
+        this._highlightSprite = null;
+        this._highlightGlow = null;
         this._lastHighlightKey = null;
 
         this.location = getLocation(locationId);
@@ -230,7 +234,8 @@ export default class MetaWorldScene extends Phaser.Scene {
             if (ia.action === 'job' && !this.location.furniture.some(f => f.type === 'job_board' && f.gx === ia.gx && f.gy === ia.gy)) {
                 const px = this.roomX + ia.gx * TILE;
                 const py = this.roomY + ia.gy * TILE;
-                this._track(this.add.image(px + TILE / 2, py + TILE / 2, 'furniture_job_board').setDepth(5));
+                const jbSpr = this._track(this.add.image(px + TILE / 2, py + TILE / 2, 'furniture_job_board').setDepth(5));
+                this.furnitureSprites.push(jbSpr);
             }
         }
 
@@ -242,6 +247,7 @@ export default class MetaWorldScene extends Phaser.Scene {
             const key = `furniture_${f.type}`;
             if (this.textures.exists(key)) {
                 const sprite = this._track(this.add.image(px + TILE / 2, py + TILE / 2, key).setDepth(5));
+                this.furnitureSprites.push(sprite);
                 this.furnitureSprites.push(sprite);
             }
         }
@@ -358,6 +364,36 @@ export default class MetaWorldScene extends Phaser.Scene {
         return { fx, fy };
     }
 
+    // Find the nearest interactable within proximity (current tile + all 8 neighbors).
+    // Prefers the faced tile, then picks the closest by distance to the character.
+    getNearestInteractable() {
+        const rx = Math.floor((this.char.x - this.roomX) / TILE);
+        const ry = Math.floor((this.char.y + 6 - this.roomY) / TILE);
+        const { fx, fy } = this.getFacingTile();
+
+        // Check faced tile first
+        const faced = this.getInteractableAt(fx, fy);
+        if (faced) return { target: faced, tx: fx, ty: fy };
+
+        // Check current tile and all 8 neighbors
+        let best = null, bestDist = Infinity, bx = 0, by = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+                const cx = rx + dx, cy = ry + dy;
+                if (cx === fx && cy === fy) continue; // already checked
+                const t = this.getInteractableAt(cx, cy);
+                if (t) {
+                    const worldX = this.roomX + cx * TILE + TILE / 2;
+                    const worldY = this.roomY + cy * TILE + TILE / 2;
+                    const dist = (this.char.x - worldX) ** 2 + (this.char.y - worldY) ** 2;
+                    if (dist < bestDist) { bestDist = dist; best = t; bx = cx; by = cy; }
+                }
+            }
+        }
+        if (best) return { target: best, tx: bx, ty: by };
+        return { target: null, tx: rx, ty: ry };
+    }
+
     // Check what's at a tile position
     getInteractableAt(fx, fy) {
         // Check NPCs (dynamic schedule)
@@ -380,12 +416,34 @@ export default class MetaWorldScene extends Phaser.Scene {
         return null;
     }
 
+    // Find the Phaser sprite for a given interaction target (NPC or furniture)
+    _findTargetSprite(target, fx, fy) {
+        if (target.type === 'npc') {
+            const npc = this.npcSprites.find(n => n.id === target.id);
+            return npc ? npc.sprite : null;
+        }
+        // For interactables, find the closest furniture sprite to the grid position
+        const worldX = this.roomX + fx * TILE + TILE / 2;
+        const worldY = this.roomY + fy * TILE + TILE / 2;
+        let best = null, bestDist = Infinity;
+        for (const spr of this.furnitureSprites) {
+            const dx = spr.x - worldX, dy = spr.y - worldY;
+            const dist = dx * dx + dy * dy;
+            if (dist < bestDist) { bestDist = dist; best = spr; }
+        }
+        // Only match if within ~1.5 tiles
+        if (best && bestDist < (TILE * 1.5) * (TILE * 1.5)) return best;
+        return null;
+    }
+
     update(time, delta) {
         // Handle dialogue advancement even when frozen
         if (MetaDialogue.isActive()) {
+            const hudScene = this.scene.get('MetaHUDScene');
+            // Check number keys for choice selection every frame
+            MetaDialogue.checkChoiceKeys(hudScene);
             if (Phaser.Input.Keyboard.JustDown(this.interactKey) ||
                 Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
-                const hudScene = this.scene.get('MetaHUDScene');
                 MetaDialogue.advance(hudScene);
             }
             return;
@@ -642,8 +700,7 @@ export default class MetaWorldScene extends Phaser.Scene {
         if (Phaser.Input.Keyboard.JustDown(this.interactKey) ||
             Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
 
-            const { fx, fy } = this.getFacingTile();
-            const target = this.getInteractableAt(fx, fy);
+            const { target } = this.getNearestInteractable();
 
             if (target) {
                 this._interactCooldown = true;
@@ -667,8 +724,7 @@ export default class MetaWorldScene extends Phaser.Scene {
         const hudScene = this.scene.get('MetaHUDScene');
         if (!hudScene) return;
 
-        const { fx, fy } = this.getFacingTile();
-        const target = this.getInteractableAt(fx, fy);
+        const { target, tx, ty } = this.getNearestInteractable();
 
         // Update prompt text
         if (target) {
@@ -692,30 +748,25 @@ export default class MetaWorldScene extends Phaser.Scene {
             hudScene.updatePrompt('[E] Play Havenwood');
         }
 
-        // Highlight the faced target
-        const targetKey = target ? `${fx},${fy}` : null;
+        // Highlight the nearest target's sprite with a glow effect
+        const targetKey = target ? `${tx},${ty}` : null;
         if (targetKey !== this._lastHighlightKey) {
-            // Remove old highlight
-            if (this._highlightRect) {
-                this._highlightRect.destroy();
-                this._highlightRect = null;
+            // Remove old glow
+            if (this._highlightSprite && this._highlightSprite.preFX) {
+                if (this._highlightGlow) {
+                    this._highlightSprite.preFX.remove(this._highlightGlow);
+                    this._highlightGlow = null;
+                }
             }
+            this._highlightSprite = null;
             this._lastHighlightKey = targetKey;
 
             if (target) {
-                const hx = this.roomX + fx * TILE + TILE / 2;
-                const hy = this.roomY + fy * TILE + TILE / 2;
-                this._highlightRect = this.add.rectangle(hx, hy, TILE, TILE, 0xFFFFFF, 0.15)
-                    .setDepth(4);
-                // Pulse animation
-                this.tweens.add({
-                    targets: this._highlightRect,
-                    alpha: 0.05,
-                    duration: 600,
-                    yoyo: true,
-                    repeat: -1,
-                    ease: 'Sine.easeInOut',
-                });
+                const sprite = this._findTargetSprite(target, tx, ty);
+                if (sprite && sprite.preFX) {
+                    this._highlightSprite = sprite;
+                    this._highlightGlow = sprite.preFX.addGlow(0xffffff, 2, 0, false, 0.15, 10);
+                }
             }
         }
     }
