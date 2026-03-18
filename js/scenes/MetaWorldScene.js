@@ -22,16 +22,41 @@ export default class MetaWorldScene extends Phaser.Scene {
         this._locationId = data?.locationId || MetaState.state.currentLocation || 'bedroom';
         this._spawnGx = data?.spawnGx;
         this._spawnGy = data?.spawnGy;
+        this._fromDoor = data?.fromDoor || false;
     }
 
     create() {
         this.cameras.main.setRoundPixels(true);
+        this._roomObjects = [];
 
-        this.location = getLocation(this._locationId);
-        MetaState.state.currentLocation = this._locationId;
+        // Background fill (persistent)
+        this._bg = this.add.rectangle(W / 2, H / 2, W, H, 0x1a1a2a).setDepth(0);
 
-        // Background fill
-        this.add.rectangle(W / 2, H / 2, W, H, 0x1a1a2a).setDepth(0);
+        this.setupInput();
+        this.buildLocation(this._locationId, this._spawnGx, this._spawnGy);
+
+        this._interactCooldown = false;
+        this._frozen = this._startWithPhone;
+        this._timeAccum = 0;
+        this._doorCooldown = true;
+
+        if (this._startWithPhone) {
+            this.char.setTexture('char_phone');
+        }
+    }
+
+    // Build or rebuild a location without restarting the scene (preserves input)
+    buildLocation(locationId, spawnGx, spawnGy) {
+        // Destroy old room objects
+        for (const obj of (this._roomObjects || [])) {
+            if (obj && obj.destroy) obj.destroy();
+        }
+        this._roomObjects = [];
+        if (this._highlightRect) { this._highlightRect.destroy(); this._highlightRect = null; }
+        this._lastHighlightKey = null;
+
+        this.location = getLocation(locationId);
+        MetaState.state.currentLocation = locationId;
 
         this.roomX = Math.floor((W - this.location.cols * TILE) / 2);
         this.roomY = Math.floor((H - this.location.rows * TILE) / 2);
@@ -39,18 +64,13 @@ export default class MetaWorldScene extends Phaser.Scene {
         this.drawRoom();
         this.placeFurniture();
         this.placeNPCs();
-        this.createCharacter();
-        this.setupInput();
+        this.createCharacter(spawnGx, spawnGy);
 
-        this._interactCooldown = false;
-        this._frozen = this._startWithPhone;
-        this._timeAccum = 0;
-        this._doorCooldown = false;
-
-        if (this._startWithPhone) {
-            this.char.setTexture('char_phone');
-        }
+        this._doorCooldown = true;
     }
+
+    // Track a room object for cleanup on location change
+    _track(obj) { this._roomObjects.push(obj); return obj; }
 
     drawRoom() {
         const loc = this.location;
@@ -61,7 +81,7 @@ export default class MetaWorldScene extends Phaser.Scene {
             3: 'floor_grass',
             4: 'floor_stone',
             5: 'wall_exterior',
-            9: loc.floorTile || 'floor_wood', // door (walkable)
+            9: loc.floorTile || 'floor_wood',
         };
 
         for (let ry = 0; ry < loc.rows; ry++) {
@@ -70,7 +90,7 @@ export default class MetaWorldScene extends Phaser.Scene {
                 const px = this.roomX + rx * TILE + TILE / 2;
                 const py = this.roomY + ry * TILE + TILE / 2;
                 const texKey = tileTextures[tile] || 'floor_wood';
-                this.add.image(px, py, texKey).setDepth(1);
+                this._track(this.add.image(px, py, texKey).setDepth(1));
             }
         }
     }
@@ -82,39 +102,38 @@ export default class MetaWorldScene extends Phaser.Scene {
             const py = this.roomY + f.gy * TILE;
 
             if (f.type === 'rug') {
-                const rug = this.add.image(px + 48, py + 32, 'furniture_rug').setDepth(2);
+                const rug = this._track(this.add.image(px + 48, py + 32, 'furniture_rug').setDepth(2));
                 this.furnitureSprites.push(rug);
             } else if (f.type === 'desk') {
-                const desk = this.add.image(px + 32, py + TILE / 2, 'furniture_desk').setDepth(5);
+                const desk = this._track(this.add.image(px + 32, py + TILE / 2, 'furniture_desk').setDepth(5));
                 this.furnitureSprites.push(desk);
             } else if (f.type === 'bed') {
-                const bed = this.add.image(px + 32, py + 48, 'furniture_bed').setDepth(5);
+                const bed = this._track(this.add.image(px + 32, py + 48, 'furniture_bed').setDepth(5));
                 this.furnitureSprites.push(bed);
             } else if (f.type === 'lamp') {
-                const lamp = this.add.image(px + TILE / 2, py + TILE / 2 - 8, 'furniture_lamp').setDepth(7);
+                const lamp = this._track(this.add.image(px + TILE / 2, py + TILE / 2 - 8, 'furniture_lamp').setDepth(7));
                 this.furnitureSprites.push(lamp);
-                this.add.circle(px + TILE / 2, py + TILE / 2, 40, 0xFFFF88, 0.06).setDepth(3);
+                this._track(this.add.circle(px + TILE / 2, py + TILE / 2, 40, 0xFFFF88, 0.06).setDepth(3));
             } else if (f.type === 'bench') {
-                const bench = this.add.image(px + 32, py + TILE / 2, 'furniture_bench').setDepth(5);
+                const bench = this._track(this.add.image(px + 32, py + TILE / 2, 'furniture_bench').setDepth(5));
                 this.furnitureSprites.push(bench);
             } else if (f.type === 'job_board') {
-                const jb = this.add.image(px + TILE / 2, py + TILE / 2, 'furniture_job_board').setDepth(5);
+                const jb = this._track(this.add.image(px + TILE / 2, py + TILE / 2, 'furniture_job_board').setDepth(5));
                 this.furnitureSprites.push(jb);
             } else {
                 const key = `furniture_${f.type}`;
                 if (this.textures.exists(key)) {
-                    const sprite = this.add.image(px + TILE / 2, py + TILE / 2, key).setDepth(5);
+                    const sprite = this._track(this.add.image(px + TILE / 2, py + TILE / 2, key).setDepth(5));
                     this.furnitureSprites.push(sprite);
                 }
             }
         }
 
-        // Place interactable-only objects (like job_board) that aren't in furniture
         for (const ia of this.location.interactables) {
             if (ia.action === 'job' && !this.location.furniture.some(f => f.type === 'job_board' && f.gx === ia.gx && f.gy === ia.gy)) {
                 const px = this.roomX + ia.gx * TILE;
                 const py = this.roomY + ia.gy * TILE;
-                this.add.image(px + TILE / 2, py + TILE / 2, 'furniture_job_board').setDepth(5);
+                this._track(this.add.image(px + TILE / 2, py + TILE / 2, 'furniture_job_board').setDepth(5));
             }
         }
     }
@@ -126,21 +145,21 @@ export default class MetaWorldScene extends Phaser.Scene {
             if (!npcDef) continue;
             const px = this.roomX + npcRef.gx * TILE + TILE / 2;
             const py = this.roomY + npcRef.gy * TILE + TILE / 2;
-            const sprite = this.add.image(px, py, npcDef.spriteKey).setDepth(10);
+            const sprite = this._track(this.add.image(px, py, npcDef.spriteKey).setDepth(10));
             this.npcSprites.push({ id: npcRef.id, gx: npcRef.gx, gy: npcRef.gy, sprite, def: npcDef });
         }
     }
 
-    createCharacter() {
-        const gx = this._spawnGx ?? MetaState.state.playerTileX ?? 6;
-        const gy = this._spawnGy ?? MetaState.state.playerTileY ?? 5;
+    createCharacter(spawnGx, spawnGy) {
+        const gx = spawnGx ?? MetaState.state.playerTileX ?? 6;
+        const gy = spawnGy ?? MetaState.state.playerTileY ?? 5;
         // Clamp to room bounds
         const clampedGx = Math.max(1, Math.min(gx, this.location.cols - 2));
         const clampedGy = Math.max(1, Math.min(gy, this.location.rows - 2));
         const px = this.roomX + clampedGx * TILE + TILE / 2;
         const py = this.roomY + clampedGy * TILE + TILE / 2;
 
-        this.char = this.add.image(px, py, 'char_down').setDepth(10);
+        this.char = this._track(this.add.image(px, py, 'char_down').setDepth(10));
         this.charDir = 'down';
         this.charMoving = false;
         this.walkFrame = 0;
@@ -234,6 +253,7 @@ export default class MetaWorldScene extends Phaser.Scene {
         this.handleMovement(delta);
         this.handleDoors();
         this.handleInteraction();
+        this.updateProximityPrompt();
         this.updateTime(delta);
     }
 
@@ -320,30 +340,32 @@ export default class MetaWorldScene extends Phaser.Scene {
     }
 
     handleDoors() {
-        if (this._doorCooldown) return;
         const rx = Math.floor((this.char.x - this.roomX) / TILE);
         const ry = Math.floor((this.char.y + 6 - this.roomY) / TILE);
+        const onDoor = this.location.doors.some(d => d.gx === rx && d.gy === ry);
 
-        for (const door of this.location.doors) {
-            if (rx === door.gx && ry === door.gy) {
-                this._doorCooldown = true;
-                this._frozen = true;
-
-                // Brief fade transition
-                this.cameras.main.fadeOut(200, 0, 0, 0);
-                this.cameras.main.once('camerafadeoutcomplete', () => {
-                    // Stop meta HUD and restart this scene with new location
-                    this.scene.get('MetaHUDScene')?.scene.restart();
-                    this.scene.restart({
-                        locationId: door.targetLocation,
-                        spawnGx: door.spawnGx,
-                        spawnGy: door.spawnGy,
-                        startWithPhone: false,
-                    });
-                });
-                return;
-            }
+        // Clear cooldown once the player has stepped off all door tiles
+        if (this._doorCooldown) {
+            if (!onDoor) this._doorCooldown = false;
+            return;
         }
+
+        if (!onDoor) return;
+
+        // Player stepped onto a door — trigger transition
+        const door = this.location.doors.find(d => d.gx === rx && d.gy === ry);
+        this._doorCooldown = true;
+        this._frozen = true;
+
+        this.cameras.main.fadeOut(200, 0, 0, 0);
+        this.cameras.main.once('camerafadeoutcomplete', () => {
+            this.buildLocation(door.targetLocation, door.spawnGx, door.spawnGy);
+            this._frozen = false;
+            this.cameras.main.fadeIn(200, 0, 0, 0);
+            // Refresh HUD for new location name
+            const hud = this.scene.get('MetaHUDScene');
+            if (hud && hud.refreshStatusBar) hud.refreshStatusBar();
+        });
     }
 
     handleInteraction() {
@@ -369,6 +391,54 @@ export default class MetaWorldScene extends Phaser.Scene {
                 this._interactCooldown = true;
                 this.time.delayedCall(500, () => { this._interactCooldown = false; });
                 this.zoomIntoPhone();
+            }
+        }
+    }
+
+    updateProximityPrompt() {
+        const hudScene = this.scene.get('MetaHUDScene');
+        if (!hudScene) return;
+
+        const { fx, fy } = this.getFacingTile();
+        const target = this.getInteractableAt(fx, fy);
+
+        // Update prompt text
+        if (target) {
+            if (target.type === 'npc') {
+                const npcDef = getNPC(target.id);
+                hudScene.updatePrompt(`[E] Talk to ${npcDef ? npcDef.name : 'NPC'}`);
+            } else if (target.type === 'interactable') {
+                const labels = { sleep: 'Sleep', study: 'Study', job: 'Job Board' };
+                hudScene.updatePrompt(`[E] ${labels[target.data.action] || target.data.name}`);
+            }
+        } else {
+            hudScene.updatePrompt('[E] Play Havenwood');
+        }
+
+        // Highlight the faced target
+        const targetKey = target ? `${fx},${fy}` : null;
+        if (targetKey !== this._lastHighlightKey) {
+            // Remove old highlight
+            if (this._highlightRect) {
+                this._highlightRect.destroy();
+                this._highlightRect = null;
+            }
+            this._lastHighlightKey = targetKey;
+
+            if (target) {
+                const hx = this.roomX + fx * TILE + TILE / 2;
+                const hy = this.roomY + fy * TILE + TILE / 2;
+                this._highlightRect = this.add.rectangle(hx, hy, TILE, TILE, 0xFFFFFF, 0.15)
+                    .setDepth(4);
+                // Pulse animation
+                this.tweens.add({
+                    targets: this._highlightRect,
+                    alpha: 0.05,
+                    duration: 600,
+                    yoyo: true,
+                    repeat: -1,
+                    ease: 'Sine.easeInOut',
+                });
             }
         }
     }
