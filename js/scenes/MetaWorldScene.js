@@ -65,18 +65,52 @@ export default class MetaWorldScene extends Phaser.Scene {
         // Initial quest check
         this._questCheckAccum = 0;
         this.checkQuests();
+
+        // When waking from sleep (returning from Havenwood), hide NPC sprites immediately
+        // so they don't render at stale positions before playPutAwayPhone() repositions them.
+        this.events.on('wake', () => {
+            for (const npc of (this.npcSprites || [])) {
+                if (npc.sprite) npc.sprite.setAlpha(0);
+            }
+        });
     }
 
     // Build or rebuild a location without restarting the scene (preserves input)
     buildLocation(locationId, spawnGx, spawnGy) {
-        // Save transit state for any departing/passing-through NPCs before destroying the room
+        // Save transit state for any departing/passing-through NPCs before destroying the room.
+        // Keep them in the current room (same pathIndex) and record their pixel progress so
+        // placeNPCs() can interpolate their position correctly when the player re-enters.
         for (const npc of (this.npcSprites || [])) {
             if (npc.transitionState === 'departing' && npc.departPath) {
+                const idx = npc.departPathIndex;
+                const prevLocId = idx > 0 ? npc.departPath[idx - 1] : null;
+                const nextLocId = idx < npc.departPath.length - 1 ? npc.departPath[idx + 1] : null;
+                const isFinal = idx === npc.departPath.length - 1;
+
+                // Find entry door so we can measure how far they've walked
+                const entryDoor = prevLocId ? this.location.doors.find(d => d.targetLocation === prevLocId) : null;
+                const entryX = entryDoor ? this.roomX + entryDoor.gx * TILE + TILE / 2 : npc.targetX;
+                const entryY = entryDoor ? this.roomY + entryDoor.gy * TILE + TILE / 2 : npc.targetY;
+
+                const totalDx = npc.targetX - entryX;
+                const totalDy = npc.targetY - entryY;
+                const totalDist = Math.sqrt(totalDx * totalDx + totalDy * totalDy);
+                const traveledDx = npc.sprite.x - entryX;
+                const traveledDy = npc.sprite.y - entryY;
+                const traveledDist = Math.sqrt(traveledDx * traveledDx + traveledDy * traveledDy);
+                const progress = totalDist > 0 ? Math.min(traveledDist / totalDist, 1) : 0;
+
+                const roomTime = this._calcRoomTransitTime(
+                    this.location.id, prevLocId, nextLocId,
+                    isFinal ? npc.departDestGx : 0, isFinal ? npc.departDestGy : 0
+                );
+
                 this.game._npcTransits[npc.id] = {
                     path: npc.departPath,
-                    pathIndex: npc.departPathIndex + 1, // advance past current room
+                    pathIndex: idx, // stay in current room — not yet at exit door
                     destGx: npc.departDestGx,
                     destGy: npc.departDestGy,
+                    _offScreenTimer: progress * roomTime,
                 };
             }
         }
@@ -289,16 +323,37 @@ export default class MetaWorldScene extends Phaser.Scene {
             const entryDoor = prevRoom ? this.location.doors.find(d => d.targetLocation === prevRoom) : null;
 
             const isFinalRoom = pathIndex === path.length - 1;
+            const nextRoom = !isFinalRoom ? path[pathIndex + 1] : null;
 
-            let sx, sy;
+            // Entry position
+            let entryGx, entryGy;
             if (entryDoor) {
-                sx = this.roomX + entryDoor.gx * TILE + TILE / 2;
-                sy = this.roomY + entryDoor.gy * TILE + TILE / 2;
+                entryGx = entryDoor.gx; entryGy = entryDoor.gy;
             } else {
                 const fb = this.location.doors[0];
-                sx = fb ? this.roomX + fb.gx * TILE + TILE / 2 : this.roomX + TILE * 2;
-                sy = fb ? this.roomY + fb.gy * TILE + TILE / 2 : this.roomY + TILE * 2;
+                entryGx = fb ? fb.gx : 2; entryGy = fb ? fb.gy : 2;
             }
+
+            // Exit/destination position
+            let exitGx, exitGy;
+            if (!isFinalRoom) {
+                const exitDoor = findDoorTo(this.location.id, nextRoom);
+                exitGx = exitDoor ? exitDoor.gx : entryGx;
+                exitGy = exitDoor ? exitDoor.gy : entryGy;
+            } else {
+                exitGx = destGx; exitGy = destGy;
+            }
+
+            // Interpolate spawn position based on how far through this room the NPC has travelled
+            const roomTime = this._calcRoomTransitTime(
+                this.location.id, prevRoom, nextRoom,
+                isFinalRoom ? destGx : 0, isFinalRoom ? destGy : 0
+            );
+            const progress = Math.min((transit._offScreenTimer || 0) / roomTime, 1);
+            const spawnGx = entryGx + (exitGx - entryGx) * progress;
+            const spawnGy = entryGy + (exitGy - entryGy) * progress;
+            const sx = this.roomX + spawnGx * TILE + TILE / 2;
+            const sy = this.roomY + spawnGy * TILE + TILE / 2;
 
             const sprite = this._track(this.add.image(sx, sy, npcDef.spriteKey).setDepth(10).setAlpha(0));
             this.tweens.add({ targets: sprite, alpha: 1, duration: 300 });
@@ -322,10 +377,8 @@ export default class MetaWorldScene extends Phaser.Scene {
                 }
             } else {
                 // Passing through — walk to the exit door leading to next room
-                const nextRoom = path[pathIndex + 1];
-                const exitDoor = findDoorTo(this.location.id, nextRoom);
-                const tx = exitDoor ? this.roomX + exitDoor.gx * TILE + TILE / 2 : sx;
-                const ty = exitDoor ? this.roomY + exitDoor.gy * TILE + TILE / 2 : sy;
+                const tx = this.roomX + exitGx * TILE + TILE / 2;
+                const ty = this.roomY + exitGy * TILE + TILE / 2;
                 this.npcSprites.push({
                     id: npcId, gx: startGx, gy: startGy,
                     homeGx: startGx, homeGy: startGy, sprite, def: npcDef,
@@ -629,8 +682,41 @@ export default class MetaWorldScene extends Phaser.Scene {
         }
     }
 
+    // Returns the time in ms it takes an NPC to cross a room, based on entry→exit tile distance.
+    // Uses NPC_TRANSITION_SPEED (60 px/s) to match actual on-screen walking speed.
+    _calcRoomTransitTime(locId, prevLocId, nextLocId, destGx, destGy) {
+        const NPC_TRANSITION_SPEED = 60; // px/s — must match updateNPCs
+        const loc = getLocation(locId);
+        if (!loc) return 4000;
+
+        // Entry position: door from the previous room
+        let entryGx, entryGy;
+        const entryDoor = prevLocId ? loc.doors.find(d => d.targetLocation === prevLocId) : null;
+        if (entryDoor) {
+            entryGx = entryDoor.gx; entryGy = entryDoor.gy;
+        } else {
+            const fb = loc.doors[0];
+            entryGx = fb ? fb.gx : 1; entryGy = fb ? fb.gy : 1;
+        }
+
+        // Exit position: door toward next room, or the schedule destination if this is the final room
+        let exitGx, exitGy;
+        if (nextLocId) {
+            const exitDoor = findDoorTo(locId, nextLocId);
+            exitGx = exitDoor ? exitDoor.gx : entryGx;
+            exitGy = exitDoor ? exitDoor.gy : entryGy;
+        } else {
+            exitGx = destGx; exitGy = destGy;
+        }
+
+        const dx = (exitGx - entryGx) * TILE;
+        const dy = (exitGy - entryGy) * TILE;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        return Math.max(500, (dist / NPC_TRANSITION_SPEED) * 1000);
+    }
+
     // Advance transit records for NPCs in rooms the player isn't in.
-    // Simulates off-screen travel (~4 seconds per intermediate room).
+    // Transit time per room is calculated from actual tile distances rather than a fixed 4 seconds.
     _advanceOffScreenTransits(delta) {
         for (const [npcId, transit] of Object.entries(this.game._npcTransits || {})) {
             if (!transit.path || transit.pathIndex >= transit.path.length) continue;
@@ -639,11 +725,19 @@ export default class MetaWorldScene extends Phaser.Scene {
             // Skip if NPC is already rendered as a sprite here
             if (this.npcSprites.some(n => n.id === npcId)) continue;
 
+            const locId = transit.path[transit.pathIndex];
+            const prevLocId = transit.pathIndex > 0 ? transit.path[transit.pathIndex - 1] : null;
+            const nextLocId = transit.pathIndex < transit.path.length - 1 ? transit.path[transit.pathIndex + 1] : null;
+            const isFinal = transit.pathIndex === transit.path.length - 1;
+            const roomTime = this._calcRoomTransitTime(
+                locId, prevLocId, nextLocId,
+                isFinal ? transit.destGx : 0, isFinal ? transit.destGy : 0
+            );
+
             transit._offScreenTimer = (transit._offScreenTimer || 0) + delta;
-            if (transit._offScreenTimer >= 4000) {
-                transit._offScreenTimer = 0;
+            if (transit._offScreenTimer >= roomTime) {
+                transit._offScreenTimer -= roomTime; // carry remainder into next room
                 transit.pathIndex++;
-                // If they've reached the end of the path, remove the transit
                 if (transit.pathIndex >= transit.path.length) {
                     delete this.game._npcTransits[npcId];
                 }
@@ -665,18 +759,24 @@ export default class MetaWorldScene extends Phaser.Scene {
         for (const npc of this.npcSprites) {
             if (npc.transitionState) continue; // already transitioning / passing through
             if (!expectedIds.has(npc.id)) {
-                if (npc.paused) { npc.pendingTransition = { targetLocation: null }; continue; }
-                // Try to find their actual scheduled location for a proper path
+                // Look up their actual current schedule entry (including destination coords)
                 const npcDef = getNPC(npc.id);
                 const s = MetaState.state;
-                let targetLoc = null;
+                let targetLoc = null, targetGx = 0, targetGy = 0;
                 if (npcDef && npcDef.schedule) {
                     for (const slot of npcDef.schedule) {
                         if (slot.days && slot.days.includes(s.dayOfWeek) && s.timeOfDay >= slot.start && s.timeOfDay < slot.end) {
                             targetLoc = slot.location;
+                            targetGx = slot.gx;
+                            targetGy = slot.gy;
                             break;
                         }
                     }
+                }
+                if (npc.paused) {
+                    // Store full destination so resumeNPC can depart correctly after interaction ends
+                    npc.pendingTransition = { targetLocation: targetLoc, destGx: targetGx, destGy: targetGy };
+                    continue;
                 }
                 if (targetLoc && targetLoc !== this.location.id) {
                     const fullPath = findFullPath(this.location.id, targetLoc);
@@ -686,8 +786,8 @@ export default class MetaWorldScene extends Phaser.Scene {
                             npc.transitionState = 'departing';
                             npc.departPath = fullPath;
                             npc.departPathIndex = 0;
-                            npc.departDestGx = 0;
-                            npc.departDestGy = 0;
+                            npc.departDestGx = targetGx;
+                            npc.departDestGy = targetGy;
                             npc.targetX = this.roomX + door.gx * TILE + TILE / 2;
                             npc.targetY = this.roomY + door.gy * TILE + TILE / 2;
                             npc.walking = true;
@@ -819,7 +919,7 @@ export default class MetaWorldScene extends Phaser.Scene {
             const dep = npc.pendingTransition;
             npc.pendingTransition = null;
             const targetLoc = dep.targetLocation;
-            if (targetLoc) {
+            if (targetLoc && targetLoc !== this.location.id) {
                 const fullPath = findFullPath(this.location.id, targetLoc);
                 if (fullPath && fullPath.length >= 2) {
                     const door = findDoorTo(this.location.id, fullPath[1]);
@@ -827,8 +927,8 @@ export default class MetaWorldScene extends Phaser.Scene {
                         npc.transitionState = 'departing';
                         npc.departPath = fullPath;
                         npc.departPathIndex = 0;
-                        npc.departDestGx = 0;
-                        npc.departDestGy = 0;
+                        npc.departDestGx = dep.destGx || 0;
+                        npc.departDestGy = dep.destGy || 0;
                         npc.targetX = this.roomX + door.gx * TILE + TILE / 2;
                         npc.targetY = this.roomY + door.gy * TILE + TILE / 2;
                         npc.walking = true;
@@ -836,20 +936,15 @@ export default class MetaWorldScene extends Phaser.Scene {
                     }
                 }
             }
-            // Fallback
-            const door = this.location.doors[0];
-            if (door) {
-                npc.transitionState = 'departing';
-                npc.departPath = [this.location.id, door.targetLocation];
-                npc.departPathIndex = 0;
-                npc.departDestGx = 0;
-                npc.departDestGy = 0;
-                npc.targetX = this.roomX + door.gx * TILE + TILE / 2;
-                npc.targetY = this.roomY + door.gy * TILE + TILE / 2;
-                npc.walking = true;
-                return;
-            }
+            // No valid destination (off-duty or already in correct room) — resume wandering
         }
+
+        // If still mid-transit (e.g. paused briefly while passing through), resume the walk
+        if (npc.transitionState && npc.targetX !== undefined) {
+            npc.walking = true;
+            return;
+        }
+
         npc.wanderTimer = 2000 + Math.random() * 3000;
     }
 
@@ -1372,8 +1467,16 @@ export default class MetaWorldScene extends Phaser.Scene {
         // Stop NPC walking while talking
         this.pauseNPC(npcId);
 
-        const dialogue = npcDef.getDialogue();
         const hudScene = this.scene.get('MetaHUDScene');
+
+        // If the NPC is mid-transit, strip any choices that advance time — they need to keep moving.
+        const npcSprite = this.npcSprites.find(n => n.id === npcId);
+        const inTransit = npcSprite && npcSprite.transitionState;
+        const dialogue = npcDef.getDialogue(this.location.id);
+        if (inTransit && dialogue.choices) {
+            const TIME_COSTING = new Set(['hangout', 'attend_class']);
+            dialogue.choices = dialogue.choices.filter(c => !TIME_COSTING.has(c.action));
+        }
 
         MetaDialogue.show(hudScene, {
             speaker: dialogue.speaker,
@@ -2058,6 +2161,16 @@ export default class MetaWorldScene extends Phaser.Scene {
             this._havenwoodEnteredAt = null;
         }
 
+        // Reposition NPCs immediately now that time is current — they were hidden on wake
+        // to prevent stale-position rendering. Fade them in during the phone animation.
+        this.refreshNPCs();
+        for (const npc of this.npcSprites) {
+            if (npc.sprite) {
+                npc.sprite.setAlpha(0);
+                this.tweens.add({ targets: npc.sprite, alpha: 1, duration: 300, delay: 150 });
+            }
+        }
+
         // Check cross-mode unlocks (havenwood -> meta)
         const gs = this.scene.get('GameScene');
         if (gs) {
@@ -2094,9 +2207,7 @@ export default class MetaWorldScene extends Phaser.Scene {
             this._frozen = false;
             this._interactCooldown = true;
             this.time.delayedCall(300, () => { this._interactCooldown = false; });
-            // Refresh after time passed in Havenwood
             this.updateDayNightTint();
-            this.refreshNPCs();
             const hud = this.scene.get('MetaHUDScene');
             if (hud) hud.refreshStatusBar();
         });

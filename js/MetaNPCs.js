@@ -44,7 +44,7 @@ const NPCS = {
             treat: 'Oh, I\'ll save this for later.',
         },
 
-        getDialogue() {
+        getDialogue(locationId) {
             const s = MetaState.state;
             const tier = MetaState.getFriendshipTier('prof_elara');
 
@@ -63,6 +63,9 @@ const NPCS = {
             }
 
             const attendedToday = MetaState.hasFlag(`class_day_${s.day}`);
+            // Class is only available in the classroom during the scheduled window (8:00–8:15 AM)
+            const classInSession = locationId === 'classroom' && s.timeOfDay >= 480 && s.timeOfDay < 495;
+            const classOverForToday = s.timeOfDay >= 495;
 
             if (s.energy < 15) {
                 return {
@@ -91,6 +94,20 @@ const NPCS = {
                 };
             }
 
+            // Class time has passed for today and the player hasn't attended
+            if (classOverForToday) {
+                if (tier === 'close' || tier === 'friend') {
+                    return {
+                        speaker: 'Prof. Elara',
+                        lines: ['Oh, you just missed it!', 'Lectures wrap up at 8:15 sharp.', 'Come find me in the classroom tomorrow morning.'],
+                    };
+                }
+                return {
+                    speaker: 'Prof. Elara',
+                    lines: ['Lectures are done for today.', 'Come by the classroom tomorrow at 8 AM if you\'d like to attend.'],
+                };
+            }
+
             if (!MetaState.hasMetNPC('prof_elara')) {
                 return {
                     speaker: 'Prof. Elara',
@@ -99,8 +116,10 @@ const NPCS = {
                         'I teach Wildlife Biology here.',
                         'Ready for your first lesson?',
                     ],
-                    choices: [
+                    choices: classInSession ? [
                         { label: 'Attend class (-15 energy, 1hr)', action: 'attend_class' },
+                        { label: 'Maybe later', action: 'cancel' },
+                    ] : [
                         { label: 'Maybe later', action: 'cancel' },
                     ],
                 };
@@ -109,16 +128,23 @@ const NPCS = {
             // Friendship-tiered greetings
             let greeting;
             if (tier === 'close') {
-                greeting = ['Ah, my star pupil!', 'I saved you a front-row seat.', 'Ready for today\'s lecture?'];
+                greeting = classInSession
+                    ? ['Ah, my star pupil!', 'I saved you a front-row seat.', 'Ready for today\'s lecture?']
+                    : ['Ah, always good to see you!', 'If you want to attend class, catch me in here at 8 AM.'];
             } else if (tier === 'friend') {
-                greeting = ['Good to see you!', 'Today\'s topic is fascinating.', 'Shall we begin?'];
+                greeting = classInSession
+                    ? ['Good to see you!', 'Today\'s topic is fascinating.', 'Shall we begin?']
+                    : ['Good to see you!', 'Class starts at 8 AM in here if you\'re interested.'];
             } else {
-                greeting = ['Good to see you again!', 'Ready for today\'s lecture?'];
+                greeting = classInSession
+                    ? ['Good to see you again!', 'Ready for today\'s lecture?']
+                    : ['Hello there.', 'Class runs 8 to 8:15 in the classroom — catch me then if you\'d like to attend.'];
             }
 
-            const choices = [
-                { label: 'Attend class (-15 energy, 1hr)', action: 'attend_class' },
-            ];
+            const choices = [];
+            if (classInSession) {
+                choices.push({ label: 'Attend class (-15 energy, 1hr)', action: 'attend_class' });
+            }
             if (tier !== 'stranger') {
                 choices.push({ label: 'Chat', action: 'chat' });
             }
