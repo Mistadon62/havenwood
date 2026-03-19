@@ -120,31 +120,34 @@ const MetaDialogue = {
 
             const choiceW = textAreaW;
             const choiceX = textAreaX;
+            const choiceH = 26;
+            const choiceGap = 4;
 
             choices.forEach((c, i) => {
-                const cy = boxY - (choices.length - i) * 30 - 8;
+                // Stack choices upward from bottom of box
+                const cy = boxY + boxH - 12 - (choices.length - i) * (choiceH + choiceGap);
                 const cbg = hudScene.add.graphics();
                 cbg.fillStyle(0x2A3A52, 0.9);
-                cbg.fillRoundedRect(choiceX, cy, choiceW, 26, 5);
+                cbg.fillRoundedRect(choiceX, cy, choiceW, choiceH, 5);
                 choiceContainer.add(cbg);
 
-                const cHit = hudScene.add.rectangle(choiceX + choiceW / 2, cy + 13, choiceW, 26, 0, 0)
+                const cHit = hudScene.add.rectangle(choiceX + choiceW / 2, cy + choiceH / 2, choiceW, choiceH, 0, 0)
                     .setInteractive({ useHandCursor: true });
                 choiceContainer.add(cHit);
 
-                const cText = txt(hudScene, choiceX + 14, cy + 13, `${i + 1}. ${c.label}`, 9, '#88DD88', choiceW - 28);
+                const cText = txt(hudScene, choiceX + 14, cy + choiceH / 2, `${i + 1}. ${c.label}`, 9, '#88DD88', choiceW - 28);
                 cText.setOrigin(0, 0.5);
                 choiceContainer.add(cText);
 
                 cHit.on('pointerover', () => {
                     cbg.clear();
                     cbg.fillStyle(0x3A4F6B, 0.95);
-                    cbg.fillRoundedRect(choiceX, cy, choiceW, 26, 5);
+                    cbg.fillRoundedRect(choiceX, cy, choiceW, choiceH, 5);
                 });
                 cHit.on('pointerout', () => {
                     cbg.clear();
                     cbg.fillStyle(0x2A3A52, 0.9);
-                    cbg.fillRoundedRect(choiceX, cy, choiceW, 26, 5);
+                    cbg.fillRoundedRect(choiceX, cy, choiceW, choiceH, 5);
                 });
                 cHit.on('pointerdown', () => {
                     MetaDialogue.close(hudScene);

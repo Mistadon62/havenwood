@@ -7,6 +7,7 @@
 
 import MetaState from './MetaStateManager.js';
 import MetaEvents from './MetaEvents.js';
+import MetaClassQuiz from './MetaClassQuiz.js';
 
 const WEEKDAYS = [0, 1, 2, 3, 4];
 const WEEKEND = [5, 6];
@@ -168,14 +169,23 @@ const NPCS = {
                     return;
                 }
                 MetaState.meetNPC('prof_elara');
-                MetaState.advanceTime(60);
-                MetaState.addKnowledge(10);
-                MetaState.addMood(5);
-                MetaState.state.classesAttended++;
                 MetaState.setFlag(`class_day_${MetaState.state.day}`);
-                MetaState.addFriendship('prof_elara', 5);
-                hudScene.refreshStatusBar();
-                hudScene.showNotification('+10 Knowledge, +5 Mood');
+
+                // Launch quiz minigame
+                MetaClassQuiz.start(hudScene, ({ playerScore, samScore, bonusKnowledge, grade }) => {
+                    MetaState.advanceTime(60);
+                    MetaState.addKnowledge(bonusKnowledge);
+                    MetaState.addMood(5);
+                    MetaState.state.classesAttended++;
+                    MetaState.addFriendship('prof_elara', 5);
+                    // Bonus friendship if you beat Sam
+                    if (playerScore > samScore) MetaState.addFriendship('sam', 3);
+                    hudScene.refreshStatusBar();
+                    hudScene.showNotification(`Grade: ${grade} — +${bonusKnowledge} Knowledge, +5 Mood`);
+                    // Unfreeze
+                    const metaScene = hudScene.scene.get('MetaWorldScene');
+                    if (metaScene) metaScene._frozen = false;
+                });
             }
             if (action === 'chat') {
                 MetaState.advanceTime(10);

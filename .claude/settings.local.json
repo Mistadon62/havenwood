@@ -17,7 +17,8 @@
       "Bash(node -c /Users/baileywjohnson/Github/havenwood/js/MetaLocations.js)",
       "Bash(node -c /Users/baileywjohnson/Github/havenwood/js/MetaNPCs.js)",
       "Bash(ls -lh /c/Users/baile/Documents/GitHub/havenwood/js/*.js)",
-      "Read(//c/Users/baile/Documents/GitHub/havenwood/**)"
+      "Read(//c/Users/baile/Documents/GitHub/havenwood/**)",
+      "Bash(node -e \":*)"
     ]
   }
 }
