@@ -252,11 +252,11 @@ export default class MenuScene extends Phaser.Scene {
             color: CLR.gold,
             stroke: '#2A1A0E',
             strokeThickness: 6
-        }).setOrigin(0.5);
+        }).setOrigin(0.5).setDepth(8);
 
         // Pre-Alpha badge (top-left can overlap bottom-right of D)
         const badgeX = W / 2 + 160, badgeY = 180;
-        const badge = this.add.container(badgeX, badgeY);
+        const badge = this.add.container(badgeX, badgeY).setDepth(8);
         const badgeBg = this.add.graphics();
         badgeBg.fillStyle(0x3a4a2a, 0.9);
         badgeBg.lineStyle(1, 0x5a6a4a, 0.8);
@@ -311,13 +311,101 @@ export default class MenuScene extends Phaser.Scene {
         const meadowY = H * 0.65;
         const bunnies = [];
 
-        for (let i = 0; i < 4; i++) {
+        // Close Encounters easter egg — five notes assigned randomly to five bunnies
+        const CE_NOTES = [
+            { name: 'A#4', freq: 466.16 },
+            { name: 'C5',  freq: 523.25 },
+            { name: 'G#4', freq: 415.30 },
+            { name: 'G#3', freq: 207.65 },
+            { name: 'D#4', freq: 311.13 },
+        ];
+        const CE_ORDER = ['A#4', 'C5', 'G#4', 'G#3', 'D#4'];
+        const shuffled = Phaser.Utils.Array.Shuffle([...CE_NOTES]);
+
+        let audioCtx = null;
+        const getAudio = () => {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            return audioCtx;
+        };
+
+        const clickSequence = [];
+        let easterEggTriggered = false;
+
+        const playChirp = (freq) => {
+            const ctx = getAudio();
+            const t = ctx.currentTime;
+            const o = ctx.createOscillator();
+            const g = ctx.createGain();
+            o.connect(g); g.connect(ctx.destination);
+            o.type = 'sine';
+            o.frequency.setValueAtTime(freq, t);
+            o.frequency.linearRampToValueAtTime(freq * 1.03, t + 0.04);
+            o.frequency.linearRampToValueAtTime(freq, t + 0.12);
+            o.frequency.linearRampToValueAtTime(freq * 0.97, t + 0.2);
+            g.gain.setValueAtTime(0.18, t);
+            g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+            o.start(t); o.stop(t + 0.28);
+        };
+
+        const playFlute = (freq, startTime, duration) => {
+            const ctx = getAudio();
+            // Sine + quiet triangle for warmth
+            const o1 = ctx.createOscillator();
+            const o2 = ctx.createOscillator();
+            const g = ctx.createGain();
+            const filt = ctx.createBiquadFilter();
+            o1.connect(g); o2.connect(g); g.connect(filt); filt.connect(ctx.destination);
+            o1.type = 'sine'; o1.frequency.value = freq;
+            o2.type = 'triangle'; o2.frequency.value = freq;
+            filt.type = 'lowpass'; filt.frequency.value = freq * 3; filt.Q.value = 1;
+            const attack = 0.06, release = 0.12;
+            g.gain.setValueAtTime(0.001, startTime);
+            g.gain.linearRampToValueAtTime(0.13, startTime + attack);
+            g.gain.setValueAtTime(0.13, startTime + duration - release);
+            g.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+            o1.start(startTime); o1.stop(startTime + duration);
+            o2.start(startTime); o2.stop(startTime + duration);
+            // Breathy noise
+            const bufLen = Math.ceil(ctx.sampleRate * duration);
+            const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+            const data = buf.getChannelData(0);
+            for (let i = 0; i < bufLen; i++) data[i] = Math.random() * 2 - 1;
+            const ns = ctx.createBufferSource(); ns.buffer = buf;
+            const ng = ctx.createGain();
+            const nf = ctx.createBiquadFilter();
+            ns.connect(nf); nf.connect(ng); ng.connect(ctx.destination);
+            nf.type = 'bandpass'; nf.frequency.value = freq * 2; nf.Q.value = 2;
+            ng.gain.setValueAtTime(0.001, startTime);
+            ng.gain.linearRampToValueAtTime(0.015, startTime + attack);
+            ng.gain.setValueAtTime(0.015, startTime + duration - release);
+            ng.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+            ns.start(startTime); ns.stop(startTime + duration);
+        };
+
+        const triggerEasterEgg = () => {
+            easterEggTriggered = true;
+            const ctx = getAudio();
+            const t = ctx.currentTime + 0.4;
+            const gap = 0.55;
+            CE_ORDER.forEach((name, i) => {
+                const note = CE_NOTES.find(n => n.name === name);
+                const dur = i === CE_ORDER.length - 1 ? 0.9 : 0.5;
+                playFlute(note.freq, t + i * gap, dur);
+            });
+            const melodyMs = (0.4 + (CE_ORDER.length - 1) * gap + 0.9) * 1000 + 300;
+            this.time.delayedCall(melodyMs, () => this._riseDevilsTower());
+        };
+
+        for (let i = 0; i < 5; i++) {
             const bx = Phaser.Math.Between(60, W - 60);
             const by = meadowY + Phaser.Math.Between(20, H * 0.28);
             const bunny = this.add.image(bx, by, 'animal_rabbit').setDepth(10).setScale(0.8).setAlpha(0.9);
             bunny.setInteractive({ useHandCursor: true });
+            const noteData = shuffled[i];
 
             bunny.on('pointerdown', () => {
+                playChirp(noteData.freq);
                 for (let j = 0; j < 3; j++) {
                     const h = this.add.image(
                         bunny.x + Phaser.Math.Between(-8, 8), bunny.y, 'particle_heart'
@@ -332,6 +420,18 @@ export default class MenuScene extends Phaser.Scene {
                     duration: 150, ease: 'Quad.easeOut',
                     onComplete: () => { bunny.scaleX = 0.8; bunny.scaleY = 0.8; }
                 });
+                if (!easterEggTriggered) {
+                    const now = Date.now();
+                    clickSequence.push({ name: noteData.name, time: now });
+                    while (clickSequence.length > 0 && now - clickSequence[0].time > 5000) clickSequence.shift();
+                    if (clickSequence.length >= 5) {
+                        const last5 = clickSequence.slice(-5);
+                        if (last5[4].time - last5[0].time <= 5000 &&
+                            last5.every((c, idx) => c.name === CE_ORDER[idx])) {
+                            triggerEasterEgg();
+                        }
+                    }
+                }
             });
 
             bunnies.push({ sprite: bunny, baseY: by, hopTimer: Phaser.Math.Between(0, 4000) });
@@ -369,6 +469,84 @@ export default class MenuScene extends Phaser.Scene {
         });
     }
 
+    _riseDevilsTower() {
+        const cx = W / 2;
+        const titleTopY = 118;
+        const towerTopY = Math.round(titleTopY / 2);
+        const horizonY = H * 0.30;
+
+        const topW = 110, colTopW = 126, colBottomW = 142;
+        const colTopY = towerTopY;
+        const colBottomY = horizonY + 200;
+        const colH = colBottomY - colTopY;
+
+        // Geometry mask — only show the tower above the horizon
+        const maskShape = this.make.graphics({ add: false });
+        maskShape.fillStyle(0xffffff);
+        maskShape.fillRect(0, 0, W, horizonY);
+        const mask = maskShape.createGeometryMask();
+
+        const tower = this.add.graphics().setDepth(6);
+        tower.setMask(mask);
+        const rng = new Phaser.Math.RandomDataGenerator(['tower']);
+
+        // Columnar section (extends well below horizon — mask hides it)
+        tower.fillStyle(0x6b5d4f);
+        tower.beginPath();
+        tower.moveTo(cx - colTopW / 2, colTopY);
+        tower.lineTo(cx + colTopW / 2, colTopY);
+        tower.lineTo(cx + colBottomW / 2, colBottomY);
+        tower.lineTo(cx - colBottomW / 2, colBottomY);
+        tower.closePath();
+        tower.fill();
+
+        // Vertical column striations
+        const numCols = 18;
+        for (let i = 0; i <= numCols; i++) {
+            const t = i / numCols;
+            const topX = cx - colTopW / 2 + t * colTopW;
+            const botX = cx - colBottomW / 2 + t * colBottomW;
+            const shade = [0x5a4d40, 0x6b5d4f, 0x7a6b5a, 0x4f4238][i % 4];
+            tower.lineStyle(rng.pick([1, 1.5, 2]), shade, rng.realInRange(0.3, 0.55));
+            tower.lineBetween(topX, colTopY + 4, botX, colBottomY);
+        }
+
+        // Horizontal cracks
+        for (let j = 0; j < 6; j++) {
+            const cy = colTopY + 12 + j * (colH * 0.14);
+            const interp = (cy - colTopY) / colH;
+            const halfW = (colTopW + (colBottomW - colTopW) * interp) / 2;
+            const cxStart = cx - halfW + rng.between(5, 15);
+            const cxEnd = cx + halfW - rng.between(5, 15);
+            tower.lineStyle(1, 0x3a2e22, rng.realInRange(0.15, 0.3));
+            tower.lineBetween(cxStart, cy, cxEnd, cy + rng.between(-2, 2));
+        }
+
+        // Left-side shadow
+        tower.fillStyle(0x3a2e22, 0.25);
+        tower.beginPath();
+        tower.moveTo(cx - colTopW / 2, colTopY);
+        tower.lineTo(cx - colTopW / 2 + colTopW * 0.28, colTopY);
+        tower.lineTo(cx - colBottomW / 2 + colBottomW * 0.28, colBottomY);
+        tower.lineTo(cx - colBottomW / 2, colBottomY);
+        tower.closePath();
+        tower.fill();
+
+        // Flat top surface
+        tower.fillStyle(0x7a6b5a);
+        tower.fillRect(cx - topW / 2, colTopY - 3, topW, 7);
+        tower.lineStyle(1, 0x5a4d40, 0.4);
+        tower.lineBetween(cx - topW / 2, colTopY - 3, cx + topW / 2, colTopY - 3);
+
+        // Animate rise from below the horizon
+        const riseFrom = horizonY - towerTopY + 10;
+        tower.y = riseFrom;
+        this.tweens.add({
+            targets: tower, y: 0,
+            duration: 3500, ease: 'Quad.easeOut'
+        });
+    }
+
     // Creates interactive text button with hover (gold) and click callback.
     btn(x, y, label, cb) {
         const t = this.add.text(x, y, label, {
@@ -378,7 +556,7 @@ export default class MenuScene extends Phaser.Scene {
             stroke: '#2A1A0E',
             strokeThickness: 3,
             padding: { x: 16, y: 8 }
-        }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+        }).setOrigin(0.5).setDepth(8).setInteractive({ useHandCursor: true });
 
         t.on('pointerover', () => t.setColor(CLR.gold));
         t.on('pointerout', () => t.setColor(CLR.uiText));
