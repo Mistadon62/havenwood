@@ -110,9 +110,9 @@ export default class HUDScene extends Phaser.Scene {
         this.seasonTxt = this.txt(130, midY, 'Spring', 8, '#88CC88').setOrigin(0, 0.5);
 
         const clockX = W / 2;
-        this.tortoiseBtn = this.add.image(clockX - 75, midY, 'icon_tortoise').setScale(1.3).setInteractive({ useHandCursor: true });
-        this.timeTxt = this.txt(clockX, midY, '6:00 AM', 10).setOrigin(0.5, 0.5).setInteractive({ useHandCursor: true });
-        this.hareBtn = this.add.image(clockX + 75, midY, 'icon_hare').setScale(1.3).setInteractive({ useHandCursor: true });
+        this.tortoiseBtn = this.add.image(clockX - 75, midY, 'icon_tortoise').setScale(1.3).setDepth(2).setInteractive({ useHandCursor: true });
+        this.timeTxt = this.txt(clockX, midY, '6:00 AM', 10).setOrigin(0.5, 0.5).setDepth(2).setInteractive({ useHandCursor: true });
+        this.hareBtn = this.add.image(clockX + 75, midY, 'icon_hare').setScale(1.3).setDepth(2).setInteractive({ useHandCursor: true });
         this.tortoiseBtn.on('pointerdown', () => this._setTimeSpeed('slow'));
         this.hareBtn.on('pointerdown', () => this._setTimeSpeed('fast'));
         this.timeTxt.on('pointerdown', () => this._setTimeSpeed('normal'));
@@ -136,6 +136,7 @@ export default class HUDScene extends Phaser.Scene {
         if (mode === current) mode = 'normal';
         this._activeSpeed = mode;
         this.gs.timeSpeedMult = mode === 'slow' ? 0.5 : mode === 'fast' ? 3 : 1;
+        this.gs.sfx.click();
         this._updateSpeedGlow();
     }
 
@@ -144,10 +145,10 @@ export default class HUDScene extends Phaser.Scene {
         const mode = this._activeSpeed || 'normal';
         if (mode === 'normal') return;
         const btn = mode === 'slow' ? this.tortoiseBtn : this.hareBtn;
-        const g = this.add.graphics().setDepth(btn.depth - 1);
-        g.fillStyle(0xffff33, 1);
+        const g = this.add.graphics().setDepth(1);
+        g.fillStyle(0x88aa55, 0.45);
         g.fillRoundedRect(Math.round(btn.x) - 13, Math.round(btn.y) - 13, 26, 26, 6);
-        g.lineStyle(2, 0xffcc00, 1);
+        g.lineStyle(2, 0x99bb66, 0.7);
         g.strokeRoundedRect(Math.round(btn.x) - 13, Math.round(btn.y) - 13, 26, 26, 6);
         this._speedHighlight = g;
     }

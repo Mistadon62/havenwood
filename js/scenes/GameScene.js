@@ -251,6 +251,7 @@ export default class GameScene extends Phaser.Scene {
         }, true);
 
         this.input.on('pointermove', ptr => {
+            if (ptr.y < MAP_Y) return;
             if (this.state.buildMode) {
                 this.hoverOutline.setVisible(false);
                 const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
