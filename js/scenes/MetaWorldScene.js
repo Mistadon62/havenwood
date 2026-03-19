@@ -1480,6 +1480,7 @@ export default class MetaWorldScene extends Phaser.Scene {
 
         MetaDialogue.show(hudScene, {
             speaker: dialogue.speaker,
+            spriteKey: npcDef.spriteKey,
             lines: dialogue.lines,
             choices: dialogue.choices,
             onChoice: (action) => {

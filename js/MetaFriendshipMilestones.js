@@ -12,6 +12,7 @@ const MILESTONES = {
             flag: 'sam_study_spot',
             dialogue: {
                 speaker: 'Sam',
+                spriteKey: 'npc_sam',
                 lines: [
                     'Hey... I want to show you something.',
                     'There\'s this secret study spot behind the library.',
@@ -28,6 +29,7 @@ const MILESTONES = {
             flag: 'sam_best_friend',
             dialogue: {
                 speaker: 'Sam',
+                spriteKey: 'npc_sam',
                 lines: [
                     'You know... you\'re like my best friend here.',
                     'College would have been so different without you.',
@@ -45,6 +47,7 @@ const MILESTONES = {
             flag: 'elara_extra_credit',
             dialogue: {
                 speaker: 'Prof. Elara',
+                spriteKey: 'npc_elara',
                 lines: [
                     'Your performance has been outstanding.',
                     'I\'m giving you extra credit — your studies will be more effective from now on!',
@@ -59,6 +62,7 @@ const MILESTONES = {
             flag: 'elara_research_partner',
             dialogue: {
                 speaker: 'Prof. Elara',
+                spriteKey: 'npc_elara',
                 lines: [
                     'I\'ve been watching your progress closely.',
                     'I\'d like to offer you a research partnership.',
@@ -77,6 +81,7 @@ const MILESTONES = {
             flag: 'tanaka_insider',
             dialogue: {
                 speaker: 'Mr. Tanaka',
+                spriteKey: 'npc_shopkeeper',
                 lines: [
                     'You\'re one of my most loyal customers.',
                     'Tell you what — I\'ll let you know when special stock comes in.',
@@ -92,6 +97,7 @@ const MILESTONES = {
             flag: 'tanaka_discount',
             dialogue: {
                 speaker: 'Mr. Tanaka',
+                spriteKey: 'npc_shopkeeper',
                 lines: [
                     'You\'ve been such a loyal customer and friend.',
                     'From now on, everything in the shop is 20% off for you.',
