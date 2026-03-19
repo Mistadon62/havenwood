@@ -583,7 +583,7 @@ export default class MetaWorldScene extends Phaser.Scene {
     // Check for NPC schedule transitions (called from updateTime)
     _checkNPCTransitions(prevTime, currTime) {
         const s = MetaState.state;
-        const { departing, arriving } = getTransitioningNPCs(
+        const { departing } = getTransitioningNPCs(
             this.location.id, prevTime, currTime, s.dayOfWeek, s.weather
         );
 
@@ -609,58 +609,45 @@ export default class MetaWorldScene extends Phaser.Scene {
             npc.walking = true;
         }
 
-        // Handle arriving NPCs — spawn at door and walk to target
-        for (const arr of arriving) {
-            if (this.npcSprites.some(n => n.id === arr.id)) continue; // already here
-            const npcDef = getNPC(arr.id);
-            if (!npcDef) continue;
-
-            // Find the door connecting to where they came from
-            const incomingDoor = arr.fromLocation
-                ? this.location.doors.find(d => d.targetLocation === arr.fromLocation)
-                : null;
-
-            let spawnX, spawnY;
-            if (incomingDoor) {
-                spawnX = this.roomX + incomingDoor.gx * TILE + TILE / 2;
-                spawnY = this.roomY + incomingDoor.gy * TILE + TILE / 2;
-            } else {
-                // Fallback: spawn at target position
-                spawnX = this.roomX + arr.gx * TILE + TILE / 2;
-                spawnY = this.roomY + arr.gy * TILE + TILE / 2;
-            }
-
-            const sprite = this._track(this.add.image(spawnX, spawnY, npcDef.spriteKey).setDepth(10).setAlpha(0));
-            this.tweens.add({ targets: sprite, alpha: 1, duration: 300 });
-
-            const npcEntry = {
-                id: arr.id, gx: Math.floor((spawnX - this.roomX) / TILE), gy: Math.floor((spawnY - this.roomY) / TILE),
-                homeGx: arr.gx, homeGy: arr.gy, sprite, def: npcDef,
-                targetX: this.roomX + arr.gx * TILE + TILE / 2,
-                targetY: this.roomY + arr.gy * TILE + TILE / 2,
-                walking: true, paused: false,
-                wanderTimer: 0,
-                transitionState: 'arriving',
-            };
-            this.npcSprites.push(npcEntry);
-            this._activeNPCRefs.push({ id: arr.id, gx: npcEntry.gx, gy: npcEntry.gy });
-        }
-
-        // Create transit records for NPCs transitioning in OTHER rooms (off-screen)
+        // Create transit records for ALL NPCs changing rooms (including ones arriving here).
+        // NPCs departing the current room are handled above with walk animations;
+        // all others get immediate transit records so they travel through the path.
         const allTransitions = getAllTransitioningNPCs(prevTime, currTime, s.dayOfWeek, s.weather);
         for (const t of allTransitions) {
-            // Skip NPCs in the current room (handled above) or already in transit
-            if (t.fromLocation === this.location.id) continue;
-            if (this.game._npcTransits[t.id]) continue;
+            if (this.game._npcTransits[t.id]) continue; // already in transit
+            // Skip if this NPC is already being handled locally (departing from current room)
+            if (t.fromLocation === this.location.id && this.npcSprites.some(n => n.id === t.id && n.transitionState === 'departing')) continue;
             const fullPath = findFullPath(t.fromLocation, t.toLocation);
             if (!fullPath || fullPath.length < 2) continue;
-            // Create transit starting from the second room (they instantly leave their origin)
+            // Start from second room (they instantly leave their origin off-screen)
             this.game._npcTransits[t.id] = {
                 path: fullPath,
-                pathIndex: 1, // already left the first room
+                pathIndex: 1,
                 destGx: t.destGx,
                 destGy: t.destGy,
             };
+        }
+    }
+
+    // Advance transit records for NPCs in rooms the player isn't in.
+    // Simulates off-screen travel (~4 seconds per intermediate room).
+    _advanceOffScreenTransits(delta) {
+        for (const [npcId, transit] of Object.entries(this.game._npcTransits || {})) {
+            if (!transit.path || transit.pathIndex >= transit.path.length) continue;
+            // Skip if NPC is in the current room (being managed by updateNPCs)
+            if (transit.path[transit.pathIndex] === this.location.id) continue;
+            // Skip if NPC is already rendered as a sprite here
+            if (this.npcSprites.some(n => n.id === npcId)) continue;
+
+            transit._offScreenTimer = (transit._offScreenTimer || 0) + delta;
+            if (transit._offScreenTimer >= 4000) {
+                transit._offScreenTimer = 0;
+                transit.pathIndex++;
+                // If they've reached the end of the path, remove the transit
+                if (transit.pathIndex >= transit.path.length) {
+                    delete this.game._npcTransits[npcId];
+                }
+            }
         }
     }
 
@@ -708,18 +695,20 @@ export default class MetaWorldScene extends Phaser.Scene {
                         }
                     }
                 }
-                // Fallback: just leave through any door
-                const door = this.location.doors[0];
-                if (door) {
-                    npc.transitionState = 'departing';
-                    npc.departPath = [this.location.id, door.targetLocation];
-                    npc.departPathIndex = 0;
-                    npc.departDestGx = 0;
-                    npc.departDestGy = 0;
-                    npc.targetX = this.roomX + door.gx * TILE + TILE / 2;
-                    npc.targetY = this.roomY + door.gy * TILE + TILE / 2;
-                    npc.walking = true;
-                }
+                // No scheduled location (off-duty) — fade out and remove
+                npc.walking = false;
+                this.tweens.add({
+                    targets: npc.sprite, alpha: 0, duration: 500,
+                    onComplete: () => {
+                        const idx2 = this._roomObjects.indexOf(npc.sprite);
+                        if (idx2 >= 0) this._roomObjects.splice(idx2, 1);
+                        npc.sprite.destroy();
+                        const si = this.npcSprites.indexOf(npc);
+                        if (si >= 0) this.npcSprites.splice(si, 1);
+                        const ri = this._activeNPCRefs.findIndex(r => r.id === npc.id);
+                        if (ri >= 0) this._activeNPCRefs.splice(ri, 1);
+                    }
+                });
             }
         }
 
@@ -1051,6 +1040,7 @@ export default class MetaWorldScene extends Phaser.Scene {
         this.updateProximityPrompt();
         this.updateNPCs(delta);
         this.updateTime(delta);
+        this._advanceOffScreenTransits(delta);
         this._syncNPCPresence(delta);
         this.updateQuestChecks(delta);
         this.animateWeather(delta);
