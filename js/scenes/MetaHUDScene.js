@@ -237,12 +237,14 @@ export default class MetaHUDScene extends Phaser.Scene {
     // ── Settings Menu ──
 
     txt(x, y, str, size, color) {
+        const s = Math.max(8, Math.round(size * 1.2));
         return this.add.text(x, y, str, {
             fontFamily: '"Press Start 2P", monospace',
-            fontSize: `${size}px`,
+            fontSize: `${s}px`,
             color: color || CLR.uiText,
             stroke: '#000000',
-            strokeThickness: 2,
+            strokeThickness: s > 10 ? 3 : 2,
+            lineSpacing: 2,
         });
     }
 

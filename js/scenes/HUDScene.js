@@ -172,7 +172,7 @@ export default class HUDScene extends Phaser.Scene {
         bg.lineStyle(2, CLR.uiBorder); bg.strokeRoundedRect(0, 0, pw, ph, 8);
         ct.add(bg);
 
-        ct.add(this.txt(pw / 2, 20, 'Settings', 12, CLR.gold).setOrigin(0.5));
+        ct.add(this.txt(pw / 2, 20, 'Settings', 13, CLR.gold).setOrigin(0.5));
 
         const btnW = 180, btnH = 34;
         const bx = pw / 2 - btnW / 2;
@@ -183,7 +183,7 @@ export default class HUDScene extends Phaser.Scene {
         ct.add(saveBg);
         const saveHit = this.add.rectangle(pw / 2, 60 + btnH / 2, btnW, btnH, 0, 0).setInteractive({ useHandCursor: true });
         ct.add(saveHit);
-        ct.add(this.txt(pw / 2, 60 + btnH / 2, 'Save Game', 9, '#FFFFFF').setOrigin(0.5));
+        ct.add(this.txt(pw / 2, 60 + btnH / 2, 'Save Game', 10, '#FFFFFF').setOrigin(0.5));
         saveHit.on('pointerover', () => { saveBg.clear(); saveBg.fillStyle(0x55CC55, 0.7); saveBg.fillRoundedRect(bx, 60, btnW, btnH, 5); });
         saveHit.on('pointerout', () => { saveBg.clear(); saveBg.fillStyle(0x44AA44, 0.6); saveBg.fillRoundedRect(bx, 60, btnW, btnH, 5); });
         saveHit.on('pointerdown', () => {
@@ -200,7 +200,7 @@ export default class HUDScene extends Phaser.Scene {
         ct.add(exitBg);
         const exitHit = this.add.rectangle(pw / 2, 110 + btnH / 2, btnW, btnH, 0, 0).setInteractive({ useHandCursor: true });
         ct.add(exitHit);
-        ct.add(this.txt(pw / 2, 110 + btnH / 2, 'Exit to Menu', 9, '#FFFFFF').setOrigin(0.5));
+        ct.add(this.txt(pw / 2, 110 + btnH / 2, 'Exit to Menu', 10, '#FFFFFF').setOrigin(0.5));
         exitHit.on('pointerover', () => { exitBg.clear(); exitBg.fillStyle(0xCC5555, 0.7); exitBg.fillRoundedRect(bx, 110, btnW, btnH, 5); });
         exitHit.on('pointerout', () => { exitBg.clear(); exitBg.fillStyle(0xAA4444, 0.6); exitBg.fillRoundedRect(bx, 110, btnW, btnH, 5); });
         exitHit.on('pointerdown', () => {
@@ -218,7 +218,7 @@ export default class HUDScene extends Phaser.Scene {
         ct.add(resBg);
         const resHit = this.add.rectangle(pw / 2, 160 + btnH / 2, btnW, btnH, 0, 0).setInteractive({ useHandCursor: true });
         ct.add(resHit);
-        ct.add(this.txt(pw / 2, 160 + btnH / 2, 'Resume', 9, '#FFFFFF').setOrigin(0.5));
+        ct.add(this.txt(pw / 2, 160 + btnH / 2, 'Resume', 10, '#FFFFFF').setOrigin(0.5));
         resHit.on('pointerover', () => { resBg.clear(); resBg.fillStyle(0x666688, 0.7); resBg.fillRoundedRect(bx, 160, btnW, btnH, 5); });
         resHit.on('pointerout', () => { resBg.clear(); resBg.fillStyle(0x555566, 0.6); resBg.fillRoundedRect(bx, 160, btnW, btnH, 5); });
         resHit.on('pointerdown', () => this.closeSettingsMenu());
@@ -238,7 +238,7 @@ export default class HUDScene extends Phaser.Scene {
         const checkHit = this.add.rectangle(checkX + checkSize / 2, checkY + checkSize / 2, checkSize, checkSize, 0, 0).setInteractive({ useHandCursor: true });
         ct.add(checkHit);
         checkHit.on('pointerdown', () => { this.gs.state.autoSave = !this.gs.state.autoSave; drawCheck(); });
-        ct.add(this.txt(checkX + checkSize + 10, checkY + checkSize / 2, 'Auto-Save', 8, '#CCBBAA').setOrigin(0, 0.5));
+        ct.add(this.txt(checkX + checkSize + 10, checkY + checkSize / 2, 'Auto-Save', 9, '#CCBBAA').setOrigin(0, 0.5));
 
         this.settingsPanel = ct;
     }
