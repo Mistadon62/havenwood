@@ -81,23 +81,24 @@ export default class MenuScene extends Phaser.Scene {
             return (r << 16) | (g << 8) | b;
         };
 
-        const drawTree = (x, baseY, scale, dark) => {
+        const drawTree = (gfx, x, baseY, scale, dark) => {
             const v = rng.between(-15, 15);
             const trunkW = Math.round(6 * scale), trunkH = Math.round(24 * scale);
-            bg.fillStyle(dark ? 0x2a1a0a : 0x3d2510);
-            bg.fillRect(x - trunkW / 2, baseY - trunkH, trunkW, trunkH);
+            gfx.fillStyle(dark ? 0x2a1a0a : 0x3d2510);
+            gfx.fillRect(x - trunkW / 2, baseY - trunkH, trunkW, trunkH);
 
             const layers = 3;
             for (let l = 0; l < layers; l++) {
                 const ly = baseY - trunkH + 4 * scale - l * 22 * scale;
                 const lw = (44 - l * 10) * scale;
                 const lh = (32 + l * 4) * scale;
-                bg.fillStyle(tintColor(dark ? 0x12301a : 0x1d4a24, v), dark ? 0.9 : 0.95);
-                bg.fillTriangle(x, ly - lh, x - lw / 2, ly, x + lw / 2, ly);
-                bg.fillStyle(tintColor(dark ? 0x1a3d22 : 0x2a5e30, v), 0.7);
-                bg.fillTriangle(x, ly - lh + 6 * scale, x - lw / 2 + 5 * scale, ly, x + lw / 2 - 5 * scale, ly);
+                gfx.fillStyle(tintColor(dark ? 0x12301a : 0x1d4a24, v), dark ? 0.9 : 0.95);
+                gfx.fillTriangle(x, ly - lh, x - lw / 2, ly, x + lw / 2, ly);
+                gfx.fillStyle(tintColor(dark ? 0x1a3d22 : 0x2a5e30, v), 0.7);
+                gfx.fillTriangle(x, ly - lh + 6 * scale, x - lw / 2 + 5 * scale, ly, x + lw / 2 - 5 * scale, ly);
             }
         };
+        const treeGfx = this.add.graphics().setDepth(7);
 
         const fireX = W / 2, fireY = H * 0.65;
         const tentX = fireX - 90, tentY = fireY + 2;
@@ -114,11 +115,11 @@ export default class MenuScene extends Phaser.Scene {
             const sy = H * 0.64 + rng.between(0, H * 0.08);
             if (inCampZone(sx, sy)) continue;
             const sz = rng.realInRange(2, 6);
-            bg.fillStyle(rng.pick(shrubColors), 0.85);
-            bg.fillCircle(sx, sy, sz);
+            treeGfx.fillStyle(rng.pick(shrubColors), 0.85);
+            treeGfx.fillCircle(sx, sy, sz);
             if (sz >= 4) {
-                bg.fillStyle(rng.pick(shrubColors), 0.6);
-                bg.fillCircle(sx + rng.between(-2, 2), sy - 1, sz * 0.6);
+                treeGfx.fillStyle(rng.pick(shrubColors), 0.6);
+                treeGfx.fillCircle(sx + rng.between(-2, 2), sy - 1, sz * 0.6);
             }
         }
 
@@ -139,7 +140,7 @@ export default class MenuScene extends Phaser.Scene {
                     ty += 14 * Math.sin(tx / 70) + 6 * Math.sin(tx / 28);
                 }
                 if (inCampZone(tx, ty)) continue;
-                drawTree(tx, ty, rng.realInRange(l.scaleMin, l.scaleMax), l.dark);
+                drawTree(treeGfx, tx, ty, rng.realInRange(l.scaleMin, l.scaleMax), l.dark);
             }
         }
         // Transition trees — sparse, trailing into the meadow
@@ -148,7 +149,7 @@ export default class MenuScene extends Phaser.Scene {
             const tx = x + rng.between(-20, 20);
             const ty = H * 0.67 + rng.between(0, 10);
             if (inCampZone(tx, ty)) continue;
-            drawTree(tx, ty, rng.realInRange(0.7, 0.95), false);
+            drawTree(treeGfx, tx, ty, rng.realInRange(0.7, 0.95), false);
         }
 
         // Lake in the gap behind the campsite
@@ -304,96 +305,102 @@ export default class MenuScene extends Phaser.Scene {
                 });
             });
 
+        this._initCEAudio();
         this.spawnMenuBunnies();
+        this._setupTentEasterEgg(tentX, tentY);
     }
 
-    spawnMenuBunnies() {
-        const meadowY = H * 0.65;
-        const bunnies = [];
-
-        // Close Encounters easter egg — five notes assigned randomly to five bunnies
-        const CE_NOTES = [
+    // Shared audio helpers for Close Encounters easter eggs
+    _initCEAudio() {
+        this._ceNotes = [
             { name: 'A#4', freq: 466.16 },
             { name: 'C5',  freq: 523.25 },
             { name: 'G#4', freq: 415.30 },
             { name: 'G#3', freq: 207.65 },
             { name: 'D#4', freq: 311.13 },
         ];
-        const CE_ORDER = ['A#4', 'C5', 'G#4', 'G#3', 'D#4'];
-        const shuffled = Phaser.Utils.Array.Shuffle([...CE_NOTES]);
+        this._ceOrder = ['A#4', 'C5', 'G#4', 'G#3', 'D#4'];
+        this._ceTriggered = false;
+        this._ceAudioCtx = null;
+    }
 
-        let audioCtx = null;
-        const getAudio = () => {
-            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            if (audioCtx.state === 'suspended') audioCtx.resume();
-            return audioCtx;
-        };
+    _getAudio() {
+        if (!this._ceAudioCtx) this._ceAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (this._ceAudioCtx.state === 'suspended') this._ceAudioCtx.resume();
+        return this._ceAudioCtx;
+    }
 
+    _playChirp(freq) {
+        const ctx = this._getAudio();
+        const t = ctx.currentTime;
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type = 'sine';
+        o.frequency.setValueAtTime(freq, t);
+        o.frequency.linearRampToValueAtTime(freq * 1.03, t + 0.04);
+        o.frequency.linearRampToValueAtTime(freq, t + 0.12);
+        o.frequency.linearRampToValueAtTime(freq * 0.97, t + 0.2);
+        g.gain.setValueAtTime(0.18, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+        o.start(t); o.stop(t + 0.28);
+    }
+
+    _playFlute(freq, startTime, duration) {
+        const ctx = this._getAudio();
+        const o1 = ctx.createOscillator();
+        const o2 = ctx.createOscillator();
+        const g = ctx.createGain();
+        const filt = ctx.createBiquadFilter();
+        o1.connect(g); o2.connect(g); g.connect(filt); filt.connect(ctx.destination);
+        o1.type = 'sine'; o1.frequency.value = freq;
+        o2.type = 'triangle'; o2.frequency.value = freq;
+        filt.type = 'lowpass'; filt.frequency.value = freq * 3; filt.Q.value = 1;
+        const attack = 0.06, release = 0.12;
+        g.gain.setValueAtTime(0.001, startTime);
+        g.gain.linearRampToValueAtTime(0.13, startTime + attack);
+        g.gain.setValueAtTime(0.13, startTime + duration - release);
+        g.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+        o1.start(startTime); o1.stop(startTime + duration);
+        o2.start(startTime); o2.stop(startTime + duration);
+        const bufLen = Math.ceil(ctx.sampleRate * duration);
+        const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < bufLen; i++) data[i] = Math.random() * 2 - 1;
+        const ns = ctx.createBufferSource(); ns.buffer = buf;
+        const ng = ctx.createGain();
+        const nf = ctx.createBiquadFilter();
+        ns.connect(nf); nf.connect(ng); ng.connect(ctx.destination);
+        nf.type = 'bandpass'; nf.frequency.value = freq * 2; nf.Q.value = 2;
+        ng.gain.setValueAtTime(0.001, startTime);
+        ng.gain.linearRampToValueAtTime(0.015, startTime + attack);
+        ng.gain.setValueAtTime(0.015, startTime + duration - release);
+        ng.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+        ns.start(startTime); ns.stop(startTime + duration);
+    }
+
+    _playFluteMotif(startTime) {
+        const gap = 0.55;
+        this._ceOrder.forEach((name, i) => {
+            const note = this._ceNotes.find(n => n.name === name);
+            const dur = i === this._ceOrder.length - 1 ? 0.9 : 0.5;
+            this._playFlute(note.freq, startTime + i * gap, dur);
+        });
+    }
+
+    spawnMenuBunnies() {
+        const meadowY = H * 0.65;
+        const bunnies = [];
+
+        const shuffled = Phaser.Utils.Array.Shuffle([...this._ceNotes]);
         const clickSequence = [];
-        let easterEggTriggered = false;
-
-        const playChirp = (freq) => {
-            const ctx = getAudio();
-            const t = ctx.currentTime;
-            const o = ctx.createOscillator();
-            const g = ctx.createGain();
-            o.connect(g); g.connect(ctx.destination);
-            o.type = 'sine';
-            o.frequency.setValueAtTime(freq, t);
-            o.frequency.linearRampToValueAtTime(freq * 1.03, t + 0.04);
-            o.frequency.linearRampToValueAtTime(freq, t + 0.12);
-            o.frequency.linearRampToValueAtTime(freq * 0.97, t + 0.2);
-            g.gain.setValueAtTime(0.18, t);
-            g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
-            o.start(t); o.stop(t + 0.28);
-        };
-
-        const playFlute = (freq, startTime, duration) => {
-            const ctx = getAudio();
-            // Sine + quiet triangle for warmth
-            const o1 = ctx.createOscillator();
-            const o2 = ctx.createOscillator();
-            const g = ctx.createGain();
-            const filt = ctx.createBiquadFilter();
-            o1.connect(g); o2.connect(g); g.connect(filt); filt.connect(ctx.destination);
-            o1.type = 'sine'; o1.frequency.value = freq;
-            o2.type = 'triangle'; o2.frequency.value = freq;
-            filt.type = 'lowpass'; filt.frequency.value = freq * 3; filt.Q.value = 1;
-            const attack = 0.06, release = 0.12;
-            g.gain.setValueAtTime(0.001, startTime);
-            g.gain.linearRampToValueAtTime(0.13, startTime + attack);
-            g.gain.setValueAtTime(0.13, startTime + duration - release);
-            g.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
-            o1.start(startTime); o1.stop(startTime + duration);
-            o2.start(startTime); o2.stop(startTime + duration);
-            // Breathy noise
-            const bufLen = Math.ceil(ctx.sampleRate * duration);
-            const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
-            const data = buf.getChannelData(0);
-            for (let i = 0; i < bufLen; i++) data[i] = Math.random() * 2 - 1;
-            const ns = ctx.createBufferSource(); ns.buffer = buf;
-            const ng = ctx.createGain();
-            const nf = ctx.createBiquadFilter();
-            ns.connect(nf); nf.connect(ng); ng.connect(ctx.destination);
-            nf.type = 'bandpass'; nf.frequency.value = freq * 2; nf.Q.value = 2;
-            ng.gain.setValueAtTime(0.001, startTime);
-            ng.gain.linearRampToValueAtTime(0.015, startTime + attack);
-            ng.gain.setValueAtTime(0.015, startTime + duration - release);
-            ng.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
-            ns.start(startTime); ns.stop(startTime + duration);
-        };
 
         const triggerEasterEgg = () => {
-            easterEggTriggered = true;
-            const ctx = getAudio();
-            const t = ctx.currentTime + 0.4;
+            this._ceTriggered = true;
+            const ctx = this._getAudio();
+            this._playFluteMotif(ctx.currentTime + 0.4);
             const gap = 0.55;
-            CE_ORDER.forEach((name, i) => {
-                const note = CE_NOTES.find(n => n.name === name);
-                const dur = i === CE_ORDER.length - 1 ? 0.9 : 0.5;
-                playFlute(note.freq, t + i * gap, dur);
-            });
-            const melodyMs = (0.4 + (CE_ORDER.length - 1) * gap + 0.9) * 1000 + 300;
+            const melodyMs = (0.4 + (this._ceOrder.length - 1) * gap + 0.9) * 1000 + 300;
             this.time.delayedCall(melodyMs, () => this._riseDevilsTower());
         };
 
@@ -405,7 +412,7 @@ export default class MenuScene extends Phaser.Scene {
             const noteData = shuffled[i];
 
             bunny.on('pointerdown', () => {
-                playChirp(noteData.freq);
+                this._playChirp(noteData.freq);
                 for (let j = 0; j < 3; j++) {
                     const h = this.add.image(
                         bunny.x + Phaser.Math.Between(-8, 8), bunny.y, 'particle_heart'
@@ -420,14 +427,14 @@ export default class MenuScene extends Phaser.Scene {
                     duration: 150, ease: 'Quad.easeOut',
                     onComplete: () => { bunny.scaleX = 0.8; bunny.scaleY = 0.8; }
                 });
-                if (!easterEggTriggered) {
+                if (!this._ceTriggered) {
                     const now = Date.now();
                     clickSequence.push({ name: noteData.name, time: now });
                     while (clickSequence.length > 0 && now - clickSequence[0].time > 5000) clickSequence.shift();
                     if (clickSequence.length >= 5) {
                         const last5 = clickSequence.slice(-5);
                         if (last5[4].time - last5[0].time <= 5000 &&
-                            last5.every((c, idx) => c.name === CE_ORDER[idx])) {
+                            last5.every((c, idx) => c.name === this._ceOrder[idx])) {
                             triggerEasterEgg();
                         }
                     }
@@ -465,6 +472,159 @@ export default class MenuScene extends Phaser.Scene {
                         });
                     }
                 }
+            }
+        });
+    }
+
+    _setupTentEasterEgg(tentX, tentY) {
+        const tentHit = this.add.rectangle(tentX, tentY - 10, 44, 40, 0, 0)
+            .setDepth(9).setInteractive({ useHandCursor: true });
+        const tentClicks = [];
+        let tentEggActive = false;
+
+        tentHit.on('pointerdown', () => {
+            if (tentEggActive) return;
+            const now = Date.now();
+            tentClicks.push(now);
+            while (tentClicks.length > 0 && now - tentClicks[0] > 10000) tentClicks.shift();
+            if (tentClicks.length >= 20) {
+                tentEggActive = true;
+                tentClicks.length = 0;
+                this._triggerTentEyes(tentX, tentY, () => { tentEggActive = false; });
+            }
+        });
+    }
+
+    _triggerTentEyes(tentX, tentY, onDone) {
+        const doorX = tentX + 2, doorY = tentY - 2;
+        const eyes = this.add.graphics().setDepth(9);
+
+        const drawEyes = (pupilOffX, pupilOffY) => {
+            eyes.clear();
+            eyes.fillStyle(0xffffff);
+            eyes.fillCircle(doorX - 4, doorY, 3);
+            eyes.fillCircle(doorX + 4, doorY, 3);
+            eyes.fillStyle(0x111111);
+            eyes.fillCircle(doorX - 4 + pupilOffX, doorY + pupilOffY, 1.5);
+            eyes.fillCircle(doorX + 4 + pupilOffX, doorY + pupilOffY, 1.5);
+        };
+
+        eyes.setAlpha(0);
+        drawEyes(0, 0);
+        this.tweens.add({
+            targets: eyes, alpha: 1, duration: 200,
+            onComplete: () => {
+                this.time.delayedCall(400, () => {
+                    drawEyes(-1.5, 0);
+                    this.time.delayedCall(600, () => {
+                        drawEyes(1.5, 0);
+                        this.time.delayedCall(600, () => {
+                            if (this._ceTriggered) {
+                                this._alienRunOut(tentX, tentY, eyes, onDone);
+                            } else {
+                                drawEyes(0, 0);
+                                this.tweens.add({
+                                    targets: eyes, alpha: 0, duration: 200,
+                                    onComplete: () => { eyes.destroy(); if (onDone) onDone(); }
+                                });
+                            }
+                        });
+                    });
+                });
+            }
+        });
+    }
+
+    _alienRunOut(tentX, tentY, eyes, onDone) {
+        eyes.destroy();
+
+        const groundY = tentY + 8;
+        const alien = this.add.graphics().setDepth(9);
+        alien.x = tentX + 2;
+        alien.y = groundY;
+
+        const drawAlien = (legFrame) => {
+            alien.clear();
+            // Body
+            alien.fillStyle(0x44CC44);
+            alien.fillRect(-4, -16, 8, 10);
+            // Head
+            alien.fillStyle(0x55DD55);
+            alien.fillCircle(0, -20, 6);
+            // Eyes
+            alien.fillStyle(0xffffff);
+            alien.fillCircle(-3, -21, 2.5);
+            alien.fillCircle(3, -21, 2.5);
+            alien.fillStyle(0x111111);
+            alien.fillCircle(-3, -21, 1.2);
+            alien.fillCircle(3, -21, 1.2);
+            // Legs
+            alien.fillStyle(0x339933);
+            if (legFrame === 0) {
+                alien.fillRect(-4, -6, 3, 6);
+                alien.fillRect(1, -6, 3, 6);
+            } else {
+                alien.fillRect(-5, -6, 3, 5);
+                alien.fillRect(2, -6, 3, 5);
+            }
+            // Arms
+            alien.fillStyle(0x44CC44);
+            alien.fillRect(-7, -14, 3, 2);
+            alien.fillRect(4, -14, 3, 2);
+        };
+
+        drawAlien(0);
+        let legToggle = 0;
+
+        // Start looping flute at high tempo
+        const ctx = this._getAudio();
+        const fastGap = 0.22;
+        const motifDur = this._ceOrder.length * fastGap;
+        let musicStartTime = ctx.currentTime;
+        const totalRunDuration = 4.5;
+        const loopCount = Math.ceil(totalRunDuration / motifDur) + 1;
+
+        for (let rep = 0; rep < loopCount; rep++) {
+            const repStart = musicStartTime + rep * motifDur;
+            this._ceOrder.forEach((name, i) => {
+                const note = this._ceNotes.find(n => n.name === name);
+                const dur = 0.2;
+                this._playFlute(note.freq, repStart + i * fastGap, dur);
+            });
+        }
+
+        // Hop out of tent
+        this.tweens.add({
+            targets: alien, x: tentX - 15, duration: 300,
+            ease: 'Quad.easeOut',
+            onComplete: () => {
+                // Run left around tent and into forest
+                const legTimer = this.time.addEvent({
+                    delay: 120, loop: true,
+                    callback: () => { legToggle = 1 - legToggle; drawAlien(legToggle); }
+                });
+
+                // Hop animation while running
+                const hopTimer = this.time.addEvent({
+                    delay: 240, loop: true,
+                    callback: () => {
+                        this.tweens.add({
+                            targets: alien, y: groundY - 6, duration: 120,
+                            yoyo: true, ease: 'Quad.easeOut'
+                        });
+                    }
+                });
+
+                this.tweens.add({
+                    targets: alien, x: -40,
+                    duration: 3500, ease: 'Sine.easeIn',
+                    onComplete: () => {
+                        legTimer.destroy();
+                        hopTimer.destroy();
+                        alien.destroy();
+                        if (onDone) onDone();
+                    }
+                });
             }
         });
     }
