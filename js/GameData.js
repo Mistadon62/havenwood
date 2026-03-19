@@ -251,6 +251,7 @@ export const NPC_VISITOR_TYPES = {
     sam:    { id: 'sam', name: 'Sam', spriteKey: 'visitor_sam', incomeMult: 2.5, stayMult: 1.8, minFriendship: 30, bubbleText: 'So cool!', repBonus: 5 },
     elara:  { id: 'elara', name: 'Prof. Elara', spriteKey: 'visitor_elara', incomeMult: 3.0, stayMult: 2.0, minFriendship: 40, bubbleText: 'Fascinating!', repBonus: 8 },
     tanaka: { id: 'tanaka', name: 'Mr. Tanaka', spriteKey: 'visitor_tanaka', incomeMult: 2.0, stayMult: 1.5, minFriendship: 20, bubbleText: 'Well done!', repBonus: 3 },
+    riley:  { id: 'riley', name: 'Riley', spriteKey: 'visitor_riley', incomeMult: 2.0, stayMult: 1.5, minFriendship: 25, bubbleText: 'Nice setup!', repBonus: 4 },
 };
 
 // Achievements — 22 milestones for rescues, breeding, species, coins, upgrades, etc.

@@ -706,6 +706,33 @@ export class SpriteGenerator {
             g.fillTriangle(24, 3, 21, 7, 27, 7);
             g.fillTriangle(24, 11, 21, 7, 27, 7);
         });
+
+        // Riley — purple tank top, athletic
+        tex(scene, 'visitor_riley', TILE, TILE, g => {
+            const skin = 0xDDBB99;
+            const hair = 0x995522;
+            const tank = 0x8855BB;
+            g.fillStyle(hair);
+            g.fillCircle(16, 6, 5);
+            g.fillStyle(bright(hair, 15));
+            g.fillCircle(16, 5, 3);
+            g.fillStyle(skin);
+            g.fillCircle(16, 8, 4);
+            rect(g, 14, 8, 2, 1, 0x222222);
+            rect(g, 18, 8, 2, 1, 0x222222);
+            rect(g, 15, 10, 4, 1, 0xCC8888);
+            rect(g, 11, 12, 10, 10, tank);
+            rect(g, 9, 13, 3, 7, skin); // bare arms
+            rect(g, 20, 13, 3, 7, skin);
+            rect(g, 9, 18, 3, 2, 0xDD4444); // wristband
+            rect(g, 20, 18, 3, 2, 0xDD4444);
+            rect(g, 12, 22, 3, 5, 0x334455);
+            rect(g, 17, 22, 3, 5, 0x334455);
+            // Star badge
+            g.fillStyle(0xFFDD44);
+            g.fillTriangle(24, 3, 21, 7, 27, 7);
+            g.fillTriangle(24, 11, 21, 7, 27, 7);
+        });
     }
 
     // Seasonal particles: snow, leaf, petal, firefly.

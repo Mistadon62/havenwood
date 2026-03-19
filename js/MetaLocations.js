@@ -203,7 +203,8 @@ const LOCATIONS = {
             { type: 'bench', gx: 2, gy: 11 },
             { type: 'bench', gx: 19, gy: 6 },
             { type: 'bench', gx: 19, gy: 3 },
-            { type: 'bench', gx: 19, gy: 11 },
+            { type: 'bench', gx: 19, gy: 13 },
+            { type: 'ping_pong_table', gx: 19, gy: 8 },
         ],
         doors: [
             // Hallway (top)
@@ -225,6 +226,7 @@ const LOCATIONS = {
         npcs: [], // Dynamic — see MetaNPCs schedules
         interactables: [
             { id: 'job_board', gx: 19, gy: 1, w: 1, h: 1, name: 'Job Board', action: 'job' },
+            { id: 'ping_pong', gx: 19, gy: 8, w: 2, h: 3, name: 'Ping Pong Table', action: 'ping_pong' },
         ],
     },
 

@@ -259,6 +259,9 @@ export default class MetaWorldScene extends Phaser.Scene {
             } else if (f.type === 'couch') {
                 const couch = this._track(this.add.image(px + 32, py + TILE / 2, 'furniture_couch').setDepth(5));
                 this.furnitureSprites.push(couch);
+            } else if (f.type === 'ping_pong_table') {
+                const ppt = this._track(this.add.image(px + 32, py + 48, 'furniture_ping_pong_table').setDepth(5));
+                this.furnitureSprites.push(ppt);
             } else if (f.type === 'pond') {
                 const pond = this._track(this.add.image(px + 32, py + 32, 'furniture_pond').setDepth(2));
                 this.furnitureSprites.push(pond);
@@ -1008,6 +1011,7 @@ export default class MetaWorldScene extends Phaser.Scene {
             let fw = 1, fh = 1;
             if (f.type === 'desk' || f.type === 'bench' || f.type === 'counter' || f.type === 'chalkboard' || f.type === 'couch') { fw = 2; fh = 1; }
             if (f.type === 'bed') { fw = 2; fh = 3; }
+            if (f.type === 'ping_pong_table') { fw = 2; fh = 3; }
             if (f.type === 'pond') { fw = 2; fh = 2; }
             if (rx >= f.gx && rx < f.gx + fw && ry >= f.gy && ry < f.gy + fh) return false;
         }
@@ -1430,6 +1434,7 @@ export default class MetaWorldScene extends Phaser.Scene {
                     vending_machine: 'Vending Machine', couch_rest: 'Rest',
                     park_walk: 'Nature Walk', pick_flowers: 'Pick Flowers',
                     bulletin_board: 'Bulletin Board',
+                    ping_pong: 'Ping Pong',
                 };
                 hudScene.updatePrompt(`[E] ${labels[target.data.action] || target.data.name}`);
             }
@@ -1519,6 +1524,8 @@ export default class MetaWorldScene extends Phaser.Scene {
             this.doPickFlowers(hudScene);
         } else if (ia.action === 'bulletin_board') {
             this.doBulletinBoard(hudScene);
+        } else if (ia.action === 'ping_pong') {
+            this.doPingPong(hudScene);
         } else if (ia.action && ia.action.startsWith('evt_')) {
             MetaEvents.handleEventAction(ia.action, hudScene);
         }
@@ -1997,6 +2004,23 @@ export default class MetaWorldScene extends Phaser.Scene {
                 }
             },
         });
+    }
+
+    // ── Ping Pong ──
+
+    doPingPong(hudScene) {
+        // Check if Riley is nearby — only playable when Riley is at the table
+        const rileyHere = (this._activeNPCRefs || []).some(n => n.id === 'riley');
+        if (!rileyHere) {
+            MetaDialogue.show(hudScene, {
+                speaker: null,
+                lines: ['The ping pong table is empty...', 'Maybe someone will show up to play later.'],
+            });
+            return;
+        }
+
+        // Redirect to Riley's NPC interaction so dialogue/choices work naturally
+        this.interactWithNPC('riley');
     }
 
     // ── Job System (expanded) ──

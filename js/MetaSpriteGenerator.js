@@ -35,6 +35,7 @@ export class MetaSpriteGenerator {
         this.room(scene);
         this.outdoor(scene);
         this.furniture(scene);
+        this.pingpong(scene);
         this.npcs(scene);
     }
 
@@ -1015,6 +1016,57 @@ export class MetaSpriteGenerator {
         });
     }
 
+    // Ping pong table (2 tiles wide, 3 tiles tall — top-down view)
+    static pingpong(scene) {
+        tex(scene, 'furniture_ping_pong_table', 64, 96, g => {
+            // Table shadow
+            rect(g, 6, 10, 52, 80, dark(0x1A6B1A, 30));
+            // Table surface (dark green)
+            rect(g, 4, 6, 56, 84, 0x1A6B1A);
+            // Table border (white lines)
+            g.lineStyle(2, 0xFFFFFF, 0.9);
+            g.strokeRect(4, 6, 56, 84);
+            // Center line (net)
+            rect(g, 4, 46, 56, 3, 0xDDDDDD);
+            // Net posts
+            rect(g, 2, 45, 4, 5, 0x666666);
+            rect(g, 58, 45, 4, 5, 0x666666);
+            // Net mesh hint
+            g.lineStyle(1, 0xBBBBBB, 0.5);
+            g.lineBetween(6, 47, 58, 47);
+            // Center dashed line
+            g.lineStyle(1, 0xFFFFFF, 0.6);
+            g.lineBetween(32, 6, 32, 46);
+            g.lineBetween(32, 49, 32, 90);
+            // Table legs
+            rect(g, 6, 86, 4, 6, 0x555555);
+            rect(g, 54, 86, 4, 6, 0x555555);
+            rect(g, 6, 4, 4, 6, 0x555555);
+            rect(g, 54, 4, 4, 6, 0x555555);
+            // Highlight
+            rect(g, 8, 10, 48, 3, bright(0x1A6B1A, 20));
+        });
+
+        // Ping pong paddle (16x16 icon)
+        tex(scene, 'pp_paddle', 16, 16, g => {
+            // Handle
+            rect(g, 7, 10, 3, 6, 0x8B6B4A);
+            // Paddle face
+            g.fillStyle(0xCC3333);
+            g.fillCircle(8, 7, 5);
+            g.fillStyle(0xDD4444);
+            g.fillCircle(7, 6, 3);
+        });
+
+        // Ping pong ball (8x8)
+        tex(scene, 'pp_ball', 8, 8, g => {
+            g.fillStyle(0xFFAA33);
+            g.fillCircle(4, 4, 3);
+            g.fillStyle(0xFFCC66);
+            g.fillCircle(3, 3, 1);
+        });
+    }
+
     // NPC sprites
     static npcs(scene) {
         const skinColor = 0xDDBB99;
@@ -1064,6 +1116,43 @@ export class MetaSpriteGenerator {
             rect(g, 17, 22, 4, 6, 0x445566);
             rect(g, 11, 27, 4, 3, 0x444433);
             rect(g, 17, 27, 4, 3, 0x444433);
+        });
+
+        // Riley — ping pong player, purple tank top, athletic
+        tex(scene, 'npc_riley', TILE, TILE, g => {
+            const skin = 0xDDBB99;
+            const hair = 0x995522;
+            const tank = 0x8855BB;
+            const shorts = 0x334455;
+            // Hair (short, messy)
+            rect(g, 11, 2, 10, 5, hair);
+            rect(g, 13, 1, 6, 3, bright(hair, 15));
+            // Head
+            rect(g, 12, 5, 8, 7, skin);
+            // Eyes
+            rect(g, 14, 8, 2, 2, 0x222222);
+            rect(g, 18, 8, 2, 2, 0x222222);
+            // Grin
+            rect(g, 15, 10, 4, 1, 0xCC8888);
+            // Tank top
+            rect(g, 10, 12, 12, 10, tank);
+            // Arms (bare skin — tank top)
+            rect(g, 8, 13, 3, 7, skin);
+            rect(g, 21, 13, 3, 7, skin);
+            // Wristband
+            rect(g, 8, 18, 3, 2, 0xDD4444);
+            rect(g, 21, 18, 3, 2, 0xDD4444);
+            // Shorts
+            rect(g, 11, 22, 4, 5, shorts);
+            rect(g, 17, 22, 4, 5, shorts);
+            // Legs
+            rect(g, 11, 26, 4, 2, skin);
+            rect(g, 17, 26, 4, 2, skin);
+            // Sneakers
+            rect(g, 10, 27, 5, 3, 0xEEEEEE);
+            rect(g, 17, 27, 5, 3, 0xEEEEEE);
+            rect(g, 11, 27, 3, 1, 0x4488DD);
+            rect(g, 18, 27, 3, 1, 0x4488DD);
         });
 
         // Professor Elara — facing down, lab coat

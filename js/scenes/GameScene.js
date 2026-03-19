@@ -58,6 +58,12 @@ export default class GameScene extends Phaser.Scene {
         // bleed through, making HUD icons/text appear to gain/lose a pixel every ~500ms.
         // Phaser's pixelArt:true only sets roundPixels on the renderer config, not on individual
         // scene cameras — each camera needs setRoundPixels(true) explicitly.
+        //
+        // ADDITIONAL PITFALL: Graphics objects that call clear()+fill() every frame (e.g. trails,
+        // dynamic shapes) also trigger sub-pixel jitter — each clear/redraw rebuilds the object's
+        // internal WebGL texture, causing a pipeline state change that shifts rounding for other
+        // objects. Use positioned primitives (Circle, Rectangle) instead of per-frame Graphics
+        // redraws. See PingPongGame.js ball trail for the fix.
         this.cameras.main.setRoundPixels(true);
         this.sfx = new SoundManager();
         this.sfx.init();

@@ -483,6 +483,140 @@ const NPCS = {
             }
         },
     },
+    riley: {
+        id: 'riley',
+        name: 'Riley',
+        spriteKey: 'npc_riley',
+        facing: 'down',
+
+        // Weekdays: campus quad by the ping pong table, afternoons
+        // Weekends: campus quad all day (loves being outside)
+        schedule: [
+            { days: WEEKDAYS, start: 495, end: 1080, location: 'campus_quad', gx: 20, gy: 11 },
+            { days: WEEKEND, start: 480, end: 1200, location: 'campus_quad', gx: 20, gy: 11 },
+        ],
+
+        giftPreferences: {
+            treat: GIFT_LOVE,
+            coffee: GIFT_LIKE,
+            flower: GIFT_NEUTRAL,
+            book: GIFT_NEUTRAL,
+        },
+        giftReactions: {
+            treat: 'Snacks! Fuel for champions. You\'re the best!',
+            coffee: 'Caffeine boost! Now I\'ll be even faster.',
+            flower: 'Aw, that\'s sweet! Not as sweet as victory though.',
+            book: 'A book? I mean... I\'ll read it between games.',
+        },
+
+        getDialogue(locationId) {
+            const s = MetaState.state;
+            const tier = MetaState.getFriendshipTier('riley');
+            const playedToday = MetaState.hasFlag(`pingpong_day_${s.day}`);
+
+            if (s.energy < 15) {
+                return {
+                    speaker: 'Riley',
+                    lines: ['Whoa, you look wiped!', 'Get some rest and come back for a rematch.'],
+                };
+            }
+
+            if (playedToday) {
+                const snap = s.sanctuarySnapshot || {};
+                if (tier === 'close') {
+                    return {
+                        speaker: 'Riley',
+                        lines: ['Great game earlier!', 'I\'ve been practicing my spin serve.', 'Same time tomorrow? I want a rematch!'],
+                    };
+                }
+                return {
+                    speaker: 'Riley',
+                    lines: ['Good game earlier!', 'Come back tomorrow for another round!'],
+                };
+            }
+
+            if (!MetaState.hasMetNPC('riley')) {
+                return {
+                    speaker: 'Riley',
+                    lines: [
+                        'Hey! I\'m Riley.',
+                        'I\'m the campus ping pong champ!',
+                        'Well... self-proclaimed. Wanna play?',
+                    ],
+                    choices: [
+                        { label: 'Play Ping Pong! (-15 energy)', action: 'play_pingpong' },
+                        { label: 'Maybe later', action: 'cancel' },
+                    ],
+                };
+            }
+
+            let greeting;
+            if (tier === 'close') {
+                greeting = ['My favorite opponent!', 'I\'ve been warming up just for you.', 'Ready to get destroyed?'];
+            } else if (tier === 'friend') {
+                greeting = ['Hey, good to see you!', 'Up for a match?'];
+            } else {
+                greeting = ['Hey! Wanna play some ping pong?'];
+            }
+
+            const choices = [
+                { label: 'Play Ping Pong! (-15 energy)', action: 'play_pingpong' },
+            ];
+            if (tier === 'friend' || tier === 'close') {
+                choices.push({ label: 'Chat', action: 'chat' });
+            }
+            if (hasGiftableItem()) {
+                choices.push({ label: 'Give Gift', action: 'give_gift' });
+            }
+            choices.push({ label: 'Not right now', action: 'cancel' });
+
+            return {
+                speaker: 'Riley',
+                lines: greeting,
+                choices,
+            };
+        },
+
+        handleAction(action, hudScene) {
+            if (action === 'cancel') return;
+            if (action === 'play_pingpong') {
+                if (!MetaState.spendEnergy(15)) {
+                    hudScene.showNotification('Too tired!');
+                    return;
+                }
+                MetaState.meetNPC('riley');
+                MetaState.setFlag(`pingpong_day_${MetaState.state.day}`);
+
+                // Launch ping pong minigame
+                import('./PingPongGame.js').then(mod => {
+                    const PingPongGame = mod.default;
+                    PingPongGame.start(hudScene, ({ playerScore, rileyScore, won }) => {
+                        MetaState.advanceTime(20);
+                        MetaState.addMood(won ? 15 : 5);
+                        MetaState.addFriendship('riley', won ? 10 : 6);
+                        hudScene.refreshStatusBar();
+                        const msg = won
+                            ? `You win ${playerScore}-${rileyScore}! +15 Mood, +10 Friendship`
+                            : `Riley wins ${rileyScore}-${playerScore}. +5 Mood, +6 Friendship`;
+                        hudScene.showNotification(msg);
+                        // Unfreeze
+                        const metaScene = hudScene.scene.get('MetaWorldScene');
+                        if (metaScene) metaScene._frozen = false;
+                    });
+                });
+            }
+            if (action === 'chat') {
+                MetaState.advanceTime(10);
+                MetaState.addMood(4);
+                MetaState.addFriendship('riley', 3);
+                hudScene.refreshStatusBar();
+                hudScene.showNotification('+4 Mood — Riley shares ping pong tips!');
+            }
+            if (action === 'give_gift') {
+                handleGiftGiving('riley', hudScene);
+            }
+        },
+    },
 };
 
 // ── Gift System ──
@@ -610,6 +744,7 @@ function getRainyRedirect(npcId, outdoorLoc) {
     const redirects = {
         prof_elara: { location: 'classroom', gx: 6, gy: 2 },
         sam: { location: 'common_room', gx: 4, gy: 3 },
+        riley: { location: 'common_room', gx: 8, gy: 5 },
     };
     return redirects[npcId] || null;
 }
