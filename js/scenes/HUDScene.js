@@ -102,7 +102,7 @@ export default class HUDScene extends Phaser.Scene {
     // coins, settings gear. All elements are vertically centered at midY=21 using setOrigin(_, 0.5).
     createTopBar() {
         const bar = this.add.graphics();
-        bar.fillStyle(CLR.uiBg, 0.9); bar.fillRect(0, 0, W, 42);
+        bar.fillStyle(CLR.uiBg, 1); bar.fillRect(0, 0, W, 42);
         bar.lineStyle(1, CLR.uiBorder); bar.lineBetween(0, 42, W, 42);
 
         const midY = 21;
@@ -258,7 +258,7 @@ export default class HUDScene extends Phaser.Scene {
         const barY = H - 62;
         this.toolbarElements = [];
         const bar = this.add.graphics();
-        bar.fillStyle(CLR.uiBg, 0.9); bar.fillRect(0, barY, W, 62);
+        bar.fillStyle(CLR.uiBg, 1); bar.fillRect(0, barY, W, 62);
         bar.lineStyle(1, CLR.uiBorder); bar.lineBetween(0, barY, W, barY);
         this.toolbarElements.push(bar);
 
@@ -329,7 +329,7 @@ export default class HUDScene extends Phaser.Scene {
     createBuildHintBar() {
         const barY = H - 62;
         const bar = this.add.graphics().setDepth(250);
-        bar.fillStyle(CLR.uiBg, 0.9); bar.fillRect(0, barY, W, 62);
+        bar.fillStyle(CLR.uiBg, 1); bar.fillRect(0, barY, W, 62);
         bar.lineStyle(1, CLR.uiBorder); bar.lineBetween(0, barY, W, barY);
         const label = this.txt(W / 2, barY + 31, '', 8, '#FFFFFF').setOrigin(0.5).setDepth(250);
         this._buildHintBar = bar;
@@ -1240,7 +1240,7 @@ export default class HUDScene extends Phaser.Scene {
 
         const barY = H - 62;
         const backBar = this.add.graphics().setDepth(250);
-        backBar.fillStyle(CLR.uiBg, 0.9); backBar.fillRect(0, barY, W, 62);
+        backBar.fillStyle(CLR.uiBg, 1); backBar.fillRect(0, barY, W, 62);
         backBar.lineStyle(1, CLR.uiBorder); backBar.lineBetween(0, barY, W, barY);
 
         const bbW = 160, bbH = 38;
@@ -1363,7 +1363,7 @@ export default class HUDScene extends Phaser.Scene {
 
         const barY = H - 62;
         const backBar = this.add.graphics().setDepth(250);
-        backBar.fillStyle(CLR.uiBg, 0.9); backBar.fillRect(0, barY, W, 62);
+        backBar.fillStyle(CLR.uiBg, 1); backBar.fillRect(0, barY, W, 62);
         backBar.lineStyle(1, CLR.uiBorder); backBar.lineBetween(0, barY, W, barY);
 
         const bbW = 160, bbH = 38;
@@ -1386,7 +1386,7 @@ export default class HUDScene extends Phaser.Scene {
 
         const barY = H - 62;
         const bar = this.add.graphics().setDepth(250);
-        bar.fillStyle(CLR.uiBg, 0.9); bar.fillRect(0, barY, W, 62);
+        bar.fillStyle(CLR.uiBg, 1); bar.fillRect(0, barY, W, 62);
         bar.lineStyle(1, CLR.uiBorder); bar.lineBetween(0, barY, W, barY);
 
         const label = this.txt(W / 2, barY + 31, labelText, 8, '#FFFFFF').setOrigin(0.5).setDepth(250);
