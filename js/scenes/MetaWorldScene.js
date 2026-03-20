@@ -508,6 +508,13 @@ export default class MetaWorldScene extends Phaser.Scene {
                 }
                 if (blocked) continue;
 
+                // Prevent diagonal corner-cutting: both adjacent cardinal tiles must be open
+                if (ddx !== 0 && ddy !== 0) {
+                    const t1 = this.location.tileMap[cur.gy][nx];
+                    const t2 = this.location.tileMap[ny][cur.gx];
+                    if (t1 === 1 || t1 === 2 || t1 === 5 || t2 === 1 || t2 === 2 || t2 === 5) continue;
+                }
+
                 const moveCost = (ddx !== 0 && ddy !== 0) ? 1.41 : 1;
                 const tentG = cur.g + moveCost;
                 const nk = key(nx, ny);
@@ -542,11 +549,12 @@ export default class MetaWorldScene extends Phaser.Scene {
             npc.targetY = npc._waypoints[0].y;
             npc.walking = true;
         } else {
-            // Fallback: walk directly (or stay put if no path)
+            // A* failed or start === end — stop walking to avoid clipping through walls.
+            // Reset _pathComputed so a future walk attempt can retry.
             npc._waypoints = null;
-            npc.targetX = targetWorldX;
-            npc.targetY = targetWorldY;
-            npc.walking = true;
+            npc._pathComputed = false;
+            npc.walking = false;
+            npc.wanderTimer = 1000 + Math.random() * 2000;
         }
     }
 
@@ -1104,6 +1112,17 @@ export default class MetaWorldScene extends Phaser.Scene {
         this.shiftKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
     }
 
+    // Returns true if the world position overlaps a wall tile (1, 2, or 5).
+    // Out-of-bounds positions return false (not a wall) so this doesn't block
+    // movement near room edges or through doors at the map boundary.
+    _isWallAt(wx, wy) {
+        const rx = Math.floor((wx - this.roomX) / TILE);
+        const ry = Math.floor((wy - this.roomY) / TILE);
+        if (rx < 0 || rx >= this.location.cols || ry < 0 || ry >= this.location.rows) return false;
+        const tile = this.location.tileMap[ry][rx];
+        return tile === 1 || tile === 2 || tile === 5;
+    }
+
     isWalkable(wx, wy) {
         const rx = Math.floor((wx - this.roomX) / TILE);
         const ry = Math.floor((wy - this.roomY) / TILE);
@@ -1445,13 +1464,18 @@ export default class MetaWorldScene extends Phaser.Scene {
             const footX = nx;
             const footY = ny + 6;
 
-            if (this.isWalkable(footX, footY)) {
+            // Check both foot and upper-body positions so the sprite
+            // doesn't visually overlap wall tiles near doorway corners.
+            const canMove = (wx, wy) =>
+                this.isWalkable(wx, wy) && !this._isWallAt(wx, wy - 14);
+
+            if (canMove(footX, footY)) {
                 this.char.x = nx;
                 this.char.y = ny;
             } else {
-                if (this.isWalkable(nx, this.char.y + 6)) {
+                if (canMove(nx, this.char.y + 6)) {
                     this.char.x = nx;
-                } else if (this.isWalkable(this.char.x, footY)) {
+                } else if (canMove(this.char.x, footY)) {
                     this.char.y = ny;
                 }
             }
