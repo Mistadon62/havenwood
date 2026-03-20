@@ -41,6 +41,8 @@ const MetaClassQuiz = {
     start(hudScene, onFinish) {
         const metaScene = hudScene.scene.get('MetaWorldScene');
         if (metaScene) metaScene._frozen = true;
+        hudScene._minigameActive = true;
+        hudScene._minigamePaused = false;
 
         this._showCategorySelect(hudScene, onFinish);
     },
@@ -101,6 +103,7 @@ const MetaClassQuiz = {
                 abg.strokeRoundedRect(bx, by, btnW, btnH, 8);
             });
             hit.on('pointerdown', () => {
+                if (hudScene._minigamePaused) return;
                 ct.destroy();
                 keyPoll.destroy();
                 numKeys.forEach(k => k.destroy());
@@ -115,6 +118,7 @@ const MetaClassQuiz = {
         const keyPoll = hudScene.time.addEvent({
             delay: 50, loop: true,
             callback: () => {
+                if (hudScene._minigamePaused) return;
                 for (let i = 0; i < numKeys.length; i++) {
                     if (Phaser.Input.Keyboard.JustDown(numKeys[i])) {
                         ct.destroy();
@@ -224,7 +228,7 @@ const MetaClassQuiz = {
                     abg.lineStyle(1, 0x4A5F7B, 0.6);
                     abg.strokeRoundedRect(bx, by, btnW, btnH, 6);
                 });
-                hit.on('pointerdown', () => handleAnswer(i));
+                hit.on('pointerdown', () => { if (!hudScene._minigamePaused) handleAnswer(i); });
             });
 
             if (!ct.getData('keys')) {
@@ -242,6 +246,7 @@ const MetaClassQuiz = {
         const keyPoll = hudScene.time.addEvent({
             delay: 50, loop: true,
             callback: () => {
+                if (hudScene._minigamePaused) return;
                 if (pendingAction && Phaser.Input.Keyboard.JustDown(eKey)) {
                     const action = pendingAction;
                     pendingAction = null;
@@ -344,7 +349,7 @@ const MetaClassQuiz = {
                 if (isLast) showFinalResults();
                 else { qIdx++; renderQuestion(); }
             };
-            contHit.on('pointerdown', contAction);
+            contHit.on('pointerdown', () => { if (!hudScene._minigamePaused) contAction(); });
             pendingAction = contAction;
         };
 
@@ -409,10 +414,12 @@ const MetaClassQuiz = {
                 eKey.destroy();
                 const keys = ct.getData('keys');
                 if (keys) keys.forEach(k => k.destroy());
+                hudScene._minigameActive = false;
+                hudScene._minigamePaused = false;
                 ct.destroy();
                 if (onFinish) onFinish({ playerScore, samScore, bonusKnowledge, grade });
             };
-            closeHit.on('pointerdown', finishAction);
+            closeHit.on('pointerdown', () => { if (!hudScene._minigamePaused) finishAction(); });
             pendingAction = finishAction;
         };
 

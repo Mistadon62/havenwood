@@ -20,12 +20,19 @@ export default class MetaHUDScene extends Phaser.Scene {
         this.questPanel = null;
         this.inventoryPanel = null;
         this.notifPanel = null;
+        this._minigameActive = false;
+        this._minigamePaused = false;
 
         this.createStatusBar();
         this.createBottomBar();
 
         // ESC key
         this.input.keyboard.on('keydown-ESC', () => {
+            // During a minigame, ESC only toggles the pause/settings menu
+            if (this._minigameActive) {
+                this.toggleSettingsMenu();
+                return;
+            }
             if (MetaDialogue.isActive()) {
                 MetaDialogue.close(this);
                 return;
@@ -254,9 +261,15 @@ export default class MetaHUDScene extends Phaser.Scene {
         const metaScene = this.scene.get('MetaWorldScene');
         if (metaScene) metaScene._frozen = true;
 
+        // Pause minigame if one is active
+        if (this._minigameActive) this._minigamePaused = true;
+
+        // Render above minigames (depth 500+) when one is active, else normal depth
+        const baseDepth = this._minigameActive ? 610 : 310;
+
         const pw = 260, ph = 260;
         const px = W / 2 - pw / 2, py = Math.max(46, (H - ph) / 2);
-        const ct = this.add.container(px, py).setDepth(310);
+        const ct = this.add.container(px, py).setDepth(baseDepth);
 
         const overlay = this.add.rectangle(W / 2 - px, H / 2 - py, W, H, 0x000000, 0.45).setInteractive();
         ct.add(overlay);
@@ -351,8 +364,13 @@ export default class MetaHUDScene extends Phaser.Scene {
 
     closeSettingsMenu() {
         if (this.settingsPanel) { this.settingsPanel.destroy(); this.settingsPanel = null; }
-        const metaScene = this.scene.get('MetaWorldScene');
-        if (metaScene && !metaScene._startWithPhone) metaScene._frozen = false;
+        // Unpause minigame if one is active
+        if (this._minigameActive) {
+            this._minigamePaused = false;
+        } else {
+            const metaScene = this.scene.get('MetaWorldScene');
+            if (metaScene && !metaScene._startWithPhone) metaScene._frozen = false;
+        }
     }
 
     // ── Quest Log ──

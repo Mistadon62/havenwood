@@ -19,7 +19,10 @@
       "Bash(ls -lh /c/Users/baile/Documents/GitHub/havenwood/js/*.js)",
       "Read(//c/Users/baile/Documents/GitHub/havenwood/**)",
       "Bash(node -e \":*)",
-      "Bash(xargs wc:*)"
+      "Bash(xargs wc:*)",
+      "Bash(node -c js/PingPongGame.js)",
+      "Bash(node -c js/MetaClassQuiz.js)",
+      "Bash(node -c js/scenes/MetaHUDScene.js)"
     ]
   }
 }

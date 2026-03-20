@@ -36,6 +36,8 @@ const PingPongGame = {
     start(hudScene, onFinish) {
         const metaScene = hudScene.scene.get('MetaWorldScene');
         if (metaScene) metaScene._frozen = true;
+        hudScene._minigameActive = true;
+        hudScene._minigamePaused = false;
 
         this._run(hudScene, onFinish);
     },
@@ -131,6 +133,9 @@ const PingPongGame = {
         let gameOver = false;
         let resultShown = false;
 
+        // Serve timer ref for pause support
+        let serveTimer = null;
+
         // Input — grab key references but do NOT destroy them on cleanup,
         // since Phaser reuses the same Key object across scenes.
         const wKey = hudScene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W);
@@ -151,7 +156,7 @@ const PingPongGame = {
             let count = 3;
             dot1.setAlpha(1); dot2.setAlpha(1); dot3.setAlpha(1);
 
-            const timer = hudScene.time.addEvent({
+            serveTimer = hudScene.time.addEvent({
                 delay: 600,
                 repeat: 2,
                 callback: () => {
@@ -211,7 +216,7 @@ const PingPongGame = {
                 showResult();
             } else {
                 // Next serve after brief pause
-                hudScene.time.delayedCall(800, serve);
+                serveTimer = hudScene.time.delayedCall(800, serve);
             }
         };
 
@@ -255,14 +260,16 @@ const PingPongGame = {
                 sKey.reset();
                 upKey.reset();
                 downKey.reset();
+                hudScene._minigameActive = false;
+                hudScene._minigamePaused = false;
                 destroyAll();
                 if (onFinish) onFinish({ playerScore, rileyScore, won });
             };
 
-            closeHit.on('pointerdown', finish);
+            closeHit.on('pointerdown', () => { if (!hudScene._minigamePaused) finish(); });
 
             // Allow E / Space key to close (event-driven — more reliable than JustDown polling)
-            const onPressE = () => { finish(); };
+            const onPressE = () => { if (!hudScene._minigamePaused) finish(); };
             hudScene.input.keyboard.on('keydown-E', onPressE);
             hudScene.input.keyboard.on('keydown-SPACE', onPressE);
         };
@@ -272,6 +279,13 @@ const PingPongGame = {
             delay: 16, // ~60fps
             loop: true,
             callback: () => {
+                // Sync pause state — pause/unpause serve timer too
+                if (hudScene._minigamePaused) {
+                    if (serveTimer && !serveTimer.paused) serveTimer.paused = true;
+                    return;
+                }
+                if (serveTimer && serveTimer.paused) serveTimer.paused = false;
+
                 if (gameOver || serving) return;
 
                 const dt = 1 / 60;
