@@ -22,6 +22,28 @@ const MOVE_SPEED = 120;
 // 1 real second = 1 game minute
 const META_TIME_SCALE = 1;
 
+// Shared furniture collision sizes — single source of truth for isWalkable() and _findTilePath().
+// Types not listed here (rug, lamp, stool, flower) have no collision.
+// Format: { w, h } in tiles. Default for unlisted solid furniture is 1×1.
+const FURNITURE_SIZE = {
+    desk: { w: 2, h: 1 },
+    bench: { w: 2, h: 1 },
+    counter: { w: 2, h: 1 },
+    chalkboard: { w: 2, h: 1 },
+    couch: { w: 2, h: 1 },
+    bed: { w: 2, h: 3 },
+    ping_pong_table: { w: 2, h: 3 },
+    pond: { w: 2, h: 2 },
+    fair_booth: { w: 2, h: 1 },
+};
+const NO_COLLIDE = new Set(['rug', 'lamp', 'stool', 'flower']);
+
+// Returns { w, h } for a furniture type, or null if it has no collision.
+function furnitureFootprint(type) {
+    if (NO_COLLIDE.has(type)) return null;
+    return FURNITURE_SIZE[type] || { w: 1, h: 1 };
+}
+
 export default class MetaWorldScene extends Phaser.Scene {
     constructor() { super('MetaWorldScene'); }
 
@@ -460,15 +482,12 @@ export default class MetaWorldScene extends Phaser.Scene {
                 const tile = this.location.tileMap[ny][nx];
                 if (tile === 1 || tile === 2 || tile === 5) continue;
                 // Allow doors (tile 9) — NPCs need to walk through them
-                // Check furniture collision
+                // Check furniture collision (uses shared FURNITURE_SIZE)
                 let blocked = false;
                 for (const f of this.location.furniture) {
-                    if (f.type === 'rug' || f.type === 'lamp' || f.type === 'stool' || f.type === 'flower') continue;
-                    let fw = 1, fh = 1;
-                    if (f.type === 'desk' || f.type === 'bench' || f.type === 'counter' || f.type === 'chalkboard' || f.type === 'couch') { fw = 2; fh = 1; }
-                    if (f.type === 'bed') { fw = 2; fh = 3; }
-                    if (f.type === 'pond') { fw = 2; fh = 2; }
-                    if (nx >= f.gx && nx < f.gx + fw && ny >= f.gy && ny < f.gy + fh) { blocked = true; break; }
+                    const fp = furnitureFootprint(f.type);
+                    if (!fp) continue;
+                    if (nx >= f.gx && nx < f.gx + fp.w && ny >= f.gy && ny < f.gy + fp.h) { blocked = true; break; }
                 }
                 if (blocked) continue;
                 // Check interactable collision (job board, bulletin board)
@@ -477,6 +496,12 @@ export default class MetaWorldScene extends Phaser.Scene {
                         nx >= ia.gx && nx < ia.gx + (ia.w || 1) && ny >= ia.gy && ny < ia.gy + (ia.h || 1)) {
                         blocked = true; break;
                     }
+                }
+                if (blocked) continue;
+                // Check event furniture collision
+                for (const ef of MetaEvents.getEventFurniture(this.location.id)) {
+                    const efp = furnitureFootprint(ef.type) || { w: 1, h: 1 };
+                    if (nx >= ef.gx && nx < ef.gx + efp.w && ny >= ef.gy && ny < ef.gy + efp.h) { blocked = true; break; }
                 }
                 if (blocked) continue;
 
@@ -1005,15 +1030,11 @@ export default class MetaWorldScene extends Phaser.Scene {
         const tile = this.location.tileMap[ry][rx];
         if (tile === 1 || tile === 2 || tile === 5) return false;
 
-        // Furniture collision
+        // Furniture collision (uses shared FURNITURE_SIZE)
         for (const f of this.location.furniture) {
-            if (f.type === 'rug' || f.type === 'lamp' || f.type === 'stool' || f.type === 'flower') continue;
-            let fw = 1, fh = 1;
-            if (f.type === 'desk' || f.type === 'bench' || f.type === 'counter' || f.type === 'chalkboard' || f.type === 'couch') { fw = 2; fh = 1; }
-            if (f.type === 'bed') { fw = 2; fh = 3; }
-            if (f.type === 'ping_pong_table') { fw = 2; fh = 3; }
-            if (f.type === 'pond') { fw = 2; fh = 2; }
-            if (rx >= f.gx && rx < f.gx + fw && ry >= f.gy && ry < f.gy + fh) return false;
+            const fp = furnitureFootprint(f.type);
+            if (!fp) continue;
+            if (rx >= f.gx && rx < f.gx + fp.w && ry >= f.gy && ry < f.gy + fp.h) return false;
         }
 
 
@@ -1023,12 +1044,10 @@ export default class MetaWorldScene extends Phaser.Scene {
                 rx >= ia.gx && rx < ia.gx + (ia.w || 1) && ry >= ia.gy && ry < ia.gy + (ia.h || 1)) return false;
         }
 
-        // Event furniture collision
-        const eventFurniture = MetaEvents.getEventFurniture(this.location.id);
-        for (const f of eventFurniture) {
-            const fw = f.type === 'fair_booth' ? 2 : 1;
-            const fh = 1;
-            if (rx >= f.gx && rx < f.gx + fw && ry >= f.gy && ry < f.gy + fh) return false;
+        // Event furniture collision (uses shared FURNITURE_SIZE)
+        for (const ef of MetaEvents.getEventFurniture(this.location.id)) {
+            const efp = furnitureFootprint(ef.type) || { w: 1, h: 1 };
+            if (rx >= ef.gx && rx < ef.gx + efp.w && ry >= ef.gy && ry < ef.gy + efp.h) return false;
         }
 
         return true;
