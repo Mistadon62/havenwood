@@ -422,6 +422,9 @@ export default class MetaWorldScene extends Phaser.Scene {
         // Then place scheduled NPCs that aren't already placed from transit
         for (const npcRef of this._activeNPCRefs) {
             if (placedIds.has(npcRef.id)) continue;
+            // Skip if this NPC is still traveling to this room — they'll be spawned
+            // by _advanceOffScreenTransits or placeNPCs when their pathIndex arrives.
+            if (this.game._npcTransits && this.game._npcTransits[npcRef.id]) continue;
             const npcDef = getNPC(npcRef.id);
             if (!npcDef) continue;
 
@@ -767,10 +770,93 @@ export default class MetaWorldScene extends Phaser.Scene {
                 transit._offScreenTimer -= roomTime; // carry remainder into next room
                 transit.pathIndex++;
                 if (transit.pathIndex >= transit.path.length) {
+                    // NPC has left the final room off-screen — transit fully done.
                     delete this.game._npcTransits[npcId];
+                } else if (transit.path[transit.pathIndex] === this.location.id) {
+                    // NPC just entered the player's current room.
+                    const isFinalRoom = transit.pathIndex === transit.path.length - 1;
+                    if (isFinalRoom) {
+                        // This is their destination — walk from entry door to schedule spot.
+                        this._spawnArrivingNPC(npcId, transit);
+                        delete this.game._npcTransits[npcId];
+                    } else {
+                        // Just passing through — walk from entry door to exit door.
+                        this._spawnPassingNPC(npcId, transit);
+                    }
                 }
             }
         }
+    }
+
+    // Spawn an NPC that just arrived at their final destination (the player's room).
+    // They appear at the entry door and walk to their schedule position.
+    _spawnArrivingNPC(npcId, transit) {
+        if (this.npcSprites.some(n => n.id === npcId)) return;
+        const npcDef = getNPC(npcId);
+        if (!npcDef) return;
+
+        const prevRoom = transit.path.length >= 2 ? transit.path[transit.path.length - 2] : null;
+        const entryDoor = prevRoom ? this.location.doors.find(d => d.targetLocation === prevRoom) : this.location.doors[0];
+        const spawnGx = entryDoor ? entryDoor.gx : 1;
+        const spawnGy = entryDoor ? entryDoor.gy : 1;
+        const sx = this.roomX + spawnGx * TILE + TILE / 2;
+        const sy = this.roomY + spawnGy * TILE + TILE / 2;
+
+        const sprite = this._track(this.add.image(sx, sy, npcDef.spriteKey).setDepth(10).setAlpha(0));
+        this.tweens.add({ targets: sprite, alpha: 1, duration: 300 });
+
+        this.npcSprites.push({
+            id: npcId, gx: spawnGx, gy: spawnGy,
+            homeGx: transit.destGx, homeGy: transit.destGy, sprite, def: npcDef,
+            targetX: this.roomX + transit.destGx * TILE + TILE / 2,
+            targetY: this.roomY + transit.destGy * TILE + TILE / 2,
+            walking: true, paused: false, wanderTimer: 0,
+            transitionState: 'arriving',
+        });
+        if (!this._activeNPCRefs.some(r => r.id === npcId)) {
+            this._activeNPCRefs.push({ id: npcId, gx: spawnGx, gy: spawnGy });
+        }
+    }
+
+    // Spawn an NPC that is passing through the player's room en route elsewhere.
+    // They appear at the entry door and walk toward the exit door.
+    _spawnPassingNPC(npcId, transit) {
+        if (this.npcSprites.some(n => n.id === npcId)) return;
+        const npcDef = getNPC(npcId);
+        if (!npcDef) return;
+
+        const idx = transit.pathIndex;
+        const prevRoom = idx > 0 ? transit.path[idx - 1] : null;
+        const nextRoom = idx < transit.path.length - 1 ? transit.path[idx + 1] : null;
+
+        const entryDoor = prevRoom ? this.location.doors.find(d => d.targetLocation === prevRoom) : this.location.doors[0];
+        const exitDoor = nextRoom ? findDoorTo(this.location.id, nextRoom) : null;
+        const spawnGx = entryDoor ? entryDoor.gx : 1;
+        const spawnGy = entryDoor ? entryDoor.gy : 1;
+        const exitGx = exitDoor ? exitDoor.gx : spawnGx;
+        const exitGy = exitDoor ? exitDoor.gy : spawnGy;
+
+        const sx = this.roomX + spawnGx * TILE + TILE / 2;
+        const sy = this.roomY + spawnGy * TILE + TILE / 2;
+
+        const sprite = this._track(this.add.image(sx, sy, npcDef.spriteKey).setDepth(10).setAlpha(0));
+        this.tweens.add({ targets: sprite, alpha: 1, duration: 300 });
+
+        this.npcSprites.push({
+            id: npcId, gx: spawnGx, gy: spawnGy,
+            homeGx: spawnGx, homeGy: spawnGy, sprite, def: npcDef,
+            targetX: this.roomX + exitGx * TILE + TILE / 2,
+            targetY: this.roomY + exitGy * TILE + TILE / 2,
+            walking: true, paused: false, wanderTimer: 0,
+            transitionState: 'departing',
+            departPath: transit.path, departPathIndex: idx,
+            departDestGx: transit.destGx, departDestGy: transit.destGy,
+        });
+        if (!this._activeNPCRefs.some(r => r.id === npcId)) {
+            this._activeNPCRefs.push({ id: npcId, gx: spawnGx, gy: spawnGy });
+        }
+        // Remove from global transit — now managed by updateNPCs
+        delete this.game._npcTransits[npcId];
     }
 
     // Periodic check: ensure NPCs in the room match the current schedule.
