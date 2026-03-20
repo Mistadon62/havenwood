@@ -107,6 +107,40 @@ const MetaDialogue = {
 
         // Choices container (hidden until all lines are shown)
         let choiceContainer = null;
+        let choiceItems = [];   // { bg, text, cy } per choice
+        let highlightIdx = 0;
+
+        const CHOICE_NORMAL = 0x2A3A52;
+        const CHOICE_HIGHLIGHT = 0x3A4F6B;
+        const TEXT_NORMAL = '#88DD88';
+        const TEXT_HIGHLIGHT = '#CCFFCC';
+
+        const drawChoiceBg = (item, highlighted) => {
+            item.bg.clear();
+            item.bg.fillStyle(highlighted ? CHOICE_HIGHLIGHT : CHOICE_NORMAL, highlighted ? 0.95 : 0.9);
+            item.bg.fillRoundedRect(item.x, item.cy, item.w, item.h, 5);
+            if (highlighted) {
+                item.bg.lineStyle(1, 0x88AACC, 0.7);
+                item.bg.strokeRoundedRect(item.x, item.cy, item.w, item.h, 5);
+            }
+            item.text.setColor(highlighted ? TEXT_HIGHLIGHT : TEXT_NORMAL);
+        };
+
+        const setHighlight = (idx) => {
+            if (choiceItems.length === 0) return;
+            idx = ((idx % choiceItems.length) + choiceItems.length) % choiceItems.length;
+            if (idx === highlightIdx && choiceItems[idx]) return;
+            if (choiceItems[highlightIdx]) drawChoiceBg(choiceItems[highlightIdx], false);
+            highlightIdx = idx;
+            drawChoiceBg(choiceItems[highlightIdx], true);
+        };
+
+        const confirmChoice = () => {
+            if (choiceItems.length === 0) return;
+            const action = choices[highlightIdx].action;
+            MetaDialogue.close(hudScene);
+            if (onChoice) onChoice(action);
+        };
 
         const showChoices = () => {
             if (!choices || choices.length === 0) {
@@ -127,44 +161,53 @@ const MetaDialogue = {
                 // Stack choices upward from bottom of box
                 const cy = boxY + boxH - 12 - (choices.length - i) * (choiceH + choiceGap);
                 const cbg = hudScene.add.graphics();
-                cbg.fillStyle(0x2A3A52, 0.9);
-                cbg.fillRoundedRect(choiceX, cy, choiceW, choiceH, 5);
                 choiceContainer.add(cbg);
 
                 const cHit = hudScene.add.rectangle(choiceX + choiceW / 2, cy + choiceH / 2, choiceW, choiceH, 0, 0)
                     .setInteractive({ useHandCursor: true });
                 choiceContainer.add(cHit);
 
-                const cText = txt(hudScene, choiceX + 14, cy + choiceH / 2, `${i + 1}. ${c.label}`, 11, '#88DD88', choiceW - 28);
+                const cText = txt(hudScene, choiceX + 14, cy + choiceH / 2, `${i + 1}. ${c.label}`, 11, TEXT_NORMAL, choiceW - 28);
                 cText.setOrigin(0, 0.5);
                 choiceContainer.add(cText);
 
-                cHit.on('pointerover', () => {
-                    cbg.clear();
-                    cbg.fillStyle(0x3A4F6B, 0.95);
-                    cbg.fillRoundedRect(choiceX, cy, choiceW, choiceH, 5);
-                });
-                cHit.on('pointerout', () => {
-                    cbg.clear();
-                    cbg.fillStyle(0x2A3A52, 0.9);
-                    cbg.fillRoundedRect(choiceX, cy, choiceW, choiceH, 5);
-                });
+                const item = { bg: cbg, text: cText, cy, x: choiceX, w: choiceW, h: choiceH };
+                choiceItems.push(item);
+
+                // Draw initial state
+                drawChoiceBg(item, i === 0);
+
+                cHit.on('pointerover', () => setHighlight(i));
                 cHit.on('pointerdown', () => {
-                    MetaDialogue.close(hudScene);
-                    if (onChoice) onChoice(c.action);
+                    highlightIdx = i;
+                    confirmChoice();
                 });
             });
 
-            // Also handle number key presses for choices
+            highlightIdx = 0;
+
+            // Number key presses for choices
             activeDialogue._choiceKeys = [];
             choices.forEach((c, i) => {
                 const key = hudScene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ONE + i);
                 activeDialogue._choiceKeys.push({ key, action: c.action });
             });
+
+            // Navigation keys (W/S and Up/Down)
+            activeDialogue._navKeys = {
+                up: hudScene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W),
+                down: hudScene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S),
+                arrowUp: hudScene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.UP),
+                arrowDown: hudScene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.DOWN),
+            };
         };
 
         const advance = () => {
-            if (choiceContainer) return; // choices visible, ignore E
+            // Choices visible — E confirms the highlighted choice
+            if (choiceContainer) {
+                confirmChoice();
+                return;
+            }
             // If we're on the last line with no choices, close immediately
             if (lineIdx.current === lines.length - 1 && (!choices || choices.length === 0)) {
                 MetaDialogue.close(hudScene);
@@ -183,12 +226,28 @@ const MetaDialogue = {
             }
         };
 
-        activeDialogue = { container, advance, _choiceKeys: null, onChoice, onClose };
+        activeDialogue = { container, advance, _choiceKeys: null, _navKeys: null, onChoice, onClose,
+            _setHighlight: (idx) => setHighlight(idx), _getHighlightIdx: () => highlightIdx,
+            _choiceCount: () => choiceItems.length };
     },
 
-    // Check number key presses for choice selection (called every frame during dialogue)
+    // Check key presses for choice navigation and selection (called every frame during dialogue)
     checkChoiceKeys(hudScene) {
-        if (!activeDialogue || !activeDialogue._choiceKeys) return;
+        if (!activeDialogue) return;
+
+        // Navigation keys (W/S, Up/Down)
+        if (activeDialogue._navKeys) {
+            const nav = activeDialogue._navKeys;
+            if (Phaser.Input.Keyboard.JustDown(nav.up) || Phaser.Input.Keyboard.JustDown(nav.arrowUp)) {
+                activeDialogue._setHighlight(activeDialogue._getHighlightIdx() - 1);
+            }
+            if (Phaser.Input.Keyboard.JustDown(nav.down) || Phaser.Input.Keyboard.JustDown(nav.arrowDown)) {
+                activeDialogue._setHighlight(activeDialogue._getHighlightIdx() + 1);
+            }
+        }
+
+        // Number keys for direct selection
+        if (!activeDialogue._choiceKeys) return;
         for (const ck of activeDialogue._choiceKeys) {
             if (Phaser.Input.Keyboard.JustDown(ck.key)) {
                 const action = ck.action;
@@ -210,6 +269,11 @@ const MetaDialogue = {
         if (activeDialogue._choiceKeys) {
             for (const ck of activeDialogue._choiceKeys) {
                 ck.key.destroy();
+            }
+        }
+        if (activeDialogue._navKeys) {
+            for (const nk of Object.values(activeDialogue._navKeys)) {
+                nk.destroy();
             }
         }
         activeDialogue.container.destroy();
