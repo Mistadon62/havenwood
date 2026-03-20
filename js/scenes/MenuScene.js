@@ -98,8 +98,6 @@ export default class MenuScene extends Phaser.Scene {
                 gfx.fillTriangle(x, ly - lh + 6 * scale, x - lw / 2 + 5 * scale, ly, x + lw / 2 - 5 * scale, ly);
             }
         };
-        const treeGfx = this.add.graphics().setDepth(7);
-
         const fireX = W / 2, fireY = H * 0.65;
         const tentX = fireX - 90, tentY = fireY + 2;
         const inCampZone = (tx, ty) => {
@@ -108,6 +106,15 @@ export default class MenuScene extends Phaser.Scene {
             return dx * dx + dy * dy < 75 * 75;
         };
 
+        // Two tree layers for Y-sorting with the alien easter egg:
+        // Trees rooted above the alien's path render behind him (depth 6),
+        // trees rooted at or below render in front (depth 8).
+        // Alien runs at depth 7 between them.
+        const alienGroundY = fireY + 10;
+        const treeGfxBehind = this.add.graphics().setDepth(6);
+        const treeGfxFront = this.add.graphics().setDepth(8);
+        const pickTreeLayer = (baseY) => baseY >= alienGroundY ? treeGfxFront : treeGfxBehind;
+
         // Shrubs and undergrowth at forest-meadow edge (drawn before trees so trees render on top)
         const shrubColors = [0x2a5e30, 0x1d4a24, 0x3a6a3a, 0x4a7a4a, 0x5a8a5a, 0x3d6b3d];
         for (let i = 0; i < 45; i++) {
@@ -115,11 +122,12 @@ export default class MenuScene extends Phaser.Scene {
             const sy = H * 0.64 + rng.between(0, H * 0.08);
             if (inCampZone(sx, sy)) continue;
             const sz = rng.realInRange(2, 6);
-            treeGfx.fillStyle(rng.pick(shrubColors), 0.85);
-            treeGfx.fillCircle(sx, sy, sz);
+            const gfx = pickTreeLayer(sy);
+            gfx.fillStyle(rng.pick(shrubColors), 0.85);
+            gfx.fillCircle(sx, sy, sz);
             if (sz >= 4) {
-                treeGfx.fillStyle(rng.pick(shrubColors), 0.6);
-                treeGfx.fillCircle(sx + rng.between(-2, 2), sy - 1, sz * 0.6);
+                gfx.fillStyle(rng.pick(shrubColors), 0.6);
+                gfx.fillCircle(sx + rng.between(-2, 2), sy - 1, sz * 0.6);
             }
         }
 
@@ -140,7 +148,7 @@ export default class MenuScene extends Phaser.Scene {
                     ty += 14 * Math.sin(tx / 70) + 6 * Math.sin(tx / 28);
                 }
                 if (inCampZone(tx, ty)) continue;
-                drawTree(treeGfx, tx, ty, rng.realInRange(l.scaleMin, l.scaleMax), l.dark);
+                drawTree(pickTreeLayer(ty), tx, ty, rng.realInRange(l.scaleMin, l.scaleMax), l.dark);
             }
         }
         // Transition trees — sparse, trailing into the meadow
@@ -149,7 +157,7 @@ export default class MenuScene extends Phaser.Scene {
             const tx = x + rng.between(-20, 20);
             const ty = H * 0.67 + rng.between(0, 10);
             if (inCampZone(tx, ty)) continue;
-            drawTree(treeGfx, tx, ty, rng.realInRange(0.7, 0.95), false);
+            drawTree(pickTreeLayer(ty), tx, ty, rng.realInRange(0.7, 0.95), false);
         }
 
         // Lake in the gap behind the campsite
@@ -539,7 +547,7 @@ export default class MenuScene extends Phaser.Scene {
         eyes.destroy();
 
         const groundY = tentY + 8;
-        const alien = this.add.graphics().setDepth(9);
+        const alien = this.add.graphics().setDepth(7);
         alien.x = tentX + 2;
         alien.y = groundY;
 

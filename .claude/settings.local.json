@@ -23,7 +23,8 @@
       "Bash(node -c js/PingPongGame.js)",
       "Bash(node -c js/MetaClassQuiz.js)",
       "Bash(node -c js/scenes/MetaHUDScene.js)",
-      "Bash(node -c js/scenes/GameScene.js)"
+      "Bash(node -c js/scenes/GameScene.js)",
+      "Bash(node -c js/scenes/MenuScene.js)"
     ]
   }
 }
