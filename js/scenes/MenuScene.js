@@ -755,7 +755,7 @@ export default class MenuScene extends Phaser.Scene {
         maskShape.fillRect(0, 0, W, horizonY);
         const mask = maskShape.createGeometryMask();
 
-        const tower = this.add.graphics().setDepth(6);
+        const tower = this.add.graphics().setDepth(5);
         tower.setMask(mask);
         const rng = new Phaser.Math.RandomDataGenerator(['tower']);
 
