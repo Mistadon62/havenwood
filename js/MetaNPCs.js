@@ -5,6 +5,7 @@
 // Dialogue is friendship-aware — NPCs react differently at higher friendship tiers.
 // Gift system: each NPC has giftPreferences mapping item IDs to friendship bonuses.
 
+import { W, H } from './GameData.js';
 import MetaState from './MetaStateManager.js';
 import MetaEvents from './MetaEvents.js';
 import MetaClassQuiz from './MetaClassQuiz.js';
@@ -694,6 +695,119 @@ function giveGiftToNPC(npcId, gift, hudScene) {
     });
 }
 
+function showGiftPicker(npcId, items, hudScene) {
+    const metaScene = hudScene.scene.get('MetaWorldScene');
+    if (metaScene) metaScene._frozen = true;
+
+    const pw = 320, ph = 220;
+    const px = W / 2 - pw / 2, py = Math.max(36, (H - ph) / 2);
+    const ct = hudScene.add.container(px, py).setDepth(310);
+
+    // Overlay
+    const overlay = hudScene.add.rectangle(W / 2 - px, H / 2 - py, W, H, 0x000000, 0.45).setInteractive();
+    ct.add(overlay);
+
+    // Panel background
+    const bg = hudScene.add.graphics();
+    bg.fillStyle(0x111928, 0.97); bg.fillRoundedRect(0, 0, pw, ph, 8);
+    bg.lineStyle(2, 0x2A3A52); bg.strokeRoundedRect(0, 0, pw, ph, 8);
+    ct.add(bg);
+
+    // Title
+    ct.add(hudScene.txt(pw / 2, 18, 'Select a Gift', 13, '#FFD866').setOrigin(0.5));
+
+    // Item grid (same style as inventory)
+    const slotSize = 48;
+    const gap = 12;
+    const gridW = items.length * slotSize + (items.length - 1) * gap;
+    const startX = (pw - gridW) / 2;
+    const startY = 50;
+
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const sx = startX + i * (slotSize + gap);
+        const sy = startY;
+
+        // Slot background
+        const slotBg = hudScene.add.graphics();
+        slotBg.fillStyle(0x2A3444, 0.8);
+        slotBg.fillRoundedRect(sx, sy, slotSize, slotSize, 4);
+        slotBg.lineStyle(1, 0x3D4F6B, 0.6);
+        slotBg.strokeRoundedRect(sx, sy, slotSize, slotSize, 4);
+        ct.add(slotBg);
+
+        // Item icon
+        const iconKey = GIFT_ITEMS[item.id]?.icon;
+        if (iconKey && hudScene.textures.exists(iconKey)) {
+            ct.add(hudScene.add.image(sx + slotSize / 2, sy + slotSize / 2, iconKey).setScale(2));
+        }
+
+        // Count badge
+        if (item.count > 1) {
+            ct.add(hudScene.txt(sx + slotSize - 4, sy + slotSize - 4, `x${item.count}`, 8, '#DDDD88').setOrigin(1, 1));
+        }
+
+        // Item name below slot
+        ct.add(hudScene.txt(sx + slotSize / 2, sy + slotSize + 4, item.name, 7, '#CCBBAA').setOrigin(0.5, 0));
+
+        // Clickable hit area
+        const hit = hudScene.add.rectangle(sx + slotSize / 2, sy + slotSize / 2, slotSize, slotSize, 0, 0)
+            .setInteractive({ useHandCursor: true });
+        ct.add(hit);
+
+        hit.on('pointerover', () => {
+            slotBg.clear();
+            slotBg.fillStyle(0x3A4F6B, 0.95);
+            slotBg.fillRoundedRect(sx, sy, slotSize, slotSize, 4);
+            slotBg.lineStyle(1, 0x88AACC, 0.7);
+            slotBg.strokeRoundedRect(sx, sy, slotSize, slotSize, 4);
+        });
+        hit.on('pointerout', () => {
+            slotBg.clear();
+            slotBg.fillStyle(0x2A3444, 0.8);
+            slotBg.fillRoundedRect(sx, sy, slotSize, slotSize, 4);
+            slotBg.lineStyle(1, 0x3D4F6B, 0.6);
+            slotBg.strokeRoundedRect(sx, sy, slotSize, slotSize, 4);
+        });
+        hit.on('pointerdown', () => {
+            ct.destroy();
+            giveGiftToNPC(npcId, item, hudScene);
+        });
+    }
+
+    // Never mind button
+    const btnW = 160, btnH = 30;
+    const btnX = (pw - btnW) / 2, btnY = ph - 48;
+    const btnBg = hudScene.add.graphics();
+    btnBg.fillStyle(0x2A3444, 0.8);
+    btnBg.fillRoundedRect(btnX, btnY, btnW, btnH, 5);
+    btnBg.lineStyle(1, 0x3D4F6B, 0.6);
+    btnBg.strokeRoundedRect(btnX, btnY, btnW, btnH, 5);
+    ct.add(btnBg);
+    ct.add(hudScene.txt(pw / 2, btnY + btnH / 2, 'Never mind', 9, '#AA8888').setOrigin(0.5));
+    const btnHit = hudScene.add.rectangle(btnX + btnW / 2, btnY + btnH / 2, btnW, btnH, 0, 0)
+        .setInteractive({ useHandCursor: true });
+    ct.add(btnHit);
+    btnHit.on('pointerover', () => {
+        btnBg.clear();
+        btnBg.fillStyle(0x3A4F6B, 0.95);
+        btnBg.fillRoundedRect(btnX, btnY, btnW, btnH, 5);
+        btnBg.lineStyle(1, 0x88AACC, 0.7);
+        btnBg.strokeRoundedRect(btnX, btnY, btnW, btnH, 5);
+    });
+    btnHit.on('pointerout', () => {
+        btnBg.clear();
+        btnBg.fillStyle(0x2A3444, 0.8);
+        btnBg.fillRoundedRect(btnX, btnY, btnW, btnH, 5);
+        btnBg.lineStyle(1, 0x3D4F6B, 0.6);
+        btnBg.strokeRoundedRect(btnX, btnY, btnW, btnH, 5);
+    });
+    btnHit.on('pointerdown', () => {
+        ct.destroy();
+        if (metaScene) metaScene._frozen = false;
+    });
+}
+
 function handleGiftGiving(npcId, hudScene) {
     const npc = NPCS[npcId];
     if (!npc) return;
@@ -704,30 +818,7 @@ function handleGiftGiving(npcId, hudScene) {
         return;
     }
 
-    // Only one giftable item — give it directly
-    if (items.length === 1) {
-        giveGiftToNPC(npcId, items[0], hudScene);
-        return;
-    }
-
-    // Multiple items — show picker dialogue
-    const choices = items.map(item => ({
-        label: `${item.name} (x${item.count})`,
-        action: item.id,
-    }));
-    choices.push({ label: 'Never mind', action: 'cancel' });
-
-    MetaDialogue.show(hudScene, {
-        speaker: npc.name,
-        spriteKey: npc.spriteKey,
-        lines: ['What would you like to give me?'],
-        choices,
-        onChoice: (action) => {
-            if (action === 'cancel') return;
-            const picked = items.find(i => i.id === action);
-            if (picked) giveGiftToNPC(npcId, picked, hudScene);
-        },
-    });
+    showGiftPicker(npcId, items, hudScene);
 }
 
 export function getNPC(id) {
