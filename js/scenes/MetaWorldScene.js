@@ -100,8 +100,7 @@ export default class MetaWorldScene extends Phaser.Scene {
     // Build or rebuild a location without restarting the scene (preserves input)
     buildLocation(locationId, spawnGx, spawnGy) {
         // Save transit state for any departing/passing-through NPCs before destroying the room.
-        // Keep them in the current room (same pathIndex) and record their pixel progress so
-        // placeNPCs() can interpolate their position correctly when the player re-enters.
+        // Uses wall-clock timestamp so re-entering a room doesn't cause position regression.
         for (const npc of (this.npcSprites || [])) {
             if (npc.transitionState === 'departing' && npc.departPath) {
                 const idx = npc.departPathIndex;
@@ -109,7 +108,7 @@ export default class MetaWorldScene extends Phaser.Scene {
                 const nextLocId = idx < npc.departPath.length - 1 ? npc.departPath[idx + 1] : null;
                 const isFinal = idx === npc.departPath.length - 1;
 
-                // Find entry door so we can measure how far they've walked
+                // Calculate how far the NPC has walked as a proportion of the room
                 const entryDoor = prevLocId ? this.location.doors.find(d => d.targetLocation === prevLocId) : null;
                 const entryX = entryDoor ? this.roomX + entryDoor.gx * TILE + TILE / 2 : npc.targetX;
                 const entryY = entryDoor ? this.roomY + entryDoor.gy * TILE + TILE / 2 : npc.targetY;
@@ -129,10 +128,11 @@ export default class MetaWorldScene extends Phaser.Scene {
 
                 this.game._npcTransits[npc.id] = {
                     path: npc.departPath,
-                    pathIndex: idx, // stay in current room — not yet at exit door
+                    pathIndex: idx,
                     destGx: npc.departDestGx,
                     destGy: npc.departDestGy,
                     _offScreenTimer: progress * roomTime,
+                    _savedAt: Date.now(), // wall-clock anchor for monotonic progress
                 };
             }
         }
@@ -374,7 +374,15 @@ export default class MetaWorldScene extends Phaser.Scene {
                 this.location.id, prevRoom, nextRoom,
                 isFinalRoom ? destGx : 0, isFinalRoom ? destGy : 0
             );
-            const progress = Math.min((transit._offScreenTimer || 0) / roomTime, 1);
+            // Account for wall-clock time elapsed since transit was saved (prevents
+            // NPC appearing to move backward when the player re-enters quickly).
+            let timer = transit._offScreenTimer || 0;
+            if (transit._savedAt) {
+                timer += Date.now() - transit._savedAt;
+                delete transit._savedAt; // consumed — don't double-count
+            }
+            transit._offScreenTimer = timer;
+            const progress = Math.min(timer / roomTime, 1);
             const spawnGx = entryGx + (exitGx - entryGx) * progress;
             const spawnGy = entryGy + (exitGy - entryGy) * progress;
             const sx = this.roomX + spawnGx * TILE + TILE / 2;
@@ -550,10 +558,12 @@ export default class MetaWorldScene extends Phaser.Scene {
             npc.walking = true;
         } else {
             // A* failed or start === end — stop walking to avoid clipping through walls.
-            // Reset _pathComputed so a future walk attempt can retry.
+            // Reset target to current position and allow retry after a wander delay.
             npc._waypoints = null;
             npc._pathComputed = false;
             npc.walking = false;
+            npc.targetX = npc.sprite.x;
+            npc.targetY = npc.sprite.y;
             npc.wanderTimer = 1000 + Math.random() * 2000;
         }
     }
@@ -711,10 +721,12 @@ export default class MetaWorldScene extends Phaser.Scene {
             if (t.fromLocation === this.location.id && this.npcSprites.some(n => n.id === t.id && n.transitionState === 'departing')) continue;
             const fullPath = findFullPath(t.fromLocation, t.toLocation);
             if (!fullPath || fullPath.length < 2) continue;
-            // Start from second room (they instantly leave their origin off-screen)
+            // Start from the room after their origin (they leave off-screen instantly).
+            // If the origin is the player's room, they're handled by the departing loop above,
+            // so pathIndex 1 is always the first off-screen room.
             this.game._npcTransits[t.id] = {
                 path: fullPath,
-                pathIndex: 1,
+                pathIndex: Math.min(1, fullPath.length - 1),
                 destGx: t.destGx,
                 destGy: t.destGy,
             };
@@ -785,8 +797,9 @@ export default class MetaWorldScene extends Phaser.Scene {
                     const isFinalRoom = transit.pathIndex === transit.path.length - 1;
                     if (isFinalRoom) {
                         // This is their destination — walk from entry door to schedule spot.
-                        this._spawnArrivingNPC(npcId, transit);
+                        // Delete transit BEFORE spawning to prevent double-spawn from placeNPCs/syncPresence.
                         delete this.game._npcTransits[npcId];
+                        this._spawnArrivingNPC(npcId, transit);
                     } else {
                         // Just passing through — walk from entry door to exit door.
                         this._spawnPassingNPC(npcId, transit);
@@ -1027,6 +1040,8 @@ export default class MetaWorldScene extends Phaser.Scene {
         if (npc) {
             npc.paused = true;
             npc.walking = false;
+            npc._waypoints = null;
+            npc._pathComputed = false;
         }
     }
 
@@ -1081,6 +1096,122 @@ export default class MetaWorldScene extends Phaser.Scene {
             }
         }
         this.placeNPCs();
+    }
+
+    // After a time skip (e.g. returning from Havenwood), reconcile NPC positions
+    // without teleporting. NPCs that need to change rooms get transit records so
+    // they walk in naturally; NPCs already in the right room stay put.
+    _reconcileNPCsAfterTimeSkip() {
+        const expected = getNPCsAtLocation(this.location.id);
+        const expectedIds = new Set(expected.map(e => e.id));
+
+        // 1. Remove NPC sprites that shouldn't be here anymore and create transits for them
+        for (let i = this.npcSprites.length - 1; i >= 0; i--) {
+            const npc = this.npcSprites[i];
+            if (npc.transitionState) continue; // already handled
+            if (expectedIds.has(npc.id)) continue; // still belongs here
+
+            // NPC moved to a different room — find where they should be now
+            const npcDef = getNPC(npc.id);
+            const s = MetaState.state;
+            let targetLoc = null, targetGx = 0, targetGy = 0;
+            if (npcDef && npcDef.schedule) {
+                for (const slot of npcDef.schedule) {
+                    if (slot.days && slot.days.includes(s.dayOfWeek) && s.timeOfDay >= slot.start && s.timeOfDay < slot.end) {
+                        targetLoc = slot.location;
+                        targetGx = slot.gx;
+                        targetGy = slot.gy;
+                        break;
+                    }
+                }
+            }
+
+            // Create an off-screen transit so they walk naturally to their destination
+            if (targetLoc && targetLoc !== this.location.id) {
+                const fullPath = findFullPath(this.location.id, targetLoc);
+                if (fullPath && fullPath.length >= 2) {
+                    // They've had time to leave — start them partway through their journey
+                    this.game._npcTransits[npc.id] = {
+                        path: fullPath,
+                        pathIndex: Math.min(1, fullPath.length - 1),
+                        destGx: targetGx,
+                        destGy: targetGy,
+                    };
+                }
+            }
+
+            // Remove sprite
+            const idx = this._roomObjects.indexOf(npc.sprite);
+            if (idx >= 0) this._roomObjects.splice(idx, 1);
+            if (npc.sprite) npc.sprite.destroy();
+            this.npcSprites.splice(i, 1);
+            const ri = this._activeNPCRefs.findIndex(r => r.id === npc.id);
+            if (ri >= 0) this._activeNPCRefs.splice(ri, 1);
+        }
+
+        // 2. NPCs that should be here but aren't — create transits so they walk in
+        this._activeNPCRefs = getNPCsAtLocation(this.location.id);
+        for (const exp of expected) {
+            if (this.npcSprites.some(n => n.id === exp.id)) continue; // already here
+            if (this.game._npcTransits && this.game._npcTransits[exp.id]) continue; // already in transit
+
+            // Figure out where this NPC was before (their previous schedule location)
+            const npcDef = getNPC(exp.id);
+            if (!npcDef) continue;
+            let fromLoc = null;
+            if (npcDef.schedule) {
+                // Check all schedule slots to find where they were previously
+                for (const slot of npcDef.schedule) {
+                    if (slot.location !== this.location.id) {
+                        fromLoc = slot.location;
+                    }
+                }
+            }
+
+            if (fromLoc) {
+                // Create transit from their previous location to here
+                const fullPath = findFullPath(fromLoc, this.location.id);
+                if (fullPath && fullPath.length >= 2) {
+                    // They've had time to travel — start them at or near the final room
+                    const startIdx = Math.max(1, fullPath.length - 2);
+                    this.game._npcTransits[exp.id] = {
+                        path: fullPath,
+                        pathIndex: startIdx,
+                        destGx: exp.gx,
+                        destGy: exp.gy,
+                    };
+                    continue; // _advanceOffScreenTransits will spawn them walking in
+                }
+            }
+
+            // Fallback: no previous location found — spawn at door walking to position
+            const spawnDoor = this.location.doors[0];
+            if (spawnDoor) {
+                const sx = this.roomX + spawnDoor.gx * TILE + TILE / 2;
+                const sy = this.roomY + spawnDoor.gy * TILE + TILE / 2;
+                const sprite = this._track(this.add.image(sx, sy, npcDef.spriteKey).setDepth(10));
+                this.npcSprites.push({
+                    id: exp.id, gx: spawnDoor.gx, gy: spawnDoor.gy,
+                    homeGx: exp.gx, homeGy: exp.gy, sprite, def: npcDef,
+                    targetX: this.roomX + exp.gx * TILE + TILE / 2,
+                    targetY: this.roomY + exp.gy * TILE + TILE / 2,
+                    walking: true, paused: false, wanderTimer: 0,
+                    transitionState: 'arriving',
+                });
+                if (!this._activeNPCRefs.some(r => r.id === exp.id)) {
+                    this._activeNPCRefs.push({ id: exp.id, gx: spawnDoor.gx, gy: spawnDoor.gy });
+                }
+            }
+        }
+
+        // 3. NPCs that are still here and belong — update their home position to new schedule spot
+        for (const npc of this.npcSprites) {
+            const exp = expected.find(e => e.id === npc.id);
+            if (exp && !npc.transitionState) {
+                npc.homeGx = exp.gx;
+                npc.homeGy = exp.gy;
+            }
+        }
     }
 
     createCharacter(spawnGx, spawnGy) {
@@ -1297,7 +1428,7 @@ export default class MetaWorldScene extends Phaser.Scene {
             if (mins <= 5) {
                 this._checkNPCTransitions(prevTime, MetaState.state.timeOfDay);
             } else {
-                this.refreshNPCs(); // large jump — just teleport
+                this._reconcileNPCsAfterTimeSkip(); // large jump — reconcile without teleporting
             }
             this.game.events.emit('metaTimeUpdate');
 
@@ -2330,9 +2461,12 @@ export default class MetaWorldScene extends Phaser.Scene {
             this._havenwoodEnteredAt = null;
         }
 
-        // Reposition NPCs immediately now that time is current — they were hidden on wake
-        // to prevent stale-position rendering. Fade them in during the phone animation.
-        this.refreshNPCs();
+        // Reposition NPCs now that time is current. Instead of teleporting them to
+        // their new schedule positions, create transit records so they walk naturally.
+        // NPCs that were here before and are still here just fade in at their old spot.
+        // NPCs that moved to a different room get off-screen transits.
+        // NPCs arriving at this room walk in from the correct door.
+        this._reconcileNPCsAfterTimeSkip();
         for (const npc of this.npcSprites) {
             if (npc.sprite) {
                 npc.sprite.setAlpha(0);
