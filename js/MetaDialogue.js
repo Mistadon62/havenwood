@@ -89,19 +89,19 @@ const MetaDialogue = {
 
         // Speaker name
         if (speaker) {
-            const nameText = txt(hudScene, textAreaX, boxY + 12, speaker, 10, CLR.gold, textAreaW);
+            const nameText = txt(hudScene, textAreaX, boxY + 12, speaker, 12, CLR.gold, textAreaW);
             container.add(nameText);
         }
 
         // Line text
         const textY = speaker ? boxY + 32 : boxY + 14;
-        const lineText = txt(hudScene, textAreaX, textY, lines[0] || '', 9, '#DDDDEE', textAreaW);
+        const lineText = txt(hudScene, textAreaX, textY, lines[0] || '', 11, '#DDDDEE', textAreaW);
         container.add(lineText);
 
         // Hint
         const isFinalLine = lines.length <= 1 && (!choices || choices.length === 0);
         const hint = txt(hudScene, boxX + boxW - 14, boxY + boxH - 16,
-            isFinalLine ? '[E] Close' : '[E] Continue', 8, '#666688', 200);
+            isFinalLine ? '[E] Close' : '[E] Continue', 10, '#666688', 200);
         hint.setOrigin(1, 0.5);
         container.add(hint);
 
@@ -135,7 +135,7 @@ const MetaDialogue = {
                     .setInteractive({ useHandCursor: true });
                 choiceContainer.add(cHit);
 
-                const cText = txt(hudScene, choiceX + 14, cy + choiceH / 2, `${i + 1}. ${c.label}`, 9, '#88DD88', choiceW - 28);
+                const cText = txt(hudScene, choiceX + 14, cy + choiceH / 2, `${i + 1}. ${c.label}`, 11, '#88DD88', choiceW - 28);
                 cText.setOrigin(0, 0.5);
                 choiceContainer.add(cText);
 
