@@ -488,19 +488,12 @@ export default class MenuScene extends Phaser.Scene {
     _setupTentEasterEgg(tentX, tentY) {
         const tentHit = this.add.rectangle(tentX, tentY - 10, 44, 40, 0, 0)
             .setDepth(9).setInteractive({ useHandCursor: true });
-        const tentClicks = [];
         let tentEggActive = false;
 
         tentHit.on('pointerdown', () => {
             if (tentEggActive) return;
-            const now = Date.now();
-            tentClicks.push(now);
-            while (tentClicks.length > 0 && now - tentClicks[0] > 10000) tentClicks.shift();
-            if (tentClicks.length >= 20) {
-                tentEggActive = true;
-                tentClicks.length = 0;
-                this._triggerTentEyes(tentX, tentY, () => { tentEggActive = false; });
-            }
+            tentEggActive = true;
+            this._triggerTentEyes(tentX, tentY, () => { tentEggActive = false; });
         });
     }
 
