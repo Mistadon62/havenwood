@@ -1138,6 +1138,21 @@ export default class MetaWorldScene extends Phaser.Scene {
     }
 
     update(time, delta) {
+        // Auto-save every 30s (both worlds). Runs regardless of frozen/dialogue state
+        // but skipped during minigames so a refresh returns to pre-minigame state.
+        const gs = this.scene.get('GameScene');
+        const hudScene = this.scene.get('MetaHUDScene');
+        if (gs && gs.state.autoSave && !(hudScene && hudScene._minigameActive)) {
+            this._autoSaveAccum = (this._autoSaveAccum || 0) + delta;
+            if (this._autoSaveAccum >= 30000) {
+                this._autoSaveAccum -= 30000;
+                gs._saveMode = 'meta';
+                gs.saveGame();
+                gs._saveMode = null;
+                MetaState.save();
+            }
+        }
+
         // Handle dialogue advancement even when frozen
         if (MetaDialogue.isActive()) {
             const hudScene = this.scene.get('MetaHUDScene');

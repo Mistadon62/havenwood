@@ -4968,9 +4968,10 @@ export default class GameScene extends Phaser.Scene {
 
         if (this.state.autoSave) {
             this._autoSaveAccum += delta;
-            if (this._autoSaveAccum >= 60000) {
-                this._autoSaveAccum -= 60000;
+            if (this._autoSaveAccum >= 30000) {
+                this._autoSaveAccum -= 30000;
                 this.saveGame();
+                MetaState.save();
             }
         }
     }

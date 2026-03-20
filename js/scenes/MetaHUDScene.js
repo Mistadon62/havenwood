@@ -261,8 +261,12 @@ export default class MetaHUDScene extends Phaser.Scene {
         const metaScene = this.scene.get('MetaWorldScene');
         if (metaScene) metaScene._frozen = true;
 
-        // Pause minigame if one is active
-        if (this._minigameActive) this._minigamePaused = true;
+        // Pause minigame if one is active — freeze the scene clock so all
+        // timers (update loop, serve countdown, delayed calls) stop immediately.
+        if (this._minigameActive) {
+            this._minigamePaused = true;
+            this.time.paused = true;
+        }
 
         // Render above minigames (depth 500+) when one is active, else normal depth
         const baseDepth = this._minigameActive ? 610 : 310;
@@ -288,28 +292,33 @@ export default class MetaHUDScene extends Phaser.Scene {
         const btnW = 180, btnH = 34;
         const bx = pw / 2 - btnW / 2;
 
-        // Save button
+        // Save button — disabled during minigames so a refresh/exit returns
+        // the player to the state right before the minigame started.
+        const inMinigame = this._minigameActive;
         const saveBg = this.add.graphics();
-        saveBg.fillStyle(0x44AA44, 0.6); saveBg.fillRoundedRect(bx, 60, btnW, btnH, 5);
+        saveBg.fillStyle(inMinigame ? 0x444444 : 0x44AA44, 0.6); saveBg.fillRoundedRect(bx, 60, btnW, btnH, 5);
         ct.add(saveBg);
-        const saveHit = this.add.rectangle(pw / 2, 60 + btnH / 2, btnW, btnH, 0, 0).setInteractive({ useHandCursor: true });
-        ct.add(saveHit);
-        ct.add(this.txt(pw / 2, 60 + btnH / 2, 'Save Game', 10, '#FFFFFF').setOrigin(0.5));
-        saveHit.on('pointerover', () => { saveBg.clear(); saveBg.fillStyle(0x55CC55, 0.7); saveBg.fillRoundedRect(bx, 60, btnW, btnH, 5); });
-        saveHit.on('pointerout', () => { saveBg.clear(); saveBg.fillStyle(0x44AA44, 0.6); saveBg.fillRoundedRect(bx, 60, btnW, btnH, 5); });
-        saveHit.on('pointerdown', () => {
-            const gs = this.scene.get('GameScene');
-            if (gs) {
-                gs._saveMode = 'meta';
-                gs.saveGame();
-                gs._saveMode = null;
-            }
-            MetaState.save();
-            this.showNotification('Game saved!');
-            this.closeSettingsMenu();
-        });
+        ct.add(this.txt(pw / 2, 60 + btnH / 2, 'Save Game', 10, inMinigame ? '#666666' : '#FFFFFF').setOrigin(0.5));
+        if (!inMinigame) {
+            const saveHit = this.add.rectangle(pw / 2, 60 + btnH / 2, btnW, btnH, 0, 0).setInteractive({ useHandCursor: true });
+            ct.add(saveHit);
+            saveHit.on('pointerover', () => { saveBg.clear(); saveBg.fillStyle(0x55CC55, 0.7); saveBg.fillRoundedRect(bx, 60, btnW, btnH, 5); });
+            saveHit.on('pointerout', () => { saveBg.clear(); saveBg.fillStyle(0x44AA44, 0.6); saveBg.fillRoundedRect(bx, 60, btnW, btnH, 5); });
+            saveHit.on('pointerdown', () => {
+                const gs = this.scene.get('GameScene');
+                if (gs) {
+                    gs._saveMode = 'meta';
+                    gs.saveGame();
+                    gs._saveMode = null;
+                }
+                MetaState.save();
+                this.showNotification('Game saved!');
+                this.closeSettingsMenu();
+            });
+        }
 
-        // Exit to Menu button
+        // Exit to Menu button — during minigames, exits without saving so the
+        // player resumes from the pre-minigame state on next load.
         const exitBg = this.add.graphics();
         exitBg.fillStyle(0xAA4444, 0.6); exitBg.fillRoundedRect(bx, 110, btnW, btnH, 5);
         ct.add(exitBg);
@@ -319,14 +328,20 @@ export default class MetaHUDScene extends Phaser.Scene {
         exitHit.on('pointerover', () => { exitBg.clear(); exitBg.fillStyle(0xCC5555, 0.7); exitBg.fillRoundedRect(bx, 110, btnW, btnH, 5); });
         exitHit.on('pointerout', () => { exitBg.clear(); exitBg.fillStyle(0xAA4444, 0.6); exitBg.fillRoundedRect(bx, 110, btnW, btnH, 5); });
         exitHit.on('pointerdown', () => {
-            const gs = this.scene.get('GameScene');
-            if (gs) {
-                gs._saveMode = 'meta';
-                gs.saveGame();
-                gs._saveMode = null;
+            if (!inMinigame) {
+                const gs = this.scene.get('GameScene');
+                if (gs) {
+                    gs._saveMode = 'meta';
+                    gs.saveGame();
+                    gs._saveMode = null;
+                }
+                MetaState.save();
             }
-            MetaState.save();
             this.closeSettingsMenu();
+            // Unpause scene clock before stopping scenes (avoids stale paused state on restart)
+            this.time.paused = false;
+            this._minigameActive = false;
+            this._minigamePaused = false;
             this.scene.stop('MetaHUDScene');
             this.scene.stop('MetaWorldScene');
             this.scene.stop('HUDScene');
@@ -372,6 +387,7 @@ export default class MetaHUDScene extends Phaser.Scene {
         // Unpause minigame if one is active
         if (this._minigameActive) {
             this._minigamePaused = false;
+            this.time.paused = false;
         } else {
             const metaScene = this.scene.get('MetaWorldScene');
             if (metaScene && !metaScene._startWithPhone) metaScene._frozen = false;
