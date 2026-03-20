@@ -43,6 +43,11 @@ export default class HUDScene extends Phaser.Scene {
         this.createBuildHintBar();
         this.listenEvents();
 
+        // Hide HUD if we're about to transition to meta-world
+        if (this.gs && this.gs._transitioningToMeta) {
+            this.add.rectangle(W / 2, H / 2, W, H, 0x000000).setDepth(9999);
+        }
+
         this.time.delayedCall(0, () => this.syncState());
     }
 

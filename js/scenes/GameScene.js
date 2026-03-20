@@ -128,8 +128,11 @@ export default class GameScene extends Phaser.Scene {
         // If saved in meta-world mode, auto-transition to the room scene
         if (loadedMeta) {
             this._loadedMode = null;
+            this._transitioningToMeta = true;
             this.game._hasZoomedOut = true; // zoom already happened in a previous session
             MetaState.load(); // restore meta-world state
+            // Black overlay at max depth to hide sanctuary while meta scene loads
+            const cover = this.add.rectangle(W / 2, H / 2, W, H, 0x000000).setDepth(9999).setScrollFactor(0);
             this.time.delayedCall(100, () => {
                 const hud = this.scene.get('HUDScene');
                 if (hud && hud.closeAllPanels) hud.closeAllPanels(true);
@@ -142,6 +145,7 @@ export default class GameScene extends Phaser.Scene {
                     spawnGy: MetaState.state.playerTileY,
                 });
                 this.scene.launch('MetaHUDScene');
+                cover.destroy();
             });
         }
 

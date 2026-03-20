@@ -121,8 +121,8 @@ export default class MetaHUDScene extends Phaser.Scene {
         // Inventory count
         this.invText = this.txt(780, midY, '', 8, '#AABB88').setOrigin(0, 0.5).setDepth(201);
 
-        // Event indicator
-        this.eventText = this.txt(840, midY, '', 8, '#FFDD66').setOrigin(0, 0.5).setDepth(201);
+        // Event indicator (hidden — too noisy for top bar)
+        this.eventText = this.txt(840, midY, '', 8, '#FFDD66').setOrigin(0, 0.5).setDepth(201).setVisible(false);
 
         // Phone notification badge
         this.phoneBadge = this.txt(920, midY, '', 8, '#FF8866').setOrigin(0, 0.5).setDepth(201);
