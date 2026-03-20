@@ -316,6 +316,7 @@ export default class MenuScene extends Phaser.Scene {
         this._initCEAudio();
         this.spawnMenuBunnies();
         this._setupTentEasterEgg(tentX, tentY);
+        this._setupMoonEasterEgg(moonX, moonY, moonR);
     }
 
     // Shared audio helpers for Close Encounters easter eggs
@@ -500,6 +501,113 @@ export default class MenuScene extends Phaser.Scene {
                 tentClicks.length = 0;
                 this._triggerTentEyes(tentX, tentY, () => { tentEggActive = false; });
             }
+        });
+    }
+
+    _setupMoonEasterEgg(moonX, moonY, moonR) {
+        const hitR = moonR + 4;
+        const moonHit = this.add.circle(moonX, moonY, hitR, 0, 0)
+            .setDepth(9).setInteractive({ useHandCursor: true });
+        let moonEggActive = false;
+        let moonEyeRevealed = false;
+
+        moonHit.on('pointerdown', () => {
+            if (moonEggActive) return;
+            moonEggActive = true;
+            if (!moonEyeRevealed) {
+                moonEyeRevealed = true;
+                this._moonEye = this._createMoonEye(moonX, moonY);
+                this._moonEye.gfx.setAlpha(0);
+                this._moonEye.drawOpen();
+                this.tweens.add({
+                    targets: this._moonEye.gfx, alpha: 1, duration: 250,
+                    onComplete: () => {
+                        this._doMoonBlink(() => { moonEggActive = false; });
+                    }
+                });
+            } else {
+                this._doMoonBlink(() => { moonEggActive = false; });
+            }
+        });
+    }
+
+    _createMoonEye(moonX, moonY) {
+        const eyeX = moonX - 17, eyeY = moonY;
+        const noseX = eyeX + 2, noseY = eyeY + 10;
+        const gfx = this.add.graphics().setDepth(10);
+
+        const drawNose = () => {
+            const a = -40 * Math.PI / 180;
+            const cos = Math.cos(a), sin = Math.sin(a);
+            const rot = (x, y) => [noseX + 2 + cos * x - sin * y, noseY - 3 + cos * y + sin * x];
+            const [x0, y0] = rot(0, 0);
+            const [x1, y1] = rot(5, 7);
+            const [x2, y2] = rot(-2, 7);
+            gfx.fillStyle(0xEEEECC);
+            gfx.beginPath();
+            gfx.moveTo(x0, y0);
+            gfx.lineTo(x1, y1);
+            gfx.lineTo(x2, y2);
+            gfx.closePath();
+            gfx.fillPath();
+            gfx.lineStyle(1.4, 0xccccaa);
+            gfx.beginPath();
+            gfx.moveTo(x0, y0);
+            gfx.lineTo(x1, y1);
+            gfx.lineTo(x2, y2);
+            gfx.strokePath();
+        };
+
+        const drawOpen = () => {
+            gfx.clear();
+            gfx.fillStyle(0xffffff);
+            gfx.fillEllipse(eyeX, eyeY, 11, 7);
+            gfx.fillStyle(0x443399);
+            gfx.fillCircle(eyeX, eyeY, 3);
+            gfx.fillStyle(0x111111);
+            gfx.fillCircle(eyeX, eyeY, 1.5);
+            gfx.fillStyle(0xffffff, 0.8);
+            gfx.fillCircle(eyeX + 1, eyeY - 1, 0.8);
+            drawNose();
+        };
+
+        const drawHalf = () => {
+            gfx.clear();
+            gfx.fillStyle(0xffffff);
+            gfx.fillEllipse(eyeX, eyeY + 0.5, 11, 3);
+            gfx.fillStyle(0x443399);
+            gfx.fillCircle(eyeX, eyeY + 0.5, 2);
+            gfx.fillStyle(0x111111);
+            gfx.fillCircle(eyeX, eyeY + 0.5, 1);
+            drawNose();
+        };
+
+        const drawClosed = () => {
+            gfx.clear();
+            gfx.lineStyle(1.5, 0xccccaa);
+            gfx.beginPath();
+            gfx.arc(eyeX, eyeY, 4.5, 0.15 * Math.PI, 0.85 * Math.PI);
+            gfx.strokePath();
+            drawNose();
+        };
+
+        return { gfx, drawOpen, drawHalf, drawClosed };
+    }
+
+    _doMoonBlink(onDone) {
+        const { drawOpen, drawHalf, drawClosed } = this._moonEye;
+        this.time.delayedCall(500, () => {
+            drawHalf();
+            this.time.delayedCall(60, () => {
+                drawClosed();
+                this.time.delayedCall(200, () => {
+                    drawHalf();
+                    this.time.delayedCall(60, () => {
+                        drawOpen();
+                        if (onDone) onDone();
+                    });
+                });
+            });
         });
     }
 
