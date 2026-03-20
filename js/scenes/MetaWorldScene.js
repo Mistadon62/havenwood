@@ -558,13 +558,41 @@ export default class MetaWorldScene extends Phaser.Scene {
             npc.walking = true;
         } else {
             // A* failed or start === end — stop walking to avoid clipping through walls.
-            // Reset target to current position and allow retry after a wander delay.
-            npc._waypoints = null;
-            npc._pathComputed = false;
-            npc.walking = false;
-            npc.targetX = npc.sprite.x;
-            npc.targetY = npc.sprite.y;
-            npc.wanderTimer = 1000 + Math.random() * 2000;
+            if (npc.transitionState === 'departing') {
+                // Departing NPC can't find path to door — force the transit to avoid getting stuck.
+                // Create the transit record as if they reached the door, then fade out.
+                npc._waypoints = null;
+                npc._pathComputed = false;
+                npc.walking = false;
+                if (npc.departPath && npc.departPathIndex < npc.departPath.length - 1) {
+                    this.game._npcTransits[npc.id] = {
+                        path: npc.departPath,
+                        pathIndex: npc.departPathIndex + 1,
+                        destGx: npc.departDestGx,
+                        destGy: npc.departDestGy,
+                    };
+                }
+                this.tweens.add({
+                    targets: npc.sprite, alpha: 0, duration: 400,
+                    onComplete: () => {
+                        const idx2 = this._roomObjects.indexOf(npc.sprite);
+                        if (idx2 >= 0) this._roomObjects.splice(idx2, 1);
+                        npc.sprite.destroy();
+                        const si = this.npcSprites.indexOf(npc);
+                        if (si >= 0) this.npcSprites.splice(si, 1);
+                        const ri = this._activeNPCRefs.findIndex(r => r.id === npc.id);
+                        if (ri >= 0) this._activeNPCRefs.splice(ri, 1);
+                    }
+                });
+            } else {
+                // Normal wander — reset target and allow retry after a delay.
+                npc._waypoints = null;
+                npc._pathComputed = false;
+                npc.walking = false;
+                npc.targetX = npc.sprite.x;
+                npc.targetY = npc.sprite.y;
+                npc.wanderTimer = 1000 + Math.random() * 2000;
+            }
         }
     }
 
@@ -892,6 +920,12 @@ export default class MetaWorldScene extends Phaser.Scene {
 
         // NPCs that are here but shouldn't be — trigger departure
         for (const npc of this.npcSprites) {
+            // If NPC is departing but got stuck (walking stopped, no waypoints), restart departure
+            if (npc.transitionState === 'departing' && !npc.walking && !npc.paused) {
+                npc.walking = true;
+                npc._pathComputed = false;
+                npc._waypoints = null;
+            }
             if (npc.transitionState) continue; // already transitioning / passing through
             if (!expectedIds.has(npc.id)) {
                 // Look up their actual current schedule entry (including destination coords)
@@ -1039,6 +1073,8 @@ export default class MetaWorldScene extends Phaser.Scene {
         const npc = this.npcSprites.find(n => n.id === npcId);
         if (npc) {
             npc.paused = true;
+            npc._wasTransitioning = npc.transitionState || null;
+            npc.transitionState = null;
             npc.walking = false;
             npc._waypoints = null;
             npc._pathComputed = false;
@@ -1051,10 +1087,35 @@ export default class MetaWorldScene extends Phaser.Scene {
         if (!npc) return;
         npc.paused = false;
 
-        if (npc.pendingTransition) {
-            // NPC was waiting to leave — start departure now
-            const dep = npc.pendingTransition;
-            npc.pendingTransition = null;
+        // Determine where the NPC should be right now according to their schedule.
+        // This catches cases where time advanced during dialogue (e.g. hangout/class)
+        // and the NPC's scheduled location changed while they were paused.
+        const npcDef = getNPC(npcId);
+        const s = MetaState.state;
+        let scheduledLoc = null, scheduledGx = 0, scheduledGy = 0;
+        if (npcDef && npcDef.schedule) {
+            for (const slot of npcDef.schedule) {
+                if (slot.days && slot.days.includes(s.dayOfWeek) && s.timeOfDay >= slot.start && s.timeOfDay < slot.end) {
+                    scheduledLoc = slot.location;
+                    scheduledGx = slot.gx;
+                    scheduledGy = slot.gy;
+                    break;
+                }
+            }
+        }
+
+        // Use pendingTransition if one was queued, otherwise check schedule
+        const dep = npc.pendingTransition
+            || (scheduledLoc && scheduledLoc !== this.location.id
+                ? { targetLocation: scheduledLoc, destGx: scheduledGx, destGy: scheduledGy }
+                : null)
+            || (npc._wasTransitioning === 'departing' && npc.departPath
+                ? { targetLocation: npc.departPath[npc.departPath.length - 1], destGx: npc.departDestGx, destGy: npc.departDestGy }
+                : null);
+        npc.pendingTransition = null;
+        npc._wasTransitioning = null;
+
+        if (dep) {
             const targetLoc = dep.targetLocation;
             if (targetLoc && targetLoc !== this.location.id) {
                 const fullPath = findFullPath(this.location.id, targetLoc);
@@ -1069,17 +1130,12 @@ export default class MetaWorldScene extends Phaser.Scene {
                         npc.targetX = this.roomX + door.gx * TILE + TILE / 2;
                         npc.targetY = this.roomY + door.gy * TILE + TILE / 2;
                         npc.walking = true;
+                        npc._pathComputed = false;
                         return;
                     }
                 }
             }
-            // No valid destination (off-duty or already in correct room) — resume wandering
-        }
-
-        // If still mid-transit (e.g. paused briefly while passing through), resume the walk
-        if (npc.transitionState && npc.targetX !== undefined) {
-            npc.walking = true;
-            return;
+            // Target is current room or no valid path — fall through to wander
         }
 
         npc.wanderTimer = 2000 + Math.random() * 3000;

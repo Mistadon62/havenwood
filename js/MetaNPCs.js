@@ -29,7 +29,7 @@ const NPCS = {
         // Weekday mornings: classroom; afternoons: campus quad
         // Rainy days: stays in classroom all day
         schedule: [
-            { days: WEEKDAYS, start: 480, end: 495, location: 'classroom', gx: 6, gy: 2 },
+            { days: WEEKDAYS, start: 480, end: 495, location: 'classroom', gx: 6, gy: 3 },
             { days: WEEKDAYS, start: 495, end: 1020, location: 'campus_quad', gx: 11, gy: 8 },
         ],
 
@@ -796,7 +796,7 @@ function isOutdoorLocation(locId) {
 // Where NPCs go when it rains (instead of outdoor locations)
 function getRainyRedirect(npcId, outdoorLoc) {
     const redirects = {
-        prof_elara: { location: 'classroom', gx: 6, gy: 2 },
+        prof_elara: { location: 'classroom', gx: 6, gy: 3 },
         sam: { location: 'common_room', gx: 4, gy: 3 },
         riley: { location: 'common_room', gx: 8, gy: 5 },
     };
