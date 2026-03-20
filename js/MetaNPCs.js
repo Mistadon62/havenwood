@@ -8,6 +8,7 @@
 import MetaState from './MetaStateManager.js';
 import MetaEvents from './MetaEvents.js';
 import MetaClassQuiz from './MetaClassQuiz.js';
+import MetaDialogue from './MetaDialogue.js';
 
 const WEEKDAYS = [0, 1, 2, 3, 4];
 const WEEKEND = [5, 6];
@@ -273,6 +274,13 @@ const NPCS = {
             }
 
             if (!MetaState.hasMetNPC('sam')) {
+                const firstChoices = [
+                    { label: 'Hang out (-10 energy, 30min)', action: 'hangout' },
+                ];
+                if (hasGiftableItem()) {
+                    firstChoices.push({ label: 'Give Gift', action: 'give_gift' });
+                }
+                firstChoices.push({ label: 'Nice to meet you!', action: 'cancel' });
                 return {
                     speaker: 'Sam',
                     lines: [
@@ -280,10 +288,7 @@ const NPCS = {
                         'I\'m studying wildlife conservation too.',
                         'We should hang out sometime!',
                     ],
-                    choices: [
-                        { label: 'Hang out (-10 energy, 30min)', action: 'hangout' },
-                        { label: 'Nice to meet you!', action: 'cancel' },
-                    ],
+                    choices: firstChoices,
                 };
             }
 
@@ -665,19 +670,8 @@ function getGiftableItems() {
     return items;
 }
 
-function handleGiftGiving(npcId, hudScene) {
+function giveGiftToNPC(npcId, gift, hudScene) {
     const npc = NPCS[npcId];
-    if (!npc) return;
-
-    const items = getGiftableItems();
-    if (items.length === 0) {
-        hudScene.showNotification('No gifts to give!');
-        return;
-    }
-
-    // Pick the first available gift item (simple approach — give first in inventory)
-    // In the future this could be a sub-menu, but for now auto-pick the first
-    const gift = items[0];
     MetaState.removeItem(gift.id);
 
     const prefs = npc.giftPreferences || {};
@@ -689,11 +683,51 @@ function handleGiftGiving(npcId, hudScene) {
     const bonusLabel = bonus >= GIFT_LOVE ? ' (Loved it!)' : bonus >= GIFT_LIKE ? ' (Liked it!)' : '';
 
     hudScene.refreshStatusBar();
-    hudScene.showNotification(`Gave ${gift.name} — +${bonus} Friendship${bonusLabel}`);
 
-    // Show NPC reaction as a brief dialogue
-    const MetaDialogue = hudScene.scene.get('MetaWorldScene')?._metaDialogueRef;
-    // We can't easily import MetaDialogue here without circular deps, so just use notification
+    MetaDialogue.show(hudScene, {
+        speaker: npc.name,
+        spriteKey: npc.spriteKey,
+        lines: [reaction],
+        onClose: () => {
+            hudScene.showNotification(`Gave ${gift.name} — +${bonus} Friendship${bonusLabel}`);
+        },
+    });
+}
+
+function handleGiftGiving(npcId, hudScene) {
+    const npc = NPCS[npcId];
+    if (!npc) return;
+
+    const items = getGiftableItems();
+    if (items.length === 0) {
+        hudScene.showNotification('No gifts to give!');
+        return;
+    }
+
+    // Only one giftable item — give it directly
+    if (items.length === 1) {
+        giveGiftToNPC(npcId, items[0], hudScene);
+        return;
+    }
+
+    // Multiple items — show picker dialogue
+    const choices = items.map(item => ({
+        label: `${item.name} (x${item.count})`,
+        action: item.id,
+    }));
+    choices.push({ label: 'Never mind', action: 'cancel' });
+
+    MetaDialogue.show(hudScene, {
+        speaker: npc.name,
+        spriteKey: npc.spriteKey,
+        lines: ['What would you like to give me?'],
+        choices,
+        onChoice: (action) => {
+            if (action === 'cancel') return;
+            const picked = items.find(i => i.id === action);
+            if (picked) giveGiftToNPC(npcId, picked, hudScene);
+        },
+    });
 }
 
 export function getNPC(id) {

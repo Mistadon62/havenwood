@@ -112,11 +112,11 @@ export default class MetaHUDScene extends Phaser.Scene {
         // Knowledge
         this.knowledgeText = this.txt(540, midY, '', 9, '#AABBDD').setOrigin(0, 0.5).setDepth(201);
 
-        // Quest count
-        this.questText = this.txt(640, midY, '', 8, '#BBAA88').setOrigin(0, 0.5).setDepth(201);
+        // Quest count (hidden from top bar)
+        this.questText = this.txt(640, midY, '', 8, '#BBAA88').setOrigin(0, 0.5).setDepth(201).setVisible(false);
 
-        // Weather icon
-        this.weatherText = this.txt(710, midY, '', 8, '#AABBCC').setOrigin(0, 0.5).setDepth(201);
+        // Weather icon (hidden from top bar)
+        this.weatherText = this.txt(710, midY, '', 8, '#AABBCC').setOrigin(0, 0.5).setDepth(201).setVisible(false);
 
         // Inventory count
         this.invText = this.txt(780, midY, '', 8, '#AABB88').setOrigin(0, 0.5).setDepth(201);
@@ -127,8 +127,14 @@ export default class MetaHUDScene extends Phaser.Scene {
         // Phone notification badge
         this.phoneBadge = this.txt(920, midY, '', 8, '#FF8866').setOrigin(0, 0.5).setDepth(201);
 
-        // Location name (right side)
-        this.locationText = this.txt(W - 10, midY, '', 8, '#667788').setOrigin(1, 0.5).setDepth(201);
+        // Location name (shifted left to make room for settings gear)
+        this.locationText = this.txt(W - 70, midY, '', 8, '#667788').setOrigin(1, 0.5).setDepth(201);
+
+        // Settings gear (matches sanctuary HUD)
+        const settingsBtn = this.txt(W - 28, midY - 3, '\u2699', 18, '#AAAAAA').setOrigin(0.5, 0.5).setDepth(201).setInteractive({ useHandCursor: true });
+        settingsBtn.on('pointerdown', () => this.toggleSettingsMenu());
+        settingsBtn.on('pointerover', () => settingsBtn.setColor('#FFFFFF'));
+        settingsBtn.on('pointerout', () => settingsBtn.setColor('#AAAAAA'));
 
         this.refreshStatusBar();
     }
