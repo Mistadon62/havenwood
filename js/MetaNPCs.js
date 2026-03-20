@@ -164,15 +164,21 @@ const NPCS = {
         handleAction(action, hudScene) {
             if (action === 'cancel') return;
             if (action === 'attend_class') {
-                if (!MetaState.spendEnergy(15)) {
+                // Check energy upfront but don't spend yet — all state changes
+                // are deferred to onFinish so an interrupted minigame leaves no trace.
+                const energyCost = 15 * MetaState.getEnergyCostMultiplier();
+                if (MetaState.state.energy < energyCost) {
                     hudScene.showNotification('Too tired!');
                     return;
                 }
-                MetaState.meetNPC('prof_elara');
-                MetaState.setFlag(`class_day_${MetaState.state.day}`);
+                const classDay = MetaState.state.day;
 
                 // Launch quiz minigame
                 MetaClassQuiz.start(hudScene, ({ playerScore, samScore, bonusKnowledge, grade }) => {
+                    // Apply all state changes only on completion
+                    MetaState.state.energy -= energyCost;
+                    MetaState.meetNPC('prof_elara');
+                    MetaState.setFlag(`class_day_${classDay}`);
                     MetaState.advanceTime(60);
                     MetaState.addKnowledge(bonusKnowledge);
                     MetaState.addMood(5);
@@ -580,12 +586,13 @@ const NPCS = {
         handleAction(action, hudScene) {
             if (action === 'cancel') return;
             if (action === 'play_pingpong') {
-                if (!MetaState.spendEnergy(15)) {
+                // Check energy upfront but don't spend yet — all state changes
+                // are deferred to onFinish so an interrupted minigame leaves no trace.
+                const energyCost = 15 * MetaState.getEnergyCostMultiplier();
+                if (MetaState.state.energy < energyCost) {
                     hudScene.showNotification('Too tired!');
                     return;
                 }
-                MetaState.meetNPC('riley');
-                MetaState.setFlag(`pingpong_day_${MetaState.state.day}`);
 
                 // Mark minigame active and freeze world immediately (before async
                 // import resolves) so ESC pause works from the first frame and the
@@ -596,9 +603,14 @@ const NPCS = {
                 if (metaScene) metaScene._frozen = true;
 
                 // Launch ping pong minigame
+                const playDay = MetaState.state.day;
                 import('./PingPongGame.js').then(mod => {
                     const PingPongGame = mod.default;
                     PingPongGame.start(hudScene, ({ playerScore, rileyScore, won }) => {
+                        // Apply all state changes only on completion
+                        MetaState.state.energy -= energyCost;
+                        MetaState.meetNPC('riley');
+                        MetaState.setFlag(`pingpong_day_${playDay}`);
                         MetaState.advanceTime(20);
                         MetaState.addMood(won ? 15 : 5);
                         MetaState.addFriendship('riley', won ? 10 : 6);
