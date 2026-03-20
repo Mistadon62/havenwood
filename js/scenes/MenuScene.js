@@ -317,6 +317,7 @@ export default class MenuScene extends Phaser.Scene {
         this.spawnMenuBunnies();
         this._setupTentEasterEgg(tentX, tentY);
         this._setupMoonEasterEgg(moonX, moonY, moonR);
+        this._setupLakeEasterEgg(lakeX, lakeY);
     }
 
     // Shared audio helpers for Close Encounters easter eggs
@@ -601,6 +602,96 @@ export default class MenuScene extends Phaser.Scene {
                     });
                 });
             });
+        });
+    }
+
+    _setupLakeEasterEgg(lakeX, lakeY) {
+        const hitW = 95, hitH = 52;
+        const lakeHit = this.add.ellipse(lakeX, lakeY, hitW, hitH, 0, 0)
+            .setDepth(9).setInteractive({ useHandCursor: true });
+        let lakeEggActive = false;
+
+        lakeHit.on('pointerdown', () => {
+            if (lakeEggActive) return;
+            lakeEggActive = true;
+            this._triggerNessie(lakeX, lakeY, () => { lakeEggActive = false; });
+        });
+    }
+
+    _triggerNessie(lakeX, lakeY, onDone) {
+        // Draw nessie at fixed position, use a geometry mask to reveal from water line down
+        const neckH = 34;
+        const nessie = this.add.graphics().setDepth(7);
+        nessie.x = lakeX;
+        nessie.y = lakeY;
+
+        const drawNessie = (facing) => {
+            nessie.clear();
+            const dir = facing === 'left' ? -1 : 1;
+
+            nessie.fillStyle(0x111111);
+            nessie.beginPath();
+            nessie.moveTo(-3.5, -4);
+            nessie.lineTo(-3, -14);
+            nessie.lineTo(-2.5 + dir * 0.5, -24);
+            nessie.lineTo(-2 + dir * 1, -32);
+            nessie.lineTo(-1, -36);
+            nessie.lineTo(dir * 3, -38);
+            nessie.lineTo(dir * 6, -36);
+            nessie.lineTo(dir * 4, -33);
+            nessie.lineTo(3 + dir * 1, -32);
+            nessie.lineTo(3.5 + dir * 0.5, -24);
+            nessie.lineTo(4, -14);
+            nessie.lineTo(4.5, -4);
+            nessie.closePath();
+            nessie.fillPath();
+        };
+
+        // Mask rectangle that reveals nessie — starts at 0 height, grows upward
+        const maskGfx = this.make.graphics({ x: 0, y: 0, add: false });
+        const maskW = 30;
+        const maskX = lakeX - maskW / 2;
+        const fullH = neckH + 10;
+
+        const updateMask = (revealH) => {
+            maskGfx.clear();
+            maskGfx.fillStyle(0xffffff);
+            maskGfx.fillRect(maskX, lakeY - revealH, maskW, revealH);
+        };
+
+        updateMask(0);
+        nessie.setMask(maskGfx.createGeometryMask());
+        drawNessie('left');
+
+        // Animate reveal height via a proxy object
+        const proxy = { h: 0 };
+
+        // Rise up
+        this.tweens.add({
+            targets: proxy, h: fullH,
+            duration: 1400, ease: 'Cubic.easeOut',
+            onUpdate: () => updateMask(proxy.h),
+            onComplete: () => {
+                this.time.delayedCall(600, () => {
+                    drawNessie('right');
+                    this.time.delayedCall(800, () => {
+                        drawNessie('left');
+                        this.time.delayedCall(600, () => {
+                            // Sink back down
+                            this.tweens.add({
+                                targets: proxy, h: 0,
+                                duration: 1000, ease: 'Cubic.easeIn',
+                                onUpdate: () => updateMask(proxy.h),
+                                onComplete: () => {
+                                    nessie.destroy();
+                                    maskGfx.destroy();
+                                    if (onDone) onDone();
+                                }
+                            });
+                        });
+                    });
+                });
+            }
         });
     }
 
