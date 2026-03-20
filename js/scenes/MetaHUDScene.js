@@ -269,10 +269,14 @@ export default class MetaHUDScene extends Phaser.Scene {
 
         const pw = 260, ph = 260;
         const px = W / 2 - pw / 2, py = Math.max(46, (H - ph) / 2);
-        const ct = this.add.container(px, py).setDepth(baseDepth);
 
-        const overlay = this.add.rectangle(W / 2 - px, H / 2 - py, W, H, 0x000000, 0.45).setInteractive();
-        ct.add(overlay);
+        // Full-screen darkening overlay as a direct scene child (not in the container).
+        // Containers can sort unreliably against many individual scene objects (e.g. ping pong),
+        // so this overlay is a direct sibling at baseDepth to guarantee it renders on top.
+        this._settingsOverlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.45)
+            .setDepth(baseDepth).setInteractive();
+
+        const ct = this.add.container(px, py).setDepth(baseDepth + 1);
 
         const bg = this.add.graphics();
         bg.fillStyle(CLR.uiPanelBg, 0.97); bg.fillRoundedRect(0, 0, pw, ph, 8);
@@ -363,6 +367,7 @@ export default class MetaHUDScene extends Phaser.Scene {
     }
 
     closeSettingsMenu() {
+        if (this._settingsOverlay) { this._settingsOverlay.destroy(); this._settingsOverlay = null; }
         if (this.settingsPanel) { this.settingsPanel.destroy(); this.settingsPanel = null; }
         // Unpause minigame if one is active
         if (this._minigameActive) {

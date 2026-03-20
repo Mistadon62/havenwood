@@ -587,6 +587,14 @@ const NPCS = {
                 MetaState.meetNPC('riley');
                 MetaState.setFlag(`pingpong_day_${MetaState.state.day}`);
 
+                // Mark minigame active and freeze world immediately (before async
+                // import resolves) so ESC pause works from the first frame and the
+                // player can't walk around during the brief module-load window.
+                hudScene._minigameActive = true;
+                hudScene._minigamePaused = false;
+                const metaScene = hudScene.scene.get('MetaWorldScene');
+                if (metaScene) metaScene._frozen = true;
+
                 // Launch ping pong minigame
                 import('./PingPongGame.js').then(mod => {
                     const PingPongGame = mod.default;
