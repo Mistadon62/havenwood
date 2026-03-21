@@ -356,13 +356,34 @@ export default class MenuScene extends Phaser.Scene {
         o.start(t); o.stop(t + 0.28);
     }
 
+    _getReverbSend() {
+        if (this._reverbNode) return this._reverbNode;
+        const ctx = this._getAudio();
+        const convolver = ctx.createConvolver();
+        const len = Math.ceil(ctx.sampleRate * 1.8);
+        const impulse = ctx.createBuffer(2, len, ctx.sampleRate);
+        for (let ch = 0; ch < 2; ch++) {
+            const d = impulse.getChannelData(ch);
+            for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.5);
+        }
+        convolver.buffer = impulse;
+        const wet = ctx.createGain();
+        wet.gain.value = 0.5;
+        convolver.connect(wet);
+        wet.connect(ctx.destination);
+        this._reverbNode = convolver;
+        return convolver;
+    }
+
     _playFlute(freq, startTime, duration) {
         const ctx = this._getAudio();
+        const reverb = this._getReverbSend();
         const o1 = ctx.createOscillator();
         const o2 = ctx.createOscillator();
         const g = ctx.createGain();
         const filt = ctx.createBiquadFilter();
         o1.connect(g); o2.connect(g); g.connect(filt); filt.connect(ctx.destination);
+        filt.connect(reverb);
         o1.type = 'sine'; o1.frequency.value = freq;
         o2.type = 'triangle'; o2.frequency.value = freq;
         filt.type = 'lowpass'; filt.frequency.value = freq * 3; filt.Q.value = 1;
@@ -381,6 +402,7 @@ export default class MenuScene extends Phaser.Scene {
         const ng = ctx.createGain();
         const nf = ctx.createBiquadFilter();
         ns.connect(nf); nf.connect(ng); ng.connect(ctx.destination);
+        ng.connect(reverb);
         nf.type = 'bandpass'; nf.frequency.value = freq * 2; nf.Q.value = 2;
         ng.gain.setValueAtTime(0.001, startTime);
         ng.gain.linearRampToValueAtTime(0.015, startTime + attack);
