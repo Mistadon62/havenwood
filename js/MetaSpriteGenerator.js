@@ -1185,5 +1185,234 @@ export class MetaSpriteGenerator {
             rect(g, 11, 27, 4, 3, 0x333333);
             rect(g, 17, 27, 4, 3, 0x333333);
         });
+
+        // ---- NPC directional idle + walk animation frames ----
+        // Leg positions: [leftX, leftH, leftShoeY, rightX, rightH, rightShoeY]
+        const LP = {
+            down_idle:   [11, 6, 27, 17, 6, 27],
+            down_walk1:  [10, 6, 27, 18, 6, 27],
+            down_walk2:  [12, 6, 27, 16, 6, 27],
+            up_idle:     [11, 6, 27, 17, 6, 27],
+            up_walk1:    [10, 6, 27, 18, 6, 27],
+            up_walk2:    [12, 6, 27, 16, 6, 27],
+            left_idle:   [12, 6, 27, 17, 6, 27],
+            left_walk1:  [11, 6, 27, 17, 7, 28],
+            left_walk2:  [13, 7, 28, 17, 6, 27],
+            right_idle:  [11, 6, 27, 16, 6, 27],
+            right_walk1: [11, 7, 28, 17, 6, 27],
+            right_walk2: [11, 6, 27, 17, 7, 28],
+        };
+
+        function npcLegs(g, dir, frame, pc, sc) {
+            const p = LP[`${dir}_${frame}`];
+            rect(g, p[0], 22, 4, p[1], pc);
+            rect(g, p[3], 22, 4, p[4], pc);
+            rect(g, p[0], p[2], 4, 3, sc);
+            rect(g, p[3], p[5], 4, 3, sc);
+        }
+
+        function rileyLegs(g, dir, frame) {
+            const sh = 0x334455, sk = 0xDDBB99, sho = 0xEEEEEE, ac = 0x4488DD;
+            const p = LP[`${dir}_${frame}`];
+            rect(g, p[0], 22, 4, Math.min(5, p[1]), sh);
+            rect(g, p[3], 22, 4, Math.min(5, p[4]), sh);
+            rect(g, p[0], 26, 4, 2, sk);
+            rect(g, p[3], 26, 4, 2, sk);
+            rect(g, p[0] - 1, p[2], 5, 3, sho);
+            rect(g, p[3], p[5], 5, 3, sho);
+            rect(g, p[0], p[2], 3, 1, ac);
+            rect(g, p[3] + 1, p[5], 3, 1, ac);
+        }
+
+        // Sam upper body per direction
+        function samBody(g, dir) {
+            const sk = 0xFFDDBB, hr = 0x2A2A3A, hd = 0xCC5533;
+            if (dir === 'down') {
+                rect(g, 12, 2, 8, 5, hr);
+                rect(g, 12, 5, 8, 7, sk);
+                rect(g, 14, 8, 2, 2, 0x222222);
+                rect(g, 18, 8, 2, 2, 0x222222);
+                rect(g, 15, 10, 4, 1, 0xCC8888);
+                rect(g, 9, 12, 14, 10, hd);
+                rect(g, 14, 13, 1, 3, 0xEEEEDD);
+                rect(g, 17, 13, 1, 3, 0xEEEEDD);
+                rect(g, 7, 14, 3, 7, dark(hd, 20));
+                rect(g, 22, 14, 3, 7, dark(hd, 20));
+            } else if (dir === 'up') {
+                rect(g, 12, 2, 8, 10, hr);
+                rect(g, 9, 12, 14, 10, hd);
+                rect(g, 7, 14, 3, 7, dark(hd, 20));
+                rect(g, 22, 14, 3, 7, dark(hd, 20));
+            } else if (dir === 'left') {
+                rect(g, 12, 2, 6, 5, hr);
+                rect(g, 12, 5, 6, 7, sk);
+                rect(g, 12, 8, 2, 2, 0x222222);
+                rect(g, 10, 12, 10, 10, hd);
+                rect(g, 8, 14, 3, 7, dark(hd, 20));
+            } else {
+                rect(g, 14, 2, 6, 5, hr);
+                rect(g, 14, 5, 6, 7, sk);
+                rect(g, 18, 8, 2, 2, 0x222222);
+                rect(g, 12, 12, 10, 10, hd);
+                rect(g, 21, 14, 3, 7, dark(hd, 20));
+            }
+        }
+
+        // Shopkeeper upper body per direction
+        function shopBody(g, dir) {
+            const sk = 0xDDBB99, hr = 0x666666;
+            const ap = 0x44AA44, sh = 0x5566AA;
+            if (dir === 'down') {
+                rect(g, 12, 3, 8, 4, hr);
+                rect(g, 12, 5, 8, 7, sk);
+                rect(g, 14, 8, 2, 2, 0x222222);
+                rect(g, 18, 8, 2, 2, 0x222222);
+                rect(g, 14, 10, 4, 2, hr);
+                rect(g, 10, 12, 12, 10, sh);
+                rect(g, 12, 14, 8, 8, ap);
+                rect(g, 11, 14, 10, 2, ap);
+                rect(g, 8, 14, 3, 7, dark(sh, 20));
+                rect(g, 21, 14, 3, 7, dark(sh, 20));
+            } else if (dir === 'up') {
+                rect(g, 12, 3, 8, 9, hr);
+                rect(g, 10, 12, 12, 10, sh);
+                rect(g, 15, 14, 2, 8, ap);
+                rect(g, 8, 14, 3, 7, dark(sh, 20));
+                rect(g, 21, 14, 3, 7, dark(sh, 20));
+            } else if (dir === 'left') {
+                rect(g, 12, 3, 6, 4, hr);
+                rect(g, 12, 5, 6, 7, sk);
+                rect(g, 12, 8, 2, 2, 0x222222);
+                rect(g, 12, 10, 3, 2, hr);
+                rect(g, 10, 12, 10, 10, sh);
+                rect(g, 12, 14, 6, 8, ap);
+                rect(g, 8, 14, 3, 7, dark(sh, 20));
+            } else {
+                rect(g, 14, 3, 6, 4, hr);
+                rect(g, 14, 5, 6, 7, sk);
+                rect(g, 18, 8, 2, 2, 0x222222);
+                rect(g, 17, 10, 3, 2, hr);
+                rect(g, 12, 12, 10, 10, sh);
+                rect(g, 14, 14, 6, 8, ap);
+                rect(g, 21, 14, 3, 7, dark(sh, 20));
+            }
+        }
+
+        // Riley upper body per direction
+        function rileyBody(g, dir) {
+            const sk = 0xDDBB99, hr = 0x995522, tk = 0x8855BB;
+            if (dir === 'down') {
+                rect(g, 11, 2, 10, 5, hr);
+                rect(g, 13, 1, 6, 3, bright(hr, 15));
+                rect(g, 12, 5, 8, 7, sk);
+                rect(g, 14, 8, 2, 2, 0x222222);
+                rect(g, 18, 8, 2, 2, 0x222222);
+                rect(g, 15, 10, 4, 1, 0xCC8888);
+                rect(g, 10, 12, 12, 10, tk);
+                rect(g, 8, 13, 3, 7, sk);
+                rect(g, 21, 13, 3, 7, sk);
+                rect(g, 8, 18, 3, 2, 0xDD4444);
+                rect(g, 21, 18, 3, 2, 0xDD4444);
+            } else if (dir === 'up') {
+                rect(g, 11, 1, 10, 11, hr);
+                rect(g, 13, 1, 6, 3, bright(hr, 15));
+                rect(g, 10, 12, 12, 10, tk);
+                rect(g, 8, 13, 3, 7, sk);
+                rect(g, 21, 13, 3, 7, sk);
+                rect(g, 8, 18, 3, 2, 0xDD4444);
+                rect(g, 21, 18, 3, 2, 0xDD4444);
+            } else if (dir === 'left') {
+                rect(g, 11, 2, 8, 5, hr);
+                rect(g, 13, 1, 4, 3, bright(hr, 15));
+                rect(g, 12, 5, 6, 7, sk);
+                rect(g, 12, 8, 2, 2, 0x222222);
+                rect(g, 10, 12, 10, 10, tk);
+                rect(g, 8, 13, 3, 7, sk);
+                rect(g, 8, 18, 3, 2, 0xDD4444);
+            } else {
+                rect(g, 13, 2, 8, 5, hr);
+                rect(g, 15, 1, 4, 3, bright(hr, 15));
+                rect(g, 14, 5, 6, 7, sk);
+                rect(g, 18, 8, 2, 2, 0x222222);
+                rect(g, 12, 12, 10, 10, tk);
+                rect(g, 21, 13, 3, 7, sk);
+                rect(g, 21, 18, 3, 2, 0xDD4444);
+            }
+        }
+
+        // Elara upper body per direction
+        function elaraBody(g, dir) {
+            if (dir === 'down') {
+                rect(g, 11, 2, 10, 5, hairColor);
+                rect(g, 10, 5, 12, 3, hairColor);
+                rect(g, 12, 5, 8, 7, skinColor);
+                rect(g, 14, 8, 2, 2, 0x222222);
+                rect(g, 18, 8, 2, 2, 0x222222);
+                rect(g, 13, 7, 4, 3, 0x666688);
+                rect(g, 17, 7, 4, 3, 0x666688);
+                rect(g, 14, 8, 2, 1, 0xAABBDD);
+                rect(g, 18, 8, 2, 1, 0xAABBDD);
+                rect(g, 16, 8, 2, 1, 0x666688);
+                rect(g, 9, 12, 14, 10, coatColor);
+                rect(g, 12, 13, 8, 8, shirtColor);
+                rect(g, 7, 14, 3, 7, coatColor);
+                rect(g, 22, 14, 3, 7, coatColor);
+            } else if (dir === 'up') {
+                rect(g, 11, 2, 10, 5, hairColor);
+                rect(g, 10, 5, 12, 7, hairColor);
+                rect(g, 9, 12, 14, 10, coatColor);
+                rect(g, 7, 14, 3, 7, coatColor);
+                rect(g, 22, 14, 3, 7, coatColor);
+            } else if (dir === 'left') {
+                rect(g, 11, 2, 7, 5, hairColor);
+                rect(g, 10, 5, 8, 3, hairColor);
+                rect(g, 12, 5, 6, 7, skinColor);
+                rect(g, 12, 8, 2, 2, 0x222222);
+                rect(g, 11, 7, 4, 3, 0x666688);
+                rect(g, 12, 8, 2, 1, 0xAABBDD);
+                rect(g, 10, 12, 10, 10, coatColor);
+                rect(g, 12, 13, 6, 8, shirtColor);
+                rect(g, 8, 14, 3, 7, coatColor);
+            } else {
+                rect(g, 14, 2, 7, 5, hairColor);
+                rect(g, 14, 5, 8, 3, hairColor);
+                rect(g, 14, 5, 6, 7, skinColor);
+                rect(g, 18, 8, 2, 2, 0x222222);
+                rect(g, 17, 7, 4, 3, 0x666688);
+                rect(g, 18, 8, 2, 1, 0xAABBDD);
+                rect(g, 12, 12, 10, 10, coatColor);
+                rect(g, 14, 13, 6, 8, shirtColor);
+                rect(g, 21, 14, 3, 7, coatColor);
+            }
+        }
+
+        // Generate all directional idle + walk frame textures
+        const npcDefs = [
+            { key: 'npc_sam', body: samBody, pc: 0x334455, sc: 0xEEEEEE },
+            { key: 'npc_shopkeeper', body: shopBody, pc: 0x445566, sc: 0x444433 },
+            { key: 'npc_riley', body: rileyBody, riley: true },
+            { key: 'npc_elara', body: elaraBody, pc: 0x445566, sc: 0x333333 },
+        ];
+
+        for (const nd of npcDefs) {
+            // Directional idles (skip 'down' — base sprite already exists)
+            for (const dir of ['up', 'left', 'right']) {
+                tex(scene, `${nd.key}_${dir}`, TILE, TILE, g => {
+                    nd.body(g, dir);
+                    if (nd.riley) rileyLegs(g, dir, 'idle');
+                    else npcLegs(g, dir, 'idle', nd.pc, nd.sc);
+                });
+            }
+            // Walk frames for all 4 directions
+            for (const dir of ['down', 'up', 'left', 'right']) {
+                for (const fr of ['walk1', 'walk2']) {
+                    tex(scene, `${nd.key}_${dir}_${fr}`, TILE, TILE, g => {
+                        nd.body(g, dir);
+                        if (nd.riley) rileyLegs(g, dir, fr);
+                        else npcLegs(g, dir, fr, nd.pc, nd.sc);
+                    });
+                }
+            }
+        }
     }
 }

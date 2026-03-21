@@ -605,6 +605,13 @@ export default class MetaWorldScene extends Phaser.Scene {
             const npc = this.npcSprites[i];
             if (npc.paused) continue;
 
+            // Initialize walk animation state
+            if (npc.walkTimer === undefined) {
+                npc.walkTimer = 0;
+                npc.walkFrame = 0;
+                npc.facing = npc.def?.facing || 'down';
+            }
+
             const isTransitioning = npc.transitionState === 'departing' || npc.transitionState === 'arriving';
             const speed = (isTransitioning ? NPC_TRANSITION_SPEED : NPC_WANDER_SPEED) * (delta / 1000);
 
@@ -618,6 +625,12 @@ export default class MetaWorldScene extends Phaser.Scene {
                 const dx = npc.targetX - npc.sprite.x;
                 const dy = npc.targetY - npc.sprite.y;
                 const dist = Math.sqrt(dx * dx + dy * dy);
+
+                // Update facing direction from movement vector
+                if (dist > 1) {
+                    if (Math.abs(dy) >= Math.abs(dx)) npc.facing = dy < 0 ? 'up' : 'down';
+                    else npc.facing = dx < 0 ? 'left' : 'right';
+                }
 
                 if (dist < 2) {
                     npc.sprite.x = npc.targetX;
@@ -682,8 +695,22 @@ export default class MetaWorldScene extends Phaser.Scene {
                     npc.gy = Math.floor((npc.sprite.y - this.roomY) / TILE);
                     const ref = this._activeNPCRefs.find(r => r.id === npc.id);
                     if (ref) { ref.gx = npc.gx; ref.gy = npc.gy; }
+
+                    // Walk animation
+                    npc.walkTimer += delta;
+                    if (npc.walkTimer > 200) {
+                        npc.walkTimer = 0;
+                        npc.walkFrame = (npc.walkFrame + 1) % 2;
+                    }
+                    const wk = `${npc.def.spriteKey}_${npc.facing}_walk${npc.walkFrame + 1}`;
+                    if (this.textures.exists(wk)) npc.sprite.setTexture(wk);
                 }
             } else if (!isTransitioning) {
+                // Set idle texture for current facing direction
+                const ik = npc.facing === 'down' ? npc.def.spriteKey : `${npc.def.spriteKey}_${npc.facing}`;
+                if (this.textures.exists(ik)) npc.sprite.setTexture(ik);
+                npc.walkTimer = 0;
+                npc.walkFrame = 0;
                 // Normal wander countdown
                 npc.wanderTimer -= delta;
                 if (npc.wanderTimer <= 0) {
