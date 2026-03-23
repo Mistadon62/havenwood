@@ -361,10 +361,16 @@ export default class HUDScene extends Phaser.Scene {
         this._lockOverlays = [];
         if (TutorialManager.isComplete() || !this.toolBtns) return;
         for (const btn of this.toolBtns) {
-            if (!TutorialManager.isButtonUnlocked(btn.key)) {
-                const lock = this.add.rectangle(btn.x, btn.y, btn.gap - 4, 50, 0x000000, 0.6)
+            const locked = !TutorialManager.isButtonUnlocked(btn.key);
+            if (locked) {
+                this.drawToolBtn(btn.bg, btn.x, btn.y, btn.color, false, btn.gap, true);
+                btn.lbl.setAlpha(0.25);
+                // Invisible interactive blocker to swallow clicks on locked buttons
+                const lock = this.add.rectangle(btn.x, btn.y, btn.gap - 4, 50, 0, 0)
                     .setDepth(100).setInteractive();
                 this._lockOverlays.push(lock);
+            } else {
+                btn.lbl.setAlpha(1);
             }
         }
     }
@@ -386,13 +392,18 @@ export default class HUDScene extends Phaser.Scene {
     }
 
     // Draws a single toolbar button with active/hover state.
-    drawToolBtn(bg, x, y, color, active, gap = 88) {
+    drawToolBtn(bg, x, y, color, active, gap = 88, locked = false) {
         const w = gap - 6;
         bg.clear();
-        bg.fillStyle(color, active ? 0.5 : 0.22);
-        bg.fillRoundedRect(x - w / 2, y - 23, w, 46, 4);
-        bg.lineStyle(active ? 2 : 1, color, active ? 1 : 0.5);
-        bg.strokeRoundedRect(x - w / 2, y - 23, w, 46, 4);
+        if (locked) {
+            bg.fillStyle(0x222233, 0.4);
+            bg.fillRoundedRect(x - w / 2, y - 23, w, 46, 4);
+        } else {
+            bg.fillStyle(color, active ? 0.5 : 0.22);
+            bg.fillRoundedRect(x - w / 2, y - 23, w, 46, 4);
+            bg.lineStyle(active ? 2 : 1, color, active ? 1 : 0.5);
+            bg.strokeRoundedRect(x - w / 2, y - 23, w, 46, 4);
+        }
     }
 
     /* ========== BUILD MENU ========== */
@@ -751,7 +762,7 @@ export default class HUDScene extends Phaser.Scene {
         ev.on('showAnimalInfo', this.showAnimal, this);
         ev.on('showHabitatInfo', this.showHabitatPanel, this);
         ev.on('notification', this.notify, this);
-        ev.on('buildModeChanged', mode => {
+        this._onBuildModeChanged = mode => {
             this.activeBuild = mode;
             if (!mode) {
                 this.closeBuildPopup();
@@ -764,34 +775,70 @@ export default class HUDScene extends Phaser.Scene {
                     (b.key === 'build' && mode && (HABITATS[mode] || (mode && mode.startsWith('decor_')) || (mode && mode.startsWith('facility_'))));
                 this.drawToolBtn(b.bg, b.x, b.y, b.color, isActive, b.gap);
             });
-        });
-        ev.on('habitatViewClosed', () => {
+        };
+        ev.on('buildModeChanged', this._onBuildModeChanged);
+        this._onHabitatViewClosed = () => {
             if (this.habitatPanel) { this.habitatPanel.destroy(); this.habitatPanel = null; }
             if (this.animalPanel) { this.animalPanel.destroy(); this.animalPanel = null; this._viewedAnimal = null; }
-        if (this.facilityPanel) { this.facilityPanel.destroy(); this.facilityPanel = null; this._facilityPanelBathroom = null; }
-        this.destroyBackBar();
-        this.showToolbar();
-        });
-        ev.on('showFacilityView', fac => this.showFacilityBackBar(fac));
-        ev.on('habitatSelectEnter', label => this.showSelectBar(label));
-        ev.on('habitatSelectExit', () => this.hideSelectBar());
-        ev.on('animalDeselected', () => {
+            if (this.facilityPanel) { this.facilityPanel.destroy(); this.facilityPanel = null; this._facilityPanelBathroom = null; }
+            this.destroyBackBar();
+            this.showToolbar();
+        };
+        ev.on('habitatViewClosed', this._onHabitatViewClosed);
+        this._onShowFacilityView = fac => this.showFacilityBackBar(fac);
+        ev.on('showFacilityView', this._onShowFacilityView);
+        this._onHabitatSelectEnter = label => this.showSelectBar(label);
+        ev.on('habitatSelectEnter', this._onHabitatSelectEnter);
+        this._onHabitatSelectExit = () => this.hideSelectBar();
+        ev.on('habitatSelectExit', this._onHabitatSelectExit);
+        this._onAnimalDeselected = () => {
             if (this.animalPanel) { this.animalPanel.destroy(); this.animalPanel = null; this._viewedAnimal = null; }
-        });
-        ev.on('animalUpdate', () => {
+        };
+        ev.on('animalDeselected', this._onAnimalDeselected);
+        this._onAnimalUpdate = () => {
             if (this.animalPanel && this._viewedAnimal) {
                 const fresh = this.gs.state.animals.find(a => a.id === this._viewedAnimal.id);
                 if (fresh) this.showAnimal(fresh);
             }
-        });
-        ev.on('seasonChanged', () => {});
-        ev.on('upgradesUpdate', () => { if (this.upgradePanel) this.showUpgradePanel(); });
-        ev.on('staffUpdate', () => { if (this.staffPanel) this.showStaffPanel(); });
-        ev.on('missionsUpdate', () => { if (this.missionPanel) this.showMissionPanel(); });
-        ev.on('achievementEarned', () => { if (this.journalPanel) this.showJournalPanel(); });
-        ev.on('researchUpdate', () => {
+        };
+        ev.on('animalUpdate', this._onAnimalUpdate);
+        this._onSeasonChanged = () => {};
+        ev.on('seasonChanged', this._onSeasonChanged);
+        this._onUpgradesUpdate = () => { if (this.upgradePanel) this.showUpgradePanel(); };
+        ev.on('upgradesUpdate', this._onUpgradesUpdate);
+        this._onStaffUpdate = () => { if (this.staffPanel) this.showStaffPanel(); };
+        ev.on('staffUpdate', this._onStaffUpdate);
+        this._onMissionsUpdate = () => { if (this.missionPanel) this.showMissionPanel(); };
+        ev.on('missionsUpdate', this._onMissionsUpdate);
+        this._onAchievementEarned = () => { if (this.journalPanel) this.showJournalPanel(); };
+        ev.on('achievementEarned', this._onAchievementEarned);
+        this._onResearchUpdate = () => {
             this.rpTxt.setText(this.gs.state.researchPoints.toString());
             if (this.researchPanel) this.showResearchPanel();
+        };
+        ev.on('researchUpdate', this._onResearchUpdate);
+
+        this.events.once('shutdown', () => {
+            ev.off('timeUpdate', this.updateTime, this);
+            ev.off('coinsUpdate', this.updateCoins, this);
+            ev.off('foodUpdate', this.updateFood, this);
+            ev.off('rescueEvent', this.showRescue, this);
+            ev.off('showAnimalInfo', this.showAnimal, this);
+            ev.off('showHabitatInfo', this.showHabitatPanel, this);
+            ev.off('notification', this.notify, this);
+            ev.off('buildModeChanged', this._onBuildModeChanged);
+            ev.off('habitatViewClosed', this._onHabitatViewClosed);
+            ev.off('showFacilityView', this._onShowFacilityView);
+            ev.off('habitatSelectEnter', this._onHabitatSelectEnter);
+            ev.off('habitatSelectExit', this._onHabitatSelectExit);
+            ev.off('animalDeselected', this._onAnimalDeselected);
+            ev.off('animalUpdate', this._onAnimalUpdate);
+            ev.off('seasonChanged', this._onSeasonChanged);
+            ev.off('upgradesUpdate', this._onUpgradesUpdate);
+            ev.off('staffUpdate', this._onStaffUpdate);
+            ev.off('missionsUpdate', this._onMissionsUpdate);
+            ev.off('achievementEarned', this._onAchievementEarned);
+            ev.off('researchUpdate', this._onResearchUpdate);
         });
     }
 

@@ -168,6 +168,20 @@ export default class GameScene extends Phaser.Scene {
         // Reputation gain/loss is handled per-habitat visit in _visitorReact()
 
         this.game.events.on('rescueAccepted', this.acceptRescue, this);
+
+        this.events.once('shutdown', () => {
+            // Remove DOM listeners (stored refs from setupInput)
+            if (this._domMousedown) {
+                this.game.canvas.removeEventListener('mousedown', this._domMousedown, true);
+                this._domMousedown = null;
+            }
+            if (this._domContextmenu) {
+                this.game.canvas.removeEventListener('contextmenu', this._domContextmenu);
+                this._domContextmenu = null;
+            }
+            // Remove game-level event listeners
+            this.game.events.off('rescueAccepted', this.acceptRescue, this);
+        });
     }
 
     /* ========== MAP ========== */
@@ -259,12 +273,13 @@ export default class GameScene extends Phaser.Scene {
     // open settings. Browser context menu is suppressed on the canvas.
 
     setupInput() {
-        this.game.canvas.addEventListener('mousedown', (e) => {
+        this._domMousedown = (e) => {
             if (e.button === 2) {
                 e.stopImmediatePropagation();
                 this._handleRightClick();
             }
-        }, true);
+        };
+        this.game.canvas.addEventListener('mousedown', this._domMousedown, true);
 
         this.input.on('pointermove', ptr => {
             if (ptr.y < MAP_Y) return;
@@ -723,7 +738,8 @@ export default class GameScene extends Phaser.Scene {
             hud.triggerPhoneTransition();
         });
 
-        this.game.canvas.addEventListener('contextmenu', e => e.preventDefault());
+        this._domContextmenu = e => e.preventDefault();
+        this.game.canvas.addEventListener('contextmenu', this._domContextmenu);
     }
 
     // Consolidated right-click handler, invoked from a DOM capture-phase listener so that

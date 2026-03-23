@@ -6,12 +6,16 @@ export default class MenuScene extends Phaser.Scene {
     constructor() { super('MenuScene'); }
 
     create() {
-        this.game.canvas.addEventListener('mousedown', (e) => {
-            if (e.button === 2) {
-                if (this.scene.isActive('GameScene')) return;
-                e.stopImmediatePropagation();
-            }
-        }, true);
+        // Guard: only add the DOM listener once (survives across scene restarts)
+        if (!this.game._menuRightClickHandler) {
+            this.game._menuRightClickHandler = (e) => {
+                if (e.button === 2) {
+                    if (this.scene.isActive('GameScene')) return;
+                    e.stopImmediatePropagation();
+                }
+            };
+            this.game.canvas.addEventListener('mousedown', this.game._menuRightClickHandler, true);
+        }
 
         const bg = this.add.graphics();
 

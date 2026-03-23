@@ -825,7 +825,10 @@ export default class MetaWorldScene extends Phaser.Scene {
     // Transit time per room is calculated from actual tile distances rather than a fixed 4 seconds.
     _advanceOffScreenTransits(delta) {
         for (const [npcId, transit] of Object.entries(this.game._npcTransits || {})) {
-            if (!transit.path || transit.pathIndex >= transit.path.length) continue;
+            if (!transit.path || transit.pathIndex >= transit.path.length) {
+                delete this.game._npcTransits[npcId];
+                continue;
+            }
             // Skip if NPC is in the current room (being managed by updateNPCs)
             if (transit.path[transit.pathIndex] === this.location.id) continue;
             // Skip if NPC is already rendered as a sprite here

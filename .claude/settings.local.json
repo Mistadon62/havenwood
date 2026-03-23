@@ -30,7 +30,8 @@
       "Bash(node -c js/TutorialManager.js)",
       "Bash(node -c js/MetaDialogue.js)",
       "Bash(node -c js/SpriteGenerator.js)",
-      "Bash(where node:*)"
+      "Bash(where node:*)",
+      "Bash(find /c/Users/baile/Documents/GitHub/havenwood/js -name \"*.js\" -exec wc -l {} +)"
     ]
   }
 }

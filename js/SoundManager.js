@@ -68,6 +68,7 @@ export class SoundManager {
         g.gain.setValueAtTime(volume, this.ctx.currentTime);
         g.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
         src.start();
+        src.stop(this.ctx.currentTime + duration);
     }
 
     coin() { // Coin pickup: two-tone chime.
