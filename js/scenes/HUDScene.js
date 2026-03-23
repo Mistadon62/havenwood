@@ -380,6 +380,7 @@ export default class HUDScene extends Phaser.Scene {
                 this._lockOverlays.push(lock);
             } else {
                 btn.lbl.setAlpha(1);
+                this.drawToolBtn(btn.bg, btn.x, btn.y, btn.color, false, btn.gap);
             }
         }
     }
