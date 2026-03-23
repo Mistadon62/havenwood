@@ -33,17 +33,20 @@ const MetaDialogue = {
     show(hudScene, config) {
         if (activeDialogue) this.close(hudScene);
 
-        const { speaker, spriteKey, lines, choices, onChoice, onClose } = config;
+        const { speaker, spriteKey, lines, choices, onChoice, onClose, startLine, onAdvanceLine } = config;
 
-        // Freeze meta-world
+        // Freeze the active world scene
         const metaScene = hudScene.scene.get('MetaWorldScene');
-        if (metaScene) metaScene._frozen = true;
+        if (metaScene && !hudScene.scene.isSleeping('MetaWorldScene')) metaScene._frozen = true;
+        const gameScene = hudScene.scene.get('GameScene');
+        if (gameScene && !hudScene.scene.isSleeping('GameScene')) gameScene._dialoguePaused = true;
 
-        const lineIdx = { current: 0 };
+        const lineIdx = { current: startLine || 0 };
         const container = hudScene.add.container(0, 0).setDepth(400);
 
-        // Dark overlay behind dialogue
-        const overlay = hudScene.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.3);
+        // Dark overlay behind dialogue — interactive to block clicks on background
+        const overlay = hudScene.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.3)
+            .setInteractive();
         container.add(overlay);
 
         // --- Full-width dialogue box ---
@@ -95,11 +98,11 @@ const MetaDialogue = {
 
         // Line text
         const textY = speaker ? boxY + 32 : boxY + 14;
-        const lineText = txt(hudScene, textAreaX, textY, lines[0] || '', 11, '#DDDDEE', textAreaW);
+        const lineText = txt(hudScene, textAreaX, textY, lines[lineIdx.current] || '', 11, '#DDDDEE', textAreaW);
         container.add(lineText);
 
         // Hint
-        const isFinalLine = lines.length <= 1 && (!choices || choices.length === 0);
+        const isFinalLine = lineIdx.current >= lines.length - 1 && (!choices || choices.length === 0);
         const hint = txt(hudScene, boxX + boxW - 14, boxY + boxH - 16,
             isFinalLine ? '[E] Close' : '[E] Continue', 10, '#666688', 200);
         hint.setOrigin(1, 0.5);
@@ -215,6 +218,7 @@ const MetaDialogue = {
                 return;
             }
             lineIdx.current++;
+            if (onAdvanceLine) onAdvanceLine(lineIdx.current);
             if (lineIdx.current >= lines.length) {
                 showChoices();
             } else {
@@ -279,9 +283,11 @@ const MetaDialogue = {
         activeDialogue.container.destroy();
         activeDialogue = null;
 
-        // Unfreeze meta-world
+        // Unfreeze the active world scene
         const metaScene = hudScene.scene.get('MetaWorldScene');
         if (metaScene && !metaScene._startWithPhone) metaScene._frozen = false;
+        const gameScene = hudScene.scene.get('GameScene');
+        if (gameScene) gameScene._dialoguePaused = false;
     },
 };
 

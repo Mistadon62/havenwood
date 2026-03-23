@@ -18,6 +18,8 @@
 import { W, H, HABITATS, SPECIES, RARITY_COLOR, CLR, SEASONS, UPGRADES, STAFF_TYPES,
     TRAITS, ILLNESSES, ENRICHMENTS, MISSIONS, VISITOR_TYPES, ACHIEVEMENTS,
     RESEARCH, RESEARCH_BRANCHES, DECORATIONS, DECOR_CATEGORIES, FACILITIES } from '../GameData.js';
+import MetaDialogue from '../MetaDialogue.js';
+import TutorialManager from '../TutorialManager.js';
 
 export default class HUDScene extends Phaser.Scene {
     constructor() { super('HUDScene'); }
@@ -85,6 +87,8 @@ export default class HUDScene extends Phaser.Scene {
 
     update() {
         if (this.facilityPanel && this._facilityPanelBathroom) this._updateBathroomMeter();
+        if (MetaDialogue.isActive()) MetaDialogue.checkChoiceKeys(this);
+        TutorialManager.update(this);
     }
 
     // Syncs HUD display from GameScene state (coins, time, research points).
@@ -98,6 +102,9 @@ export default class HUDScene extends Phaser.Scene {
         const mult = this.gs.timeSpeedMult;
         this._activeSpeed = mult <= 0.5 ? 'slow' : mult >= 3 ? 'fast' : 'normal';
         this._updateSpeedGlow();
+        // Tutorial: gate buttons and start/resume if not complete
+        this.updateTutorialButtons();
+        TutorialManager.start(this);
     }
 
     /* ========== TOP BAR ========== */
@@ -130,7 +137,7 @@ export default class HUDScene extends Phaser.Scene {
         this.add.image(W - 120, midY, 'icon_coin').setScale(1.3);
         this.coinTxt = this.txt(W - 106, midY, '', 9, CLR.gold).setOrigin(0, 0.5);
 
-        const settingsBtn = this.txt(W - 28, midY - 3, '\u2699', 18, '#AAAAAA').setOrigin(0.5, 0.5).setInteractive({ useHandCursor: true });
+        const settingsBtn = this.txt(W - 28, midY - 3, '\u2699', 18, '#AAAAAA').setOrigin(0.5, 0.5).setDepth(500).setInteractive({ useHandCursor: true });
         settingsBtn.on('pointerdown', () => this.toggleSettingsMenu());
         settingsBtn.on('pointerover', () => settingsBtn.setColor('#FFFFFF'));
         settingsBtn.on('pointerout', () => settingsBtn.setColor('#AAAAAA'));
@@ -168,7 +175,7 @@ export default class HUDScene extends Phaser.Scene {
 
         const pw = 260, ph = 260;
         const px = W / 2 - pw / 2, py = this.centerPanelY(ph);
-        const ct = this.add.container(px, py).setDepth(310);
+        const ct = this.add.container(px, py).setDepth(510);
 
         const overlay = this.add.rectangle(W / 2 - px, H / 2 - py, W, H, 0x000000, 0.45).setInteractive();
         ct.add(overlay);
@@ -291,6 +298,7 @@ export default class HUDScene extends Phaser.Scene {
             this.toolbarElements.push(hit);
             hit.on('pointerover', () => {
                 if (this.gs.state.rescuePaused) { this.game.canvas.style.cursor = 'default'; return; }
+                if (!TutorialManager.isButtonUnlocked(item.key)) { this.game.canvas.style.cursor = 'default'; return; }
                 this.drawToolBtn(bg, x, y, item.color, true, gap);
             });
             hit.on('pointerout', () => {
@@ -301,6 +309,7 @@ export default class HUDScene extends Phaser.Scene {
             });
             hit.on('pointerdown', () => {
                 if (this.gs.state.rescuePaused) return;
+                if (!TutorialManager.isButtonUnlocked(item.key)) return;
                 if (item.key === 'build') { this.toggleBuildPopup(x, barY); return; }
                 if (item.key === 'upgrades') { this.togglePanel('upgradePanel', () => this.showUpgradePanel(), 'upgrades'); return; }
                 if (item.key === 'staff') { this.togglePanel('staffPanel', () => this.showStaffPanel(), 'staff'); return; }
@@ -320,13 +329,45 @@ export default class HUDScene extends Phaser.Scene {
                 const costTxt = this.txt(x, y + 8, `${item.cost}g`, 5, CLR.gold).setOrigin(0.5);
                 this.toolbarElements.push(costTxt);
             }
-            this.toolBtns.push({ bg, x, y, color: item.color, key: item.key, gap });
+            this.toolBtns.push({ bg, hit, lbl, x, y, color: item.color, key: item.key, gap });
         });
     }
 
-    hideToolbar() { if (this.toolbarElements) this.toolbarElements.forEach(e => e.setVisible(false)); }
-    showToolbar() { if (this.toolbarElements) this.toolbarElements.forEach(e => e.setVisible(true)); }
+    hideToolbar() {
+        if (this.toolbarElements) this.toolbarElements.forEach(e => e.setVisible(false));
+        if (this._lockOverlays) this._lockOverlays.forEach(o => o.setVisible(false));
+    }
+    showToolbar() {
+        if (this.toolbarElements) this.toolbarElements.forEach(e => e.setVisible(true));
+        if (this._lockOverlays) this._lockOverlays.forEach(o => o.setVisible(true));
+    }
     destroyBackBar() { if (this._backBarElements) { this._backBarElements.forEach(e => e.destroy()); this._backBarElements = null; } }
+
+    /** Re-render animal and habitat panels so tutorial button states update immediately. */
+    refreshTutorialPanels() {
+        if (this._viewedAnimal) {
+            const animal = this.gs.state.animals.find(a => a.id === this._viewedAnimal.id);
+            if (animal) this.showAnimal(animal);
+        }
+        if (this.gs.state.viewingHabitat) {
+            const hab = this.gs.state.habitats.find(h => h.id === this.gs.state.viewingHabitat);
+            if (hab) this.showHabitatPanel(hab);
+        }
+    }
+
+    /** Show dark overlays on locked toolbar buttons and remove overlays from unlocked ones. */
+    updateTutorialButtons() {
+        if (this._lockOverlays) this._lockOverlays.forEach(o => o.destroy());
+        this._lockOverlays = [];
+        if (TutorialManager.isComplete() || !this.toolBtns) return;
+        for (const btn of this.toolBtns) {
+            if (!TutorialManager.isButtonUnlocked(btn.key)) {
+                const lock = this.add.rectangle(btn.x, btn.y, btn.gap - 4, 50, 0x000000, 0.6)
+                    .setDepth(100).setInteractive();
+                this._lockOverlays.push(lock);
+            }
+        }
+    }
 
     // Pre-created and toggled via setVisible instead of created/destroyed each time.
     // Creating and destroying Graphics objects on every build mode enter/exit causes
@@ -383,7 +424,11 @@ export default class HUDScene extends Phaser.Scene {
         const anchorX = this._buildAnchorX;
         const barY = this._buildBarY;
         const cat = this._buildCategory;
-        const categories = ['habitats', 'decorations', 'facilities'];
+        const allCategories = ['habitats', 'decorations', 'facilities'];
+        const restrictions = TutorialManager.getBuildRestrictions();
+        const categories = restrictions?.categories
+            ? allCategories.filter(c => restrictions.categories.includes(c))
+            : allCategories;
         const catLabels = { habitats: 'Habitats', decorations: 'Decorations', facilities: 'Facilities' };
         const catColor = { habitats: 0x66BB55, decorations: 0xBB8844, facilities: 0x6699BB };
 
@@ -431,7 +476,11 @@ export default class HUDScene extends Phaser.Scene {
     }
 
     _renderBuildItems(cat, catX, catW, menuBottom, catH, catGap, color) {
-        const items = cat === 'habitats' ? Object.values(HABITATS) : cat === 'facilities' ? Object.values(FACILITIES) : Object.values(DECORATIONS);
+        const restrictions = TutorialManager.getBuildRestrictions();
+        const allItems = cat === 'habitats' ? Object.values(HABITATS) : cat === 'facilities' ? Object.values(FACILITIES) : Object.values(DECORATIONS);
+        const items = (restrictions?.items && (cat === 'habitats' || cat === 'facilities'))
+            ? allItems.filter(it => restrictions.items.includes(it.id))
+            : allItems;
         const cellW = 100, pad = 12;
         const itemPw = items.length * cellW + pad * 2;
         const itemPh = 68;
@@ -882,15 +931,18 @@ export default class HUDScene extends Phaser.Scene {
             ct.add(accHit);
 
             const decBg = this.add.graphics();
-            decBg.fillStyle(0x8B2222, 0.85); decBg.fillRoundedRect(btnLeft + btnW + btnGap, 88, btnW, 30, 4);
+            const tutorialRescue = TutorialManager.shouldSuppressRescues();
+            decBg.fillStyle(tutorialRescue ? 0x444444 : 0x8B2222, 0.85); decBg.fillRoundedRect(btnLeft + btnW + btnGap, 88, btnW, 30, 4);
             ct.add(decBg);
-            const decTxt = this.txt(btnLeft + btnW + btnGap + btnW / 2, 103, 'Pass', 8).setOrigin(0.5);
+            const decTxt = this.txt(btnLeft + btnW + btnGap + btnW / 2, 103, 'Pass', 8, tutorialRescue ? '#666666' : undefined).setOrigin(0.5);
             ct.add(decTxt);
-            const decHit = this.add.rectangle(btnLeft + btnW + btnGap + btnW / 2, 103, btnW, 30, 0x000000, 0).setOrigin(0.5).setInteractive({ useHandCursor: true });
-            decHit.on('pointerdown', () => { dismissRescue(); });
-            decHit.on('pointerover', () => decTxt.setColor('#FF8888'));
-            decHit.on('pointerout', () => decTxt.setColor(CLR.uiText));
-            ct.add(decHit);
+            if (!tutorialRescue) {
+                const decHit = this.add.rectangle(btnLeft + btnW + btnGap + btnW / 2, 103, btnW, 30, 0x000000, 0).setOrigin(0.5).setInteractive({ useHandCursor: true });
+                decHit.on('pointerdown', () => { dismissRescue(); });
+                decHit.on('pointerover', () => decTxt.setColor('#FF8888'));
+                decHit.on('pointerout', () => decTxt.setColor(CLR.uiText));
+                ct.add(decHit);
+            }
         } else {
             const compatType = Object.values(HABITATS).find(h => h.types.includes(sp.type));
             const buildCost = compatType ? this.gs.getHabitatCost(compatType.id) : 0;
@@ -919,16 +971,19 @@ export default class HUDScene extends Phaser.Scene {
                 ct.add(bldHit);
             } else { bldTxt.setColor('#888888'); ct.add(bldTxt); }
 
-            const decBg = this.add.graphics();
-            decBg.fillStyle(0x8B2222, 0.85); decBg.fillRoundedRect(btnLeft + bldW + btnGap, 88, passW, 30, 4);
-            ct.add(decBg);
-            const decTxt2 = this.txt(btnLeft + bldW + btnGap + passW / 2, 103, 'Pass', 8).setOrigin(0.5);
+            const decBg2 = this.add.graphics();
+            const tutorialRescue2 = TutorialManager.shouldSuppressRescues();
+            decBg2.fillStyle(tutorialRescue2 ? 0x444444 : 0x8B2222, 0.85); decBg2.fillRoundedRect(btnLeft + bldW + btnGap, 88, passW, 30, 4);
+            ct.add(decBg2);
+            const decTxt2 = this.txt(btnLeft + bldW + btnGap + passW / 2, 103, 'Pass', 8, tutorialRescue2 ? '#666666' : undefined).setOrigin(0.5);
             ct.add(decTxt2);
-            const decHit2 = this.add.rectangle(btnLeft + bldW + btnGap + passW / 2, 103, passW, 30, 0x000000, 0).setOrigin(0.5).setInteractive({ useHandCursor: true });
-            decHit2.on('pointerdown', () => { dismissRescue(); });
-            decHit2.on('pointerover', () => decTxt2.setColor('#FF8888'));
-            decHit2.on('pointerout', () => decTxt2.setColor(CLR.uiText));
-            ct.add(decHit2);
+            if (!tutorialRescue2) {
+                const decHit2 = this.add.rectangle(btnLeft + bldW + btnGap + passW / 2, 103, passW, 30, 0x000000, 0).setOrigin(0.5).setInteractive({ useHandCursor: true });
+                decHit2.on('pointerdown', () => { dismissRescue(); });
+                decHit2.on('pointerover', () => decTxt2.setColor('#FF8888'));
+                decHit2.on('pointerout', () => decTxt2.setColor(CLR.uiText));
+                ct.add(decHit2);
+            }
         }
 
         ct.setScale(0);
@@ -994,9 +1049,13 @@ export default class HUDScene extends Phaser.Scene {
         const bw = Math.floor((pw - 24) / 3);
         const hungerFull = animal.hunger >= 100;
         const cantAffordTreat = this.gs.state.coins < 20;
-        this.panelBtn(ct, 8, yy, bw, 'Feed', 0x44AA44, () => { this.gs.feedAnimal(animal.id); this.showAnimal(animal); }, hungerFull);
-        this.panelBtn(ct, 8 + bw + 4, yy, bw, 'Pet', 0xCC6688, () => { this.gs.petAnimal(animal.id); this.showAnimal(animal); });
-        this.panelBtn(ct, 8 + (bw + 4) * 2, yy, bw, 'Treat', 0xCCAA33, () => { this.gs.treatAnimal(animal.id); this.showAnimal(animal); }, cantAffordTreat);
+        const tutStepId = !TutorialManager.isComplete() && TutorialManager.currentStepId();
+        const tutDisableFeed = tutStepId === 'animal_care_treat';
+        const tutDisablePet = tutStepId === 'animal_care_feed' || tutStepId === 'animal_care_treat';
+        const tutDisableTreat = tutStepId === 'animal_care_feed' || tutStepId === 'animal_care_pet';
+        this.panelBtn(ct, 8, yy, bw, 'Feed', 0x44AA44, () => { this.gs.feedAnimal(animal.id); this.showAnimal(animal); }, hungerFull || tutDisableFeed);
+        this.panelBtn(ct, 8 + bw + 4, yy, bw, 'Pet', 0xCC6688, () => { this.gs.petAnimal(animal.id); this.showAnimal(animal); }, tutDisablePet);
+        this.panelBtn(ct, 8 + (bw + 4) * 2, yy, bw, 'Treat', 0xCCAA33, () => { this.gs.treatAnimal(animal.id); this.showAnimal(animal); }, cantAffordTreat || tutDisableTreat);
         ct.add(this.txt(8 + (bw + 4) * 2 + bw - 2, yy + 24, '20g', 5, CLR.gold).setOrigin(1, 0));
         yy += 32;
 
@@ -1148,6 +1207,7 @@ export default class HUDScene extends Phaser.Scene {
         const enrichList = hab.enrichments || [];
         const maxEnrich = this.gs.hasResearch('enrich_cap_4') ? 4 : 3;
         const pw = 240;
+        const tutActive = !TutorialManager.isComplete();
 
         const compatEnrich = Object.values(ENRICHMENTS).filter(e => !e.habitats || e.habitats.includes(hab.type));
 
@@ -1183,12 +1243,14 @@ export default class HUDScene extends Phaser.Scene {
                 ct.add(this.txt(10, yy + 4, en.name, 5));
                 ct.add(this.txt(10, yy + 16, `+${en.happyBonus} happy`, 5, '#88CC88'));
                 ct.add(this.txt(pw - 50, yy + 14, `${eCost}g`, 5, canAfford ? CLR.gold : '#884444').setOrigin(1, 0.5));
-                if (canAfford) {
+                if (canAfford && !tutActive) {
                     const buyBtn = this.txt(pw - 10, yy + 14, 'ADD', 5, '#44CC44').setOrigin(1, 0.5).setInteractive({ useHandCursor: true });
                     buyBtn.on('pointerdown', () => { this.gs.addEnrichment(hab.id, en.id); this.showHabitatPanel(hab); });
                     buyBtn.on('pointerover', () => buyBtn.setColor('#88FF88'));
                     buyBtn.on('pointerout', () => buyBtn.setColor('#44CC44'));
                     ct.add(buyBtn);
+                } else if (tutActive) {
+                    ct.add(this.txt(pw - 10, yy + 14, 'ADD', 5, '#666666').setOrigin(1, 0.5));
                 }
                 yy += 33;
             }
@@ -1201,11 +1263,15 @@ export default class HUDScene extends Phaser.Scene {
         const moveBg = this.add.graphics();
         moveBg.fillStyle(0x335577, 0.5); moveBg.fillRoundedRect(6, yy, pw - 12, 24, 3);
         ct.add(moveBg);
-        const moveBtn = this.txt(pw / 2, yy + 12, 'Move Habitat', 5, '#88BBDD').setOrigin(0.5).setInteractive({ useHandCursor: true });
-        moveBtn.on('pointerdown', () => { this.gs.enterMoveMode(hab); });
-        moveBtn.on('pointerover', () => moveBtn.setColor('#AADDFF'));
-        moveBtn.on('pointerout', () => moveBtn.setColor('#88BBDD'));
-        ct.add(moveBtn);
+        if (tutActive) {
+            ct.add(this.txt(pw / 2, yy + 12, 'Move Habitat', 5, '#666666').setOrigin(0.5));
+        } else {
+            const moveBtn = this.txt(pw / 2, yy + 12, 'Move Habitat', 5, '#88BBDD').setOrigin(0.5).setInteractive({ useHandCursor: true });
+            moveBtn.on('pointerdown', () => { this.gs.enterMoveMode(hab); });
+            moveBtn.on('pointerover', () => moveBtn.setColor('#AADDFF'));
+            moveBtn.on('pointerout', () => moveBtn.setColor('#88BBDD'));
+            ct.add(moveBtn);
+        }
         yy += 30;
 
         const isEmpty = hab.animals.length === 0;
@@ -1236,11 +1302,16 @@ export default class HUDScene extends Phaser.Scene {
         bg.lineStyle(2, ht.stroke); bg.strokeRoundedRect(0, 0, pw, ph, 6);
         ct.addAt(bg, 0);
 
-        const closeBtn = this.txt(pw - 8, 6, 'X', 8, '#CC4444').setOrigin(1, 0).setInteractive({ useHandCursor: true });
-        closeBtn.on('pointerdown', () => { if (!this.gs.state.rescuePaused) this.gs.zoomOut(); });
-        closeBtn.on('pointerover', () => closeBtn.setColor('#FF6666'));
-        closeBtn.on('pointerout', () => closeBtn.setColor('#CC4444'));
-        ct.add(closeBtn);
+        const blockZoom = TutorialManager.shouldBlockZoomOut();
+        if (blockZoom) {
+            ct.add(this.txt(pw - 8, 6, 'X', 8, '#666666').setOrigin(1, 0));
+        } else {
+            const closeBtn = this.txt(pw - 8, 6, 'X', 8, '#CC4444').setOrigin(1, 0).setInteractive({ useHandCursor: true });
+            closeBtn.on('pointerdown', () => { if (!this.gs.state.rescuePaused) this.gs.zoomOut(); });
+            closeBtn.on('pointerover', () => closeBtn.setColor('#FF6666'));
+            closeBtn.on('pointerout', () => closeBtn.setColor('#CC4444'));
+            ct.add(closeBtn);
+        }
 
         this.hideToolbar();
 
@@ -1252,13 +1323,19 @@ export default class HUDScene extends Phaser.Scene {
         const bbW = 160, bbH = 38;
         const bbX = W / 2 - bbW / 2, bbY = barY + 12;
         const bbBg = this.add.graphics().setDepth(250);
-        bbBg.fillStyle(0x664422, 0.75); bbBg.fillRoundedRect(bbX, bbY, bbW, bbH, 6);
-        bbBg.lineStyle(2, 0xAA8855); bbBg.strokeRoundedRect(bbX, bbY, bbW, bbH, 6);
-
-        const bbBtn = this.txt(W / 2, bbY + bbH / 2, '< Back', 9, '#FFCC88').setOrigin(0.5).setDepth(250).setInteractive({ useHandCursor: true });
-        bbBtn.on('pointerdown', () => { if (!this.gs.state.rescuePaused) this.gs.zoomOut(); });
-        bbBtn.on('pointerover', () => { bbBtn.setColor('#FFEECC'); bbBg.clear(); bbBg.fillStyle(0x886633, 0.85); bbBg.fillRoundedRect(bbX, bbY, bbW, bbH, 6); bbBg.lineStyle(2, 0xCCBB77); bbBg.strokeRoundedRect(bbX, bbY, bbW, bbH, 6); });
-        bbBtn.on('pointerout', () => { bbBtn.setColor('#FFCC88'); bbBg.clear(); bbBg.fillStyle(0x664422, 0.75); bbBg.fillRoundedRect(bbX, bbY, bbW, bbH, 6); bbBg.lineStyle(2, 0xAA8855); bbBg.strokeRoundedRect(bbX, bbY, bbW, bbH, 6); });
+        let bbBtn;
+        if (blockZoom) {
+            bbBg.fillStyle(0x333333, 0.75); bbBg.fillRoundedRect(bbX, bbY, bbW, bbH, 6);
+            bbBg.lineStyle(2, 0x555555); bbBg.strokeRoundedRect(bbX, bbY, bbW, bbH, 6);
+            bbBtn = this.txt(W / 2, bbY + bbH / 2, '< Back', 9, '#666666').setOrigin(0.5).setDepth(250);
+        } else {
+            bbBg.fillStyle(0x664422, 0.75); bbBg.fillRoundedRect(bbX, bbY, bbW, bbH, 6);
+            bbBg.lineStyle(2, 0xAA8855); bbBg.strokeRoundedRect(bbX, bbY, bbW, bbH, 6);
+            bbBtn = this.txt(W / 2, bbY + bbH / 2, '< Back', 9, '#FFCC88').setOrigin(0.5).setDepth(250).setInteractive({ useHandCursor: true });
+            bbBtn.on('pointerdown', () => { if (!this.gs.state.rescuePaused) this.gs.zoomOut(); });
+            bbBtn.on('pointerover', () => { bbBtn.setColor('#FFEECC'); bbBg.clear(); bbBg.fillStyle(0x886633, 0.85); bbBg.fillRoundedRect(bbX, bbY, bbW, bbH, 6); bbBg.lineStyle(2, 0xCCBB77); bbBg.strokeRoundedRect(bbX, bbY, bbW, bbH, 6); });
+            bbBtn.on('pointerout', () => { bbBtn.setColor('#FFCC88'); bbBg.clear(); bbBg.fillStyle(0x664422, 0.75); bbBg.fillRoundedRect(bbX, bbY, bbW, bbH, 6); bbBg.lineStyle(2, 0xAA8855); bbBg.strokeRoundedRect(bbX, bbY, bbW, bbH, 6); });
+        }
 
         this._backBarElements = [backBar, bbBg, bbBtn];
         this.habitatPanel = ct;

@@ -45,6 +45,7 @@ export class SpriteGenerator {
         this.guidePost(scene);
         this.enrichments(scene);
         this.decorations(scene);
+        this.tutorial(scene);
     }
 
     // Terrain tiles: grass variants, path, fence (horizontal), fence_v (vertical for side walls).
@@ -1264,6 +1265,55 @@ export class SpriteGenerator {
                     rect(g, 20, 12, 2, 8, 0x8B7355);
                 }
             });
+        });
+    }
+
+    // Warden Maple — tutorial NPC portrait (front-facing only, used in dialogue box).
+    static tutorial(scene) {
+        const sk = 0xFFDDBB, hr = 0xBBBBAA;
+        const hat = 0x5B7744, band = 0x4A6633;
+        const vest = 0x4A7A3A, shirt = 0xDDCCAA;
+        const pants = 0x665544, boots = 0x443322;
+        const belt = 0x8B6B3A, buckle = 0xCCAA55;
+
+        tex(scene, 'npc_maple', TILE, TILE, g => {
+            // Hat crown
+            rect(g, 10, 0, 12, 3, hat);
+            // Hat brim (wide)
+            rect(g, 6, 3, 20, 3, hat);
+            // Hat band
+            rect(g, 6, 5, 20, 1, band);
+            // Hair peeking below hat
+            rect(g, 9, 6, 14, 2, hr);
+            // Face
+            rect(g, 10, 8, 12, 5, sk);
+            // Eyes
+            rect(g, 13, 9, 2, 2, 0x445566);
+            rect(g, 18, 9, 2, 2, 0x445566);
+            // Smile
+            rect(g, 14, 12, 4, 1, dark(sk, 50));
+            // Vest
+            rect(g, 8, 13, 16, 7, vest);
+            // Shirt visible at center
+            rect(g, 13, 13, 6, 6, shirt);
+            // Vest lapel edges
+            rect(g, 12, 13, 1, 6, dark(vest, 25));
+            rect(g, 19, 13, 1, 6, dark(vest, 25));
+            // Arms (vest sleeves)
+            rect(g, 6, 14, 3, 7, vest);
+            rect(g, 23, 14, 3, 7, vest);
+            // Hands
+            rect(g, 6, 21, 3, 2, sk);
+            rect(g, 23, 21, 3, 2, sk);
+            // Belt
+            rect(g, 8, 20, 16, 2, belt);
+            rect(g, 15, 20, 2, 2, buckle);
+            // Pants
+            rect(g, 10, 22, 5, 5, pants);
+            rect(g, 17, 22, 5, 5, pants);
+            // Boots
+            rect(g, 10, 27, 5, 3, boots);
+            rect(g, 17, 27, 5, 3, boots);
         });
     }
 }

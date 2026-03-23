@@ -37,6 +37,8 @@ import { TILE, COLS, ROWS, W, H, MAP_Y, TIME_SCALE, START_COINS, HABITATS, SPECI
     RESEARCH, RESEARCH_BRANCHES, DECORATIONS, FACILITIES, GARDEN_PRODUCE, GARDEN_REGROW_TIME, BATHROOM_DIRTY_RATE, TRASH_DROP_CHANCE } from '../GameData.js';
 import { SoundManager } from '../SoundManager.js';
 import MetaState from '../MetaStateManager.js';
+import MetaDialogue from '../MetaDialogue.js';
+import TutorialManager from '../TutorialManager.js';
 
 let uid = 0;
 // Generates unique IDs for game entities (habitats, animals, staff, missions, trash) to avoid collisions.
@@ -104,6 +106,9 @@ export default class GameScene extends Phaser.Scene {
         this.trash = [];
         this._skipPointerDown = false;
         this.timeSpeedMult = 1;
+        this._dialoguePaused = false;
+        this._tutorialZoomed = false;
+        this._tutorialTreated = false;
 
         this.createMap();
         this.overlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000033, 0).setDepth(100);
@@ -116,7 +121,7 @@ export default class GameScene extends Phaser.Scene {
         this.scene.launch('HUDScene');
 
         if (!this.isNewGame) this.loadGame();
-        else { MetaState.reset(); this.game._hasZoomedOut = false; }
+        else { MetaState.reset(); this.game._hasZoomedOut = false; this.game._firstMetaDialogueShown = false; TutorialManager.reset(); }
         this.updateSeason();
         const loadedMeta = this._loadedMode === 'meta';
         if (this.state.autoSave) {
@@ -130,6 +135,7 @@ export default class GameScene extends Phaser.Scene {
             this._loadedMode = null;
             this._transitioningToMeta = true;
             this.game._hasZoomedOut = true; // zoom already happened in a previous session
+            this.game._firstMetaDialogueShown = true;
             MetaState.load(); // restore meta-world state
             // Black overlay at max depth to hide sanctuary while meta scene loads
             const cover = this.add.rectangle(W / 2, H / 2, W, H, 0x000000).setDepth(9999).setScrollFactor(0);
@@ -262,6 +268,7 @@ export default class GameScene extends Phaser.Scene {
 
         this.input.on('pointermove', ptr => {
             if (ptr.y < MAP_Y) return;
+            if (this.state.rescuePaused || this._dialoguePaused) { this.game.canvas.style.cursor = 'default'; this.hoverOutline.setVisible(false); return; }
             if (this.state.buildMode) {
                 this.hoverOutline.setVisible(false);
                 const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
@@ -492,6 +499,7 @@ export default class GameScene extends Phaser.Scene {
         });
 
         this.input.on('pointerdown', ptr => {
+            if (this._dialoguePaused) return;
             if (this._habSelectMode) {
                 const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
                 if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
@@ -532,7 +540,7 @@ export default class GameScene extends Phaser.Scene {
                     const cell = this.grid[gy]?.[gx];
                     if (cell && typeof cell === 'string' && cell.startsWith('hab_')) {
                         const hab = this.state.habitats.find(h => h.id === cell);
-                        if (hab) {
+                        if (hab && (TutorialManager.isComplete() || TutorialManager.step >= 3)) {
                             this.sfx.click();
                             this.zoomToHabitat(hab);
                             this.game.events.emit('showHabitatInfo', hab);
@@ -662,7 +670,7 @@ export default class GameScene extends Phaser.Scene {
                     const cell = this.grid[gy]?.[gx];
                     if (cell && typeof cell === 'string' && cell.startsWith('hab_')) {
                         const hab = this.state.habitats.find(h => h.id === cell);
-                        if (hab) { this.sfx.click(); this.zoomToHabitat(hab); this.game.events.emit('showHabitatInfo', hab); }
+                        if (hab && (TutorialManager.isComplete() || TutorialManager.step >= 3)) { this.sfx.click(); this.zoomToHabitat(hab); this.game.events.emit('showHabitatInfo', hab); }
                     } else if (cell && typeof cell === 'string' && cell.startsWith('fac_')) {
                         const fac = this.state.facilities.find(f => f.id === cell);
                         if (fac) { this.sfx.click(); this.zoomToFacility(fac); }
@@ -675,6 +683,12 @@ export default class GameScene extends Phaser.Scene {
         });
 
         this.input.keyboard.on('keydown-ESC', () => {
+            // During dialogue, ESC only opens/closes settings
+            if (MetaDialogue.isActive()) {
+                const hud = this.scene.get('HUDScene');
+                if (hud) hud.toggleSettingsMenu();
+                return;
+            }
             const hud = this.scene.get('HUDScene');
             if (hud && hud.settingsPanel) { hud.closeSettingsMenu(); return; }
             if (this.state.rescuePaused) { if (hud) hud.toggleSettingsMenu(); return; }
@@ -694,11 +708,18 @@ export default class GameScene extends Phaser.Scene {
 
         this.input.keyboard.on('keydown-E', () => {
             const hud = this.scene.get('HUDScene');
+            // Block all E actions while settings menu is open
+            if (hud && hud.settingsPanel) return;
+            // Tutorial dialogue takes priority over all other E actions
+            if (MetaDialogue.isActive()) {
+                if (hud) MetaDialogue.advance(hud);
+                return;
+            }
             if (!hud) return;
             // Don't switch if a menu/panel is open or in a special mode
-            if (hud.settingsPanel) return;
             if (this.state.rescuePaused || this._habSelectMode || this._movingHabitat || this._movingFacility) return;
             if (this.state.buildMode) return;
+            if (!TutorialManager.isPhoneUnlocked()) return;
             hud.triggerPhoneTransition();
         });
 
@@ -732,6 +753,7 @@ export default class GameScene extends Phaser.Scene {
     // habitatViewClosed. zoomToFacility shows garden mini bars and emits showFacilityView.
 
     zoomToHabitat(hab) {
+        if (!TutorialManager.isComplete() && TutorialManager.step < 3) return;
         if (this.state.viewingFacility) {
             const oldFac = this.state.facilities.find(f => f.id === this.state.viewingFacility);
             if (oldFac && oldFac.type === 'garden') this.hideGardenMiniBars(oldFac);
@@ -744,6 +766,7 @@ export default class GameScene extends Phaser.Scene {
         const cx = hab.gx * TILE + (hw * TILE) / 2;
         const cy = MAP_Y + hab.gy * TILE + (hh * TILE) / 2;
         this.state.viewingHabitat = hab.id;
+        this._tutorialZoomed = true;
         this.hoverOutline.setVisible(false);
         this.game.canvas.style.cursor = 'default';
 
@@ -784,6 +807,7 @@ export default class GameScene extends Phaser.Scene {
 
     zoomOut() {
         if (!this.state.viewingHabitat && !this.state.viewingFacility && this.cameras.main.zoom === 1) return;
+        if (TutorialManager.shouldBlockZoomOut()) return;
         if (this.state.viewingFacility) {
             const fac = this.state.facilities.find(f => f.id === this.state.viewingFacility);
             if (fac && fac.type === 'garden') this.hideGardenMiniBars(fac);
@@ -2045,11 +2069,15 @@ export default class GameScene extends Phaser.Scene {
             const enrichHappy = hab ? this.getEnrichmentHappyBonus(hab) * 0.002 : 0;
             const enrichMod = (tr.enrichBonus || 1);
 
-            a.hunger = Math.max(0, a.hunger - sp.hungerRate * (tr.hungerMult || 1) * hungerMult * sDelta / 1000);
-            if (a.hunger < 20) a.happiness = Math.max(0, a.happiness - 0.4 * sDelta / 1000);
-            const happyDecay = 0.03 * (tr.happyMult || 1) * enrichUpgrade;
-            a.happiness = Math.max(0, Math.min(100, a.happiness - happyDecay * sDelta / 1000 + enrichHappy * enrichMod * sDelta / 1000));
-            if (a.health < 50) a.happiness = Math.max(0, a.happiness - 0.2 * sDelta / 1000);
+            // Freeze hunger/happiness decay during tutorial so the player can learn care actions
+            const tutorialFreeze = !TutorialManager.isComplete();
+            if (!tutorialFreeze) {
+                a.hunger = Math.max(0, a.hunger - sp.hungerRate * (tr.hungerMult || 1) * hungerMult * sDelta / 1000);
+                if (a.hunger < 20) a.happiness = Math.max(0, a.happiness - 0.4 * sDelta / 1000);
+                const happyDecay = 0.03 * (tr.happyMult || 1) * enrichUpgrade;
+                a.happiness = Math.max(0, Math.min(100, a.happiness - happyDecay * sDelta / 1000 + enrichHappy * enrichMod * sDelta / 1000));
+                if (a.health < 50) a.happiness = Math.max(0, a.happiness - 0.2 * sDelta / 1000);
+            }
 
             // Bond happiness boost: only friends in the same habitat count
             if (a.bonds.length > 0) {
@@ -2250,6 +2278,7 @@ export default class GameScene extends Phaser.Scene {
         this.addBondXP(a, sp.bondTreatsBase * 2);
         this.heartEffect(a.sprite.x, a.sprite.y);
         this.sfx.treat();
+        this._tutorialTreated = true;
     }
 
     healAnimal(id) {
@@ -4774,6 +4803,9 @@ export default class GameScene extends Phaser.Scene {
             })),
             autoSave: this.state.autoSave,
             timeSpeedMult: this.timeSpeedMult,
+            tutorialStep: TutorialManager.step,
+            tutorialDialogueShown: TutorialManager._dialogueShown,
+            tutorialDialogueLine: TutorialManager._dialogueLine,
             visitors: this.visitors.map(v => ({
                 visitorType: v.visitorType, x: v.sprite.x, y: v.sprite.y,
                 tx: v.tx, ty: v.ty, speed: v.speed, timer: v.timer,
@@ -4917,6 +4949,10 @@ export default class GameScene extends Phaser.Scene {
             this.state.autoSave = d.autoSave ?? true;
             this.timeSpeedMult = d.timeSpeedMult ?? 1;
             this._loadedMode = d.mode || 'havenwood';
+            TutorialManager.load(d.tutorialStep, d.tutorialDialogueShown, d.tutorialDialogueLine);
+            // Restore tutorial flags if we're past those steps
+            if (TutorialManager.step > 3) this._tutorialZoomed = true;
+            if (TutorialManager.step > 6) this._tutorialTreated = true;
 
             if (d.pendingRescue) {
                 const pr = d.pendingRescue;
@@ -4949,7 +4985,7 @@ export default class GameScene extends Phaser.Scene {
     // run on independent Phaser timers and have their own pause guards for the same conditions.
 
     update(time, delta) {
-        if (this.state.rescuePaused || this.state.settingsPaused || this._movingHabitat || this._habSelectMode || this.state.buildMode) return;
+        if (this.state.rescuePaused || this.state.settingsPaused || this._dialoguePaused || this._movingHabitat || this._habSelectMode || this.state.buildMode) return;
         this.updateTime(delta);
         this.updateAnimals(delta, time);
         this.updateVisitors(delta);
@@ -4959,14 +4995,17 @@ export default class GameScene extends Phaser.Scene {
         this.updateBathrooms(delta);
         this.sfx.updateAmbient(delta, this.state.time);
 
-        if (!this.state.buildMode && !this._habSelectMode) {
-            this._rescueAccum += delta * this.timeSpeedMult;
-        }
-        if (this._rescueAccum >= this.rescueInterval) {
+        // Suppress auto-rescue during early tutorial (tutorial triggers the first one manually)
+        if (!TutorialManager.shouldSuppressRescues()) {
             if (!this.state.buildMode && !this._habSelectMode) {
-                this._rescueAccum -= this.rescueInterval;
-                if (this._firstRescue) { this._firstRescue = false; this.triggerRescue('cat'); }
-                else this.triggerRescue();
+                this._rescueAccum += delta * this.timeSpeedMult;
+            }
+            if (this._rescueAccum >= this.rescueInterval) {
+                if (!this.state.buildMode && !this._habSelectMode) {
+                    this._rescueAccum -= this.rescueInterval;
+                    if (this._firstRescue) { this._firstRescue = false; this.triggerRescue('cat'); }
+                    else this.triggerRescue();
+                }
             }
         }
 

@@ -2596,6 +2596,28 @@ export default class MetaWorldScene extends Phaser.Scene {
             this.updateDayNightTint();
             const hud = this.scene.get('MetaHUDScene');
             if (hud) hud.refreshStatusBar();
+
+            // First time entering meta-world — show intro dialogue
+            if (!this.game._firstMetaDialogueShown) {
+                this.game._firstMetaDialogueShown = true;
+                this._frozen = true;
+                this.time.delayedCall(500, () => {
+                    const metaHud = this.scene.get('MetaHUDScene');
+                    if (metaHud) {
+                        MetaDialogue.show(metaHud, {
+                            speaker: 'Player',
+                            spriteKey: 'char_down',
+                            lines: [
+                                "Good thing I woke up early — that game is awesome!",
+                                "I can't wait to play more. I should get to class though...",
+                            ],
+                            onClose: () => {
+                                this._frozen = false;
+                            },
+                        });
+                    }
+                });
+            }
         });
     }
 }

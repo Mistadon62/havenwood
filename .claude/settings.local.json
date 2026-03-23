@@ -26,7 +26,11 @@
       "Bash(node -c js/scenes/GameScene.js)",
       "Bash(node -c js/scenes/MenuScene.js)",
       "Bash(wc -l /c/Users/baile/Documents/GitHub/havenwood/js/scenes/*.js /c/Users/baile/Documents/GitHub/havenwood/js/*.js)",
-      "Bash(wc -l /c/Users/baile/Documents/GitHub/havenwood/js/*.js /c/Users/baile/Documents/GitHub/havenwood/js/scenes/*.js)"
+      "Bash(wc -l /c/Users/baile/Documents/GitHub/havenwood/js/*.js /c/Users/baile/Documents/GitHub/havenwood/js/scenes/*.js)",
+      "Bash(node -c js/TutorialManager.js)",
+      "Bash(node -c js/MetaDialogue.js)",
+      "Bash(node -c js/SpriteGenerator.js)",
+      "Bash(where node:*)"
     ]
   }
 }
