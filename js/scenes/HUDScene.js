@@ -992,7 +992,7 @@ export default class HUDScene extends Phaser.Scene {
             ct.add(accHit);
 
             const decBg = this.add.graphics();
-            const tutorialRescue = TutorialManager.shouldSuppressRescues();
+            const tutorialRescue = TutorialManager.currentStepId() === 'first_rescue';
             decBg.fillStyle(tutorialRescue ? 0x444444 : 0x8B2222, 0.85); decBg.fillRoundedRect(btnLeft + btnW + btnGap, 88, btnW, 30, 4);
             ct.add(decBg);
             const decTxt = this.txt(btnLeft + btnW + btnGap + btnW / 2, 103, 'Pass', 8, tutorialRescue ? '#666666' : undefined).setOrigin(0.5);
@@ -1033,7 +1033,7 @@ export default class HUDScene extends Phaser.Scene {
             } else { bldTxt.setColor('#888888'); ct.add(bldTxt); }
 
             const decBg2 = this.add.graphics();
-            const tutorialRescue2 = TutorialManager.shouldSuppressRescues();
+            const tutorialRescue2 = TutorialManager.currentStepId() === 'first_rescue';
             decBg2.fillStyle(tutorialRescue2 ? 0x444444 : 0x8B2222, 0.85); decBg2.fillRoundedRect(btnLeft + bldW + btnGap, 88, passW, 30, 4);
             ct.add(decBg2);
             const decTxt2 = this.txt(btnLeft + bldW + btnGap + passW / 2, 103, 'Pass', 8, tutorialRescue2 ? '#666666' : undefined).setOrigin(0.5);

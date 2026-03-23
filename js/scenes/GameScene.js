@@ -155,9 +155,6 @@ export default class GameScene extends Phaser.Scene {
             });
         }
 
-        this.rescueInterval = 50000;
-        this._rescueAccum = this.rescueInterval - 4000;
-        this._firstRescue = true;
         this._autoSaveAccum = 0;
         this.time.addEvent({ delay: 7000, callback: () => this.trySpawnVisitor(), loop: true });
         this.time.addEvent({ delay: 15000, callback: () => this.trySpawnNPCVisitor(), loop: true });
@@ -2562,23 +2559,13 @@ export default class GameScene extends Phaser.Scene {
             const normal = sp.variants.map((v, i) => v.breedOnly ? -1 : i).filter(i => i >= 0);
             const vi = normal[Phaser.Math.Between(0, normal.length - 1)];
             const v = sp.variants[vi];
-            const hab = this.findCompatibleHabitat(sp);
-            if (hab) {
-                this.addAnimal(speciesId, v.name, hab.id, { variantIdx: vi });
-                this.state.stats.rescued++;
-                this.state.rescuedVariants.add(`${speciesId}_${vi}`);
-                this.state.seenVariants.add(`${speciesId}_${vi}`);
-                if (!this.state.discoveries.has(speciesId)) {
-                    this.state.discoveries.add(speciesId);
-                    this.game.events.emit('notification', `New species discovered: ${sp.name}!`);
-                }
-                this.game.events.emit('notification', `Mission found ${name} the ${sp.name}!`);
-                this.sfx.rescue();
-            } else {
-                const coins = Math.round(m.cost * 0.5);
-                this.addCoins(coins);
-                this.game.events.emit('notification', `Found a ${sp.name} but no habitat! Refunded ${coins}g.`);
-            }
+            this.state.seenVariants.add(`${speciesId}_${vi}`);
+            this.sfx.rescue();
+            const tmpl = Phaser.Utils.Array.GetRandom(RESCUE_MSG);
+            const msg = tmpl.replace('{name}', v.name).replace('{species}', sp.name);
+            const ev = { speciesId, name: v.name, variantIdx: vi, habitat: this.findCompatibleHabitat(sp), msg };
+            this.state.pendingRescue = ev;
+            this.game.events.emit('rescueEvent', ev);
         } else if (roll < 0.9) {
             const coins = Phaser.Math.Between(30, 80);
             this.addCoins(coins);
@@ -4471,7 +4458,7 @@ export default class GameScene extends Phaser.Scene {
         this.game.events.emit('notification', `Upgrade unlocked: ${up.name}!`);
         this.game.events.emit('upgradesUpdate', [...this.state.upgrades]);
         if (id === 'conservation') {
-            this.rescueInterval = Math.round(this.rescueInterval * 0.7);
+            // Conservation upgrade: bonus research points from missions
         }
         return true;
     }
@@ -4808,7 +4795,6 @@ export default class GameScene extends Phaser.Scene {
                 variantIdx: this.state.pendingRescue.variantIdx,
                 msg: this.state.pendingRescue.msg,
             } : null,
-            rescueAccum: this._rescueAccum,
             decorations: this.state.decorations.map(d => ({ id: d.id, gx: d.gx, gy: d.gy })),
             trashcanFullness: this.state.trashcanFullness || {},
             trash: this.trash.map(t => ({ id: t.id, x: t.x, y: t.y })),
@@ -4960,8 +4946,6 @@ export default class GameScene extends Phaser.Scene {
             this.game.events.emit('staffUpdate', this.state.staff);
             this.game.events.emit('missionsUpdate');
 
-            this._rescueAccum = d.rescueAccum ?? 0;
-            this._firstRescue = false;
             this.state.autoSave = d.autoSave ?? true;
             this.timeSpeedMult = d.timeSpeedMult ?? 1;
             this._loadedMode = d.mode || 'havenwood';
@@ -5010,20 +4994,6 @@ export default class GameScene extends Phaser.Scene {
         this.updateGardens(delta);
         this.updateBathrooms(delta);
         this.sfx.updateAmbient(delta, this.state.time);
-
-        // Suppress auto-rescue during early tutorial (tutorial triggers the first one manually)
-        if (!TutorialManager.shouldSuppressRescues()) {
-            if (!this.state.buildMode && !this._habSelectMode) {
-                this._rescueAccum += delta * this.timeSpeedMult;
-            }
-            if (this._rescueAccum >= this.rescueInterval) {
-                if (!this.state.buildMode && !this._habSelectMode) {
-                    this._rescueAccum -= this.rescueInterval;
-                    if (this._firstRescue) { this._firstRescue = false; this.triggerRescue('cat'); }
-                    else this.triggerRescue();
-                }
-            }
-        }
 
         if (this.state.autoSave) {
             this._autoSaveAccum += delta;

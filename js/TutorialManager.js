@@ -38,7 +38,7 @@ const STEPS = [
     },
     {
         id: 'first_rescue',
-        unlocks: ['missions'],
+        unlocks: [],
         buildRestrictions: { categories: ['habitats'] },
         dialogue: {
             speaker: 'Warden Maple',
@@ -145,6 +145,22 @@ const STEPS = [
         condition: (gs) => gs.state.decorations.length > 0 && !gs.state.buildMode,
     },
     {
+        id: 'dispatch_mission',
+        unlocks: ['missions'],
+        requiresSanctuaryView: true,
+        dialogue: {
+            speaker: 'Warden Maple',
+            spriteKey: 'npc_maple',
+            lines: [
+                "Now that the sanctuary is taking shape, it's time to go find more animals!",
+                "Click the Rescue button on the toolbar to open the Rescue Missions panel.",
+                "From there you can dispatch a team to search different areas — each mission costs some coins and takes time, but you might find a new animal!",
+                "Try launching a mission now!",
+            ],
+        },
+        condition: (gs) => gs.state.activeMissions.length > 0 || gs.state.stats.missionsComplete > 0,
+    },
+    {
         id: 'visitors_and_more',
         unlocks: ['staff', 'upgrades', 'research', 'journal'],
         completesOnClose: true,
@@ -153,6 +169,7 @@ const STEPS = [
             spriteKey: 'npc_maple',
             lines: [
                 "Looking good! Paths help visitors navigate, and decorations make everyone happier.",
+                "Rescue Missions are the main way you'll find new animals for the sanctuary — keep sending them out!",
                 "As the sanctuary grows, hire Staff to help with chores, Research new techniques, and check out Upgrades.",
                 "Your Journal will track every species you discover along the way.",
             ],
@@ -237,11 +254,6 @@ const TutorialManager = {
         if (this.isComplete()) return false;
         const id = STEPS[this.step]?.id;
         return id === 'animal_care_zoom' || id === 'animal_care_feed' || id === 'animal_care_pet' || id === 'animal_care_treat';
-    },
-
-    /** True if auto-rescue spawning should be suppressed (tutorial handles the first one). */
-    shouldSuppressRescues() {
-        return !this.isComplete();
     },
 
     /** Start the tutorial (new game or resumed from save). */
