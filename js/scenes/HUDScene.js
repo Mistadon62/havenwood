@@ -302,6 +302,10 @@ export default class HUDScene extends Phaser.Scene {
                 this.drawToolBtn(bg, x, y, item.color, true, gap);
             });
             hit.on('pointerout', () => {
+                if (!TutorialManager.isComplete() && !TutorialManager.isButtonUnlocked(item.key)) {
+                    this.drawToolBtn(bg, x, y, item.color, false, gap, true);
+                    return;
+                }
                 const isActive = item.key === this.activeBuild ||
                     (item.key === 'build' && this.activeBuild && (HABITATS[this.activeBuild] || this.activeBuild?.startsWith('decor_') || this.activeBuild?.startsWith('facility_'))) ||
                     item.key === this._activePanel;
@@ -359,7 +363,12 @@ export default class HUDScene extends Phaser.Scene {
     updateTutorialButtons() {
         if (this._lockOverlays) this._lockOverlays.forEach(o => o.destroy());
         this._lockOverlays = [];
-        if (TutorialManager.isComplete() || !this.toolBtns) return;
+        if (!this.toolBtns) return;
+        if (TutorialManager.isComplete()) {
+            this.toolBtns.forEach(b => b.lbl.setAlpha(1));
+            this._refreshToolBtns();
+            return;
+        }
         for (const btn of this.toolBtns) {
             const locked = !TutorialManager.isButtonUnlocked(btn.key);
             if (locked) {
@@ -771,6 +780,10 @@ export default class HUDScene extends Phaser.Scene {
                 this.showBuildHint();
             }
             this.toolBtns.forEach(b => {
+                if (!TutorialManager.isComplete() && !TutorialManager.isButtonUnlocked(b.key)) {
+                    this.drawToolBtn(b.bg, b.x, b.y, b.color, false, b.gap, true);
+                    return;
+                }
                 const isActive = b.key === mode ||
                     (b.key === 'build' && mode && (HABITATS[mode] || (mode && mode.startsWith('decor_')) || (mode && mode.startsWith('facility_'))));
                 this.drawToolBtn(b.bg, b.x, b.y, b.color, isActive, b.gap);
@@ -2168,6 +2181,10 @@ export default class HUDScene extends Phaser.Scene {
     _refreshToolBtns() {
         if (!this.toolBtns) return;
         this.toolBtns.forEach(b => {
+            if (!TutorialManager.isComplete() && !TutorialManager.isButtonUnlocked(b.key)) {
+                this.drawToolBtn(b.bg, b.x, b.y, b.color, false, b.gap, true);
+                return;
+            }
             const isActive = b.key === this.activeBuild ||
                 (b.key === 'build' && this.activeBuild && (HABITATS[this.activeBuild] || this.activeBuild?.startsWith('decor_') || this.activeBuild?.startsWith('facility_'))) ||
                 b.key === this._activePanel;
