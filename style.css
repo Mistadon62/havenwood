@@ -6,6 +6,7 @@
 
 body {
     display: flex;
+    flex-direction: column;
     justify-content: center;
     align-items: center;
     min-height: 100vh;
@@ -14,6 +15,20 @@ body {
     background: radial-gradient(ellipse 80% 60% at 50% 0%, #1a2540 0%, #0a0f22 45%, #050810 100%);
     position: relative;
 }
+
+footer {
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+    text-align: center;
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 14px;
+    padding: 12px 10px;
+    margin-top: 12px;
+}
+
+footer a { color: #fff; }
 
 /* Star layer 1 — small, fast drift */
 body::before {
@@ -84,9 +99,8 @@ body::after {
     image-rendering: crisp-edges;
     position: relative;
     z-index: 1;
-    height: 88vh;
+    height: min(88vh, calc(95vw * 744 / 960));
     aspect-ratio: 960 / 744;
-    max-width: 95vw;
     border-radius: 14px;
     overflow: hidden;
     box-shadow:
