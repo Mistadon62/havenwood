@@ -5,21 +5,99 @@
 }
 
 body {
-    background: #0d0d1a;
     display: flex;
     justify-content: center;
     align-items: center;
     min-height: 100vh;
     overflow: hidden;
     font-family: 'Press Start 2P', monospace;
+    background: radial-gradient(ellipse 80% 60% at 50% 0%, #1a2540 0%, #0a0f22 45%, #050810 100%);
+    position: relative;
+}
+
+/* Star layer 1 — small, fast drift */
+body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-image:
+        radial-gradient(1px 1px at 12% 18%, #fff, transparent 60%),
+        radial-gradient(1px 1px at 28% 72%, #fff, transparent 60%),
+        radial-gradient(1px 1px at 47% 35%, #fff, transparent 60%),
+        radial-gradient(1px 1px at 63% 88%, #fff8dc, transparent 60%),
+        radial-gradient(1px 1px at 78% 14%, #fff, transparent 60%),
+        radial-gradient(1px 1px at 88% 55%, #fff, transparent 60%),
+        radial-gradient(1px 1px at 8% 92%, #aaccff, transparent 60%),
+        radial-gradient(1px 1px at 35% 8%, #fff, transparent 60%),
+        radial-gradient(1px 1px at 55% 60%, #fff, transparent 60%),
+        radial-gradient(1px 1px at 92% 78%, #fff, transparent 60%);
+    background-size: 320px 320px;
+    background-repeat: repeat;
+    animation: drift 90s linear infinite, twinkle-fast 3.5s ease-in-out infinite;
+    opacity: 0.85;
+}
+
+/* Star layer 2 — larger, slower drift, parallax depth */
+body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-image:
+        radial-gradient(2px 2px at 18% 28%, #fff, transparent 55%),
+        radial-gradient(1.5px 1.5px at 72% 65%, #aaccff, transparent 55%),
+        radial-gradient(2px 2px at 42% 80%, #fff8dc, transparent 55%),
+        radial-gradient(1.5px 1.5px at 88% 22%, #fff, transparent 55%),
+        radial-gradient(2.5px 2.5px at 8% 50%, #fff, transparent 55%),
+        radial-gradient(1.5px 1.5px at 60% 12%, #ffe8aa, transparent 55%);
+    background-size: 560px 560px;
+    background-repeat: repeat;
+    animation: drift-slow 200s linear infinite reverse, twinkle-slow 5s ease-in-out infinite;
+    opacity: 0.7;
+}
+
+@keyframes drift {
+    from { background-position: 0 0; }
+    to { background-position: 640px 320px; }
+}
+
+@keyframes drift-slow {
+    from { background-position: 0 0; }
+    to { background-position: 560px 560px; }
+}
+
+@keyframes twinkle-fast {
+    0%, 100% { opacity: 0.85; }
+    50% { opacity: 0.55; }
+}
+
+@keyframes twinkle-slow {
+    0%, 100% { opacity: 0.7; }
+    50% { opacity: 0.4; }
 }
 
 #game-container {
     image-rendering: pixelated;
     image-rendering: crisp-edges;
+    position: relative;
+    z-index: 1;
+    height: 88vh;
+    aspect-ratio: 960 / 744;
+    max-width: 95vw;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow:
+        0 0 60px rgba(80, 130, 200, 0.18),
+        0 0 140px rgba(40, 60, 120, 0.10),
+        0 0 4px rgba(255, 255, 255, 0.08);
 }
 
 #game-container canvas {
     image-rendering: pixelated;
     image-rendering: crisp-edges;
+    border-radius: 14px;
+    display: block;
 }
