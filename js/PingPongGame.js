@@ -90,7 +90,29 @@ const PingPongGame = {
         track(_txt(hudScene, W / 2, TOP + 28, `First to ${WIN_SCORE}`, 8, '#778899').setOrigin(0.5, 0).setDepth(502));
 
         // Controls hint
-        track(_txt(hudScene, W / 2, BOT - 18, 'W/S or Up/Down to move paddle', 8, '#556677').setOrigin(0.5, 0).setDepth(502));
+        const hintText = window.__havenwoodMobileMode
+            ? 'Drag on the table to move your paddle'
+            : 'W/S or Up/Down to move paddle';
+        track(_txt(hudScene, W / 2, BOT - 18, hintText, 8, '#556677').setOrigin(0.5, 0).setDepth(502));
+
+        // Mobile touch paddle target
+        let mobilePaddleTargetY = null;
+        const tableTop = ty + PADDLE_H / 2;
+        const tableBot = ty + TABLE_H - PADDLE_H / 2;
+        const syncMobilePaddle = (pointer) => {
+            if (gameOver || hudScene._minigamePaused) return;
+            mobilePaddleTargetY = Phaser.Math.Clamp(pointer.y, tableTop, tableBot);
+        };
+        let mobileInputCleanup = null;
+        if (window.__havenwoodMobileMode) {
+            mobilePaddleTargetY = paddleLeft.y;
+            hudScene.input.on('pointerdown', syncMobilePaddle);
+            hudScene.input.on('pointermove', syncMobilePaddle);
+            mobileInputCleanup = () => {
+                hudScene.input.off('pointerdown', syncMobilePaddle);
+                hudScene.input.off('pointermove', syncMobilePaddle);
+            };
+        }
 
         // Paddles
         const paddleLeft = track(hudScene.add.rectangle(
@@ -243,7 +265,7 @@ const PingPongGame = {
             closeBg.fillRoundedRect(W / 2 - 100, closeY, 200, 36, 6);
             closeBg.lineStyle(1, 0x5A8AAA, 0.7);
             closeBg.strokeRoundedRect(W / 2 - 100, closeY, 200, 36, 6);
-            track(_txt(hudScene, W / 2, closeY + 18, '[E] Done', 10, '#CCEEEE').setOrigin(0.5).setDepth(511));
+            track(_txt(hudScene, W / 2, closeY + 18, window.__havenwoodMobileMode ? 'Tap Done' : '[E] Done', 10, '#CCEEEE').setOrigin(0.5).setDepth(511));
 
             const closeHit = track(hudScene.add.rectangle(W / 2, closeY + 18, 200, 36, 0, 0).setDepth(511).setInteractive({ useHandCursor: true }));
 
@@ -255,6 +277,7 @@ const PingPongGame = {
                 // Remove keyboard listeners
                 hudScene.input.keyboard.off('keydown-E', onPressE);
                 hudScene.input.keyboard.off('keydown-SPACE', onPressE);
+                if (mobileInputCleanup) mobileInputCleanup();
                 // Reset key states but do NOT destroy — they're shared with MetaWorldScene
                 wKey.reset();
                 sKey.reset();
@@ -290,12 +313,20 @@ const PingPongGame = {
 
                 const dt = 1 / 60;
 
-                // Player paddle movement (W/S or Up/Down)
+                // Player paddle movement (W/S, Up/Down, or touch on mobile)
                 let playerDir = 0;
-                if (wKey.isDown || upKey.isDown) playerDir = -1;
-                if (sKey.isDown || downKey.isDown) playerDir = 1;
-                paddleLeft.y += playerDir * PADDLE_SPEED * dt;
-                paddleLeft.y = Phaser.Math.Clamp(paddleLeft.y, ty + PADDLE_H / 2, ty + TABLE_H - PADDLE_H / 2);
+                if (window.__havenwoodMobileMode && mobilePaddleTargetY != null) {
+                    const diff = mobilePaddleTargetY - paddleLeft.y;
+                    if (Math.abs(diff) > 1) {
+                        playerDir = Math.sign(diff);
+                        paddleLeft.y += Phaser.Math.Clamp(diff, -PADDLE_SPEED * dt, PADDLE_SPEED * dt);
+                    }
+                } else {
+                    if (wKey.isDown || upKey.isDown) playerDir = -1;
+                    if (sKey.isDown || downKey.isDown) playerDir = 1;
+                    paddleLeft.y += playerDir * PADDLE_SPEED * dt;
+                }
+                paddleLeft.y = Phaser.Math.Clamp(paddleLeft.y, tableTop, tableBot);
 
                 // AI paddle movement (Riley)
                 const aiTarget = ball.y;

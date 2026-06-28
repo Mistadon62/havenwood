@@ -168,19 +168,22 @@ export default class MetaWorldScene extends Phaser.Scene {
         }
 
         if (this.location.outdoor) {
-            // Zoom so room fills height between top bar (42px) and bottom bar (62px)
-            // Add 2px to compensate for sub-pixel rounding at both edges
-            const zoom = (H - 42 - 62 + 2) / (this.location.rows * TILE);
-            this.cameras.main.setZoom(zoom);
+            const topBar = window.__havenwoodMobileMode ? 0 : 42;
+            const bottomBar = window.__havenwoodMobileMode ? 0 : 62;
+            const parentH = this.game.scale.parentSize?.height || H;
+            const zoom = (parentH - topBar - bottomBar + 2) / (this.location.rows * TILE);
+            const mobileZoom = window.__havenwoodMobileMode
+                ? Phaser.Math.Clamp(zoom * 1.35, 1.4, 2.4) : zoom;
+            this.cameras.main.setZoom(mobileZoom);
             this.cameras.main.centerOn(W / 2, H / 2);
             const scrollY = H / 2 - H / (2 * zoom);
-            // Top-align room flush with top bar
-            const topWorldY = 42 / zoom + scrollY;
+            const topWorldY = (window.__havenwoodMobileMode ? 0 : 42) / zoom + scrollY;
             this.roomX = Math.floor((W - this.location.cols * TILE) / 2);
             this.roomY = Math.round(topWorldY) - 1;
             this._bg.setFillStyle(0x4A8B4A);
         } else {
-            this.cameras.main.setZoom(1.35);
+            const indoorZoom = window.__havenwoodMobileMode ? 1.75 : 1.35;
+            this.cameras.main.setZoom(indoorZoom);
             this.cameras.main.centerOn(W / 2, H / 2);
             this.roomX = Math.floor((W - this.location.cols * TILE) / 2);
             this.roomY = Math.floor((H - this.location.rows * TILE) / 2);
@@ -1327,6 +1330,8 @@ export default class MetaWorldScene extends Phaser.Scene {
         this.interactKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
         this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
         this.shiftKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
+        this._mobileDir = { left: false, right: false, up: false, down: false };
+        this._mobileInteractPulse = false;
     }
 
     // Returns true if the world position overlaps a wall tile (1, 2, or 5).
@@ -1649,10 +1654,11 @@ export default class MetaWorldScene extends Phaser.Scene {
 
     handleMovement(delta) {
         let dx = 0, dy = 0;
-        const left = this.cursors.left.isDown || this.wasd.A.isDown;
-        const right = this.cursors.right.isDown || this.wasd.D.isDown;
-        const up = this.cursors.up.isDown || this.wasd.W.isDown;
-        const down = this.cursors.down.isDown || this.wasd.S.isDown;
+        const m = this._mobileDir || {};
+        const left = this.cursors.left.isDown || this.wasd.A.isDown || m.left;
+        const right = this.cursors.right.isDown || this.wasd.D.isDown || m.right;
+        const up = this.cursors.up.isDown || this.wasd.W.isDown || m.up;
+        const down = this.cursors.down.isDown || this.wasd.S.isDown || m.down;
 
         if (left) dx = -1;
         else if (right) dx = 1;
@@ -1752,7 +1758,9 @@ export default class MetaWorldScene extends Phaser.Scene {
         if (this._interactCooldown) return;
 
         if (Phaser.Input.Keyboard.JustDown(this.interactKey) ||
-            Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
+            Phaser.Input.Keyboard.JustDown(this.spaceKey) ||
+            this._mobileInteractPulse) {
+            this._mobileInteractPulse = false;
 
             const { target } = this.getNearestInteractable();
 
@@ -1766,12 +1774,58 @@ export default class MetaWorldScene extends Phaser.Scene {
                     this.interactWithObject(target.data);
                 }
             } else {
-                // No target — pull out phone
+                // No target — pull out phone (desktop) or hint on mobile
                 this._interactCooldown = true;
                 this.time.delayedCall(500, () => { this._interactCooldown = false; });
-                this.zoomIntoPhone();
+                if (window.__havenwoodMobileMode) {
+                    const hudScene = this.scene.get('MetaHUDScene');
+                    if (hudScene && hudScene.showNotification) {
+                        hudScene.showNotification('Walk closer to an NPC or object, then tap Interact.');
+                    }
+                } else {
+                    this.zoomIntoPhone();
+                }
             }
         }
+    }
+
+    mobileInteract() {
+        if (MetaDialogue.isActive()) {
+            const hudScene = this.scene.get('MetaHUDScene');
+            MetaDialogue.advance(hudScene);
+            return;
+        }
+        const metaHud = this.scene.get('MetaHUDScene');
+        if (window.__havenwoodMobileMode && metaHud && (metaHud._mobileSettingsOpen || metaHud.settingsPanel)) {
+            if (metaHud.showNotification) metaHud.showNotification('Close Settings to interact.');
+            return;
+        }
+        this._mobileInteractPulse = true;
+        this.handleInteraction();
+    }
+
+    getMobileInteractState() {
+        if (!window.__havenwoodMobileMode) return { ready: false, label: 'Interact' };
+        const metaHud = this.scene.get('MetaHUDScene');
+        if (metaHud && (metaHud._mobileSettingsOpen || metaHud.settingsPanel)) {
+            return { ready: false, label: 'Interact' };
+        }
+        const { target } = this.getNearestInteractable();
+        if (!target) return { ready: false, label: 'Interact' };
+        if (target.type === 'npc') {
+            const npcDef = getNPC(target.id);
+            return { ready: true, label: `Talk · ${npcDef ? npcDef.name : 'NPC'}` };
+        }
+        const labels = {
+            sleep: 'Sleep', study: 'Study', job: 'Job Board',
+            buy_coffee: 'Order', library_study: 'Study',
+            vending_machine: 'Vending', couch_rest: 'Rest',
+            park_walk: 'Nature Walk', pick_flowers: 'Flowers',
+            bulletin_board: 'Bulletin', ping_pong: 'Ping Pong',
+        };
+        const action = target.data.action;
+        const short = labels[action] || target.data.name || 'Use';
+        return { ready: true, label: short };
     }
 
     updateProximityPrompt() {

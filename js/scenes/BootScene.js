@@ -13,7 +13,7 @@ export default class BootScene extends Phaser.Scene {
             color: '#FFF8DC'
         }).setOrigin(0.5);
 
-        document.fonts.ready.then(() => {
+        Promise.race([document.fonts.ready, new Promise(function(r){ setTimeout(r, 700); })]).then(() => {
             SpriteGenerator.generate(this);
             MetaSpriteGenerator.generate(this);
             this.time.delayedCall(400, () => this.scene.start('MenuScene'));

@@ -293,8 +293,76 @@ export default class MenuScene extends Phaser.Scene {
         this.btn(W / 2, 280, 'New Game', () => {
             this.scene.start('GameScene', { newGame: true });
         });
+        function hwSlotKey() { return 'havenwood_save_slot_0'; }
+        function hwMetaKey() { return 'havenwood_save_slot_meta_0'; }
+        function hwMigrateLegacy() {
+            try {
+                var legacy = localStorage.getItem('havenwood_save');
+                if (legacy && !localStorage.getItem(hwSlotKey())) {
+                    localStorage.setItem(hwSlotKey(), legacy);
+                    localStorage.setItem(hwMetaKey(), JSON.stringify({ updatedAt: new Date().toISOString() }));
+                }
+                if (legacy) localStorage.removeItem('havenwood_save');
+            } catch (_) {}
+        }
+        function hwPrimaryMeta() {
+            try {
+                var raw = localStorage.getItem(hwSlotKey());
+                if (!raw) return { slot: 0, empty: true };
+                var d = JSON.parse(raw);
+                var metaRaw = localStorage.getItem(hwMetaKey());
+                var updatedAt = null;
+                if (metaRaw) { try { updatedAt = JSON.parse(metaRaw).updatedAt || null; } catch (_) {} }
+                var season = d.season || 'spring';
+                return {
+                    slot: 0,
+                    empty: false,
+                    label: 'Day ' + (d.day || 1) + ' · ' + String(season).replace(/^./, function(c){ return c.toUpperCase(); }),
+                    subtitle: (d.coins || 0) + ' coins · ' + (d.rep || 0) + ' rep',
+                    updatedAt: updatedAt,
+                };
+            } catch (_) { return { slot: 0, empty: true }; }
+        }
+        hwMigrateLegacy();
+        var primary = hwPrimaryMeta();
+        const menuScene = this;
+        window.__havenwoodMobile = {
+            hasContinue: !primary.empty,
+            saveMeta: primary,
+            refreshSlots() {
+                hwMigrateLegacy();
+                primary = hwPrimaryMeta();
+                this.hasContinue = !primary.empty;
+                this.saveMeta = primary;
+            },
+            startNewGame(_slot) {
+                window.__havenwoodActiveSlot = 0;
+                try {
+                    localStorage.removeItem(hwSlotKey());
+                    localStorage.removeItem(hwMetaKey());
+                } catch (_) {}
+                this.refreshSlots();
+                menuScene.scene.start('GameScene', { newGame: true, slot: 0 });
+            },
+            continueGame(_slot) {
+                window.__havenwoodActiveSlot = 0;
+                menuScene.scene.start('GameScene', { newGame: false, slot: 0 });
+            },
+        };
+        window.__havenwoodRefreshMenu = function() {
+            if (window.__havenwoodMobile && window.__havenwoodMobile.refreshSlots) window.__havenwoodMobile.refreshSlots();
+            try {
+                window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
+                    type: 'menuReady',
+                    hasContinue: !!(window.__havenwoodMobile && window.__havenwoodMobile.hasContinue),
+                    slots: window.__havenwoodMobile ? [window.__havenwoodMobile.saveMeta] : [{ slot: 0, empty: true }],
+                }));
+            } catch (_) {}
+        };
+        try { window.__havenwoodRefreshMenu(); } catch (_) {}
+        if (window.__havenwoodMobileMode) this.cameras.main.setAlpha(0);
 
-        if (localStorage.getItem('havenwood_save')) {
+        if (primary && !primary.empty) {
             this.btn(W / 2, 340, 'Continue', () => {
                 this.scene.start('GameScene', { newGame: false });
             });

@@ -16,6 +16,25 @@ import { W, H, CLR } from './GameData.js';
 
 let activeDialogue = null;
 
+function havenwoodPortraitDataUrl(hudScene, spriteKey) {
+    if (!spriteKey || !hudScene || !hudScene.textures.exists(spriteKey)) return null;
+    try {
+        var src = hudScene.textures.get(spriteKey).getSourceImage();
+        var w = src.width || src.naturalWidth || 32;
+        var h = src.height || src.naturalHeight || 32;
+        var canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        var ctx = canvas.getContext('2d');
+        if (!ctx) return null;
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(src, 0, 0, w, h);
+        return canvas.toDataURL('image/png');
+    } catch (_) {
+        return null;
+    }
+}
+
 function txt(scene, x, y, str, size, color, wrapWidth) {
     return scene.add.text(x, y, str, {
         fontFamily: '"Press Start 2P", monospace',
@@ -37,11 +56,49 @@ const MetaDialogue = {
 
         // Freeze the active world scene
         const metaScene = hudScene.scene.get('MetaWorldScene');
-        if (metaScene && !hudScene.scene.isSleeping('MetaWorldScene')) metaScene._frozen = true;
+        if (metaScene && !hudScene.scene.isSleeping('MetaWorldScene') && !window.__havenwoodMobileMode) metaScene._frozen = true;
         const gameScene = hudScene.scene.get('GameScene');
-        if (gameScene && !hudScene.scene.isSleeping('GameScene')) gameScene._dialoguePaused = true;
+        // Native RN dialogue sheet handles input — keep sanctuary sim + map pan alive on mobile.
+        if (gameScene && !hudScene.scene.isSleeping('GameScene') && !window.__havenwoodMobileMode) {
+            gameScene._dialoguePaused = true;
+        }
 
         const lineIdx = { current: startLine || 0 };
+
+        if (window.__havenwoodMobileMode) {
+            const portraitDataUrl = spriteKey ? havenwoodPortraitDataUrl(hudScene, spriteKey) : null;
+            const advance = () => {
+                if (lineIdx.current >= lines.length) {
+                    if (choices && choices.length > 0) return;
+                    MetaDialogue.close(hudScene);
+                    if (onClose) onClose();
+                    return;
+                }
+                if (lineIdx.current === lines.length - 1 && (!choices || choices.length === 0)) {
+                    MetaDialogue.close(hudScene);
+                    if (onClose) onClose();
+                    return;
+                }
+                lineIdx.current++;
+                if (onAdvanceLine) onAdvanceLine(lineIdx.current);
+                if (lineIdx.current >= lines.length && choices && choices.length) return;
+                if (lineIdx.current >= lines.length) {
+                    MetaDialogue.close(hudScene);
+                    if (onClose) onClose();
+                }
+            };
+            activeDialogue = {
+                hudScene, speaker, spriteKey: spriteKey || null, portraitDataUrl, lines, choices, onChoice, onClose, lineIdx, advance,
+                _choiceKeys: null, _navKeys: null,
+                _getHighlightIdx: () => 0,
+                _setHighlight: () => {},
+                _choiceCount: () => (choices ? choices.length : 0),
+                container: null,
+            };
+            if (window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true);
+            return;
+        }
+
         const container = hudScene.add.container(0, 0).setDepth(400);
 
         // Dark overlay behind dialogue — interactive to block clicks on background
@@ -266,6 +323,33 @@ const MetaDialogue = {
     advance(hudScene) {
         if (!activeDialogue) return;
         activeDialogue.advance();
+        if (window.__havenwoodMobileMode && window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true);
+    },
+
+    getSnapshot() {
+        if (!activeDialogue) return null;
+        const d = activeDialogue;
+        const atChoices = d.lineIdx.current >= d.lines.length && d.choices && d.choices.length > 0;
+        return {
+            speaker: d.speaker || null,
+            spriteKey: d.spriteKey || null,
+            portraitDataUrl: d.portraitDataUrl || null,
+            line: atChoices ? '' : (d.lines[d.lineIdx.current] || ''),
+            lineIndex: d.lineIdx.current,
+            lineCount: d.lines.length,
+            hasChoices: !!atChoices,
+            choices: atChoices ? d.choices.map(c => ({ label: c.label, action: c.action })) : [],
+            canAdvance: !atChoices,
+        };
+    },
+
+    choose(hudScene, index) {
+        if (!activeDialogue || !activeDialogue.choices || !activeDialogue.choices.length) return;
+        const choice = activeDialogue.choices[index];
+        if (!choice) return;
+        const onChoice = activeDialogue.onChoice;
+        MetaDialogue.close(hudScene);
+        if (onChoice) onChoice(choice.action);
     },
 
     close(hudScene) {
@@ -280,15 +364,18 @@ const MetaDialogue = {
                 nk.destroy();
             }
         }
-        activeDialogue.container.destroy();
+        if (activeDialogue.container) activeDialogue.container.destroy();
         activeDialogue = null;
 
         // Unfreeze the active world scene
         const metaScene = hudScene.scene.get('MetaWorldScene');
-        if (metaScene && !metaScene._startWithPhone) metaScene._frozen = false;
+        if (metaScene && (!metaScene._startWithPhone || window.__havenwoodMobileMode)) metaScene._frozen = false;
         const gameScene = hudScene.scene.get('GameScene');
         if (gameScene) gameScene._dialoguePaused = false;
+        if (window.__havenwoodMobileMode && window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true);
     },
 };
+
+window.__havenwoodDialogueApi = MetaDialogue;
 
 export default MetaDialogue;

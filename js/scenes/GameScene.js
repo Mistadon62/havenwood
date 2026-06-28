@@ -50,7 +50,13 @@ const TRASH_GROSS_RADIUS = 28;
 export default class GameScene extends Phaser.Scene {
     constructor() { super('GameScene'); }
 
-    init(data) { this.isNewGame = data?.newGame !== false; }
+    init(data) {
+        this.isNewGame = data?.newGame !== false;
+        window.__havenwoodActiveSlot =
+            data?.slot === 0 || data?.slot === 1 || data?.slot === 2
+                ? data.slot
+                : (window.__havenwoodActiveSlot ?? 0);
+    }
 
     create() {
         // IMPORTANT: roundPixels must be set on BOTH GameScene and HUDScene cameras.
@@ -69,7 +75,14 @@ export default class GameScene extends Phaser.Scene {
         this.cameras.main.setRoundPixels(true);
         this.sfx = new SoundManager();
         this.sfx.init();
-        this.input.on('pointerdown', () => this.sfx.resume());
+        if (window.__havenwoodMobileMode) {
+            this.input.on('pointerdown', () => this.sfx.resume(true));
+            if (window.__havenwoodConsumeAudioUnlock && window.__havenwoodConsumeAudioUnlock()) {
+                this.sfx.resume(true);
+            }
+        } else {
+            this.input.on('pointerdown', () => this.sfx.resume());
+        }
 
         this.state = {
             day: 1, time: 360, coins: START_COINS, rep: 50, food: 100,
@@ -109,6 +122,7 @@ export default class GameScene extends Phaser.Scene {
         this._dialoguePaused = false;
         this._tutorialZoomed = false;
         this._tutorialTreated = false;
+        this._mobileBuildCanPlace = false;
 
         this.createMap();
         this.overlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000033, 0).setDepth(100);
@@ -124,6 +138,12 @@ export default class GameScene extends Phaser.Scene {
         else { MetaState.reset(); this.game._hasZoomedOut = false; this.game._firstMetaDialogueShown = false; TutorialManager.reset(); }
         this.updateSeason();
         const loadedMeta = this._loadedMode === 'meta';
+        if (window.__havenwoodMobileMode) {
+            this.applyMobileViewport();
+            // Re-apply viewport when returning from MetaWorldScene (wake from sleep).
+            this.events.on('wake', () => this.applyMobileViewport());
+        }
+
         if (this.state.autoSave) {
             if (loadedMeta) this._saveMode = 'meta';
             this.saveGame();
@@ -283,120 +303,7 @@ export default class GameScene extends Phaser.Scene {
             if (this.state.rescuePaused || this._dialoguePaused) { this.game.canvas.style.cursor = 'default'; this.hoverOutline.setVisible(false); return; }
             if (this.state.buildMode) {
                 this.hoverOutline.setVisible(false);
-                const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
-                const isDecor = this.state.buildMode.startsWith('decor_');
-                const isFacility = this.state.buildMode.startsWith('facility_');
-
-                if (this.state.buildMode === '_place_guide') {
-                    const ok = this._canPlaceGuide(gx, gy);
-                    const c = ok ? 0x00ff00 : 0xff0000;
-                    if (this._guidePreview) {
-                        this._guidePreview.setPosition(gx * TILE + TILE / 2, MAP_Y + gy * TILE + TILE / 2).setVisible(true);
-                    }
-                    this.preview.clear().setVisible(true);
-                    this.preview.fillStyle(c, 0.25);
-                    this.preview.fillRect(gx * TILE, MAP_Y + gy * TILE, TILE, TILE);
-                    this.preview.lineStyle(2, c, 0.7);
-                    this.preview.strokeRect(gx * TILE, MAP_Y + gy * TILE, TILE, TILE);
-                    return;
-                }
-
-                if (isDecor) {
-                    if (ptr.isDown && this.canPlaceDecor(gx, gy)) {
-                        const key = `${gx},${gy}`;
-                        if (this._lastDecorTile !== key) {
-                            this._lastDecorTile = key;
-                            this.placeDecor(this.state.buildMode.replace('decor_', ''), gx, gy);
-                        }
-                    }
-                    const ok = this.canPlaceDecor(gx, gy);
-                    const c = ok ? 0x00ff00 : 0xff0000;
-                    if (this._decorPreview) {
-                        this._decorPreview.setPosition(gx * TILE + TILE / 2, MAP_Y + gy * TILE + TILE / 2).setVisible(true);
-                    }
-                    this.preview.clear().setVisible(true);
-                    this.preview.fillStyle(c, 0.25);
-                    this.preview.fillRect(gx * TILE, MAP_Y + gy * TILE, TILE, TILE);
-                    this.preview.lineStyle(2, c, 0.7);
-                    this.preview.strokeRect(gx * TILE, MAP_Y + gy * TILE, TILE, TILE);
-                    return;
-                }
-
-                if (isFacility) {
-                    const facId = this.state.buildMode.replace('facility_', '');
-                    const ft = FACILITIES[facId];
-                    const fw = ft.w, fh = ft.h;
-                    const fgx = gx - Math.floor(fw / 2), fgy = gy - Math.floor(fh / 2);
-                    const ok = this.canPlaceFacility(facId, fgx, fgy);
-                    const c = ok ? 0x00ff00 : 0xff0000;
-                    if (this._buildPreview) {
-                        const dx = fgx * TILE, dy = fgy * TILE;
-                        for (const t of this._buildPreview.tracked) {
-                            t.obj.setVisible(true);
-                            if (t.isGfx) t.obj.setPosition(t.origX + dx, t.origY + dy);
-                            else { t.obj.x = t.origX + dx; t.obj.y = t.origY + dy; }
-                        }
-                    }
-                    this.preview.clear().setVisible(true);
-                    this.preview.fillStyle(c, 0.25);
-                    this.preview.fillRect(fgx * TILE, MAP_Y + fgy * TILE, fw * TILE, fh * TILE);
-                    this.preview.lineStyle(2, c, 0.7);
-                    this.preview.strokeRect(fgx * TILE, MAP_Y + fgy * TILE, fw * TILE, fh * TILE);
-                    return;
-                }
-
-                if (this.state.buildMode.startsWith('_movefac_')) {
-                    const facType = this.state.buildMode.replace('_movefac_', '');
-                    const ft = FACILITIES[facType];
-                    const fw = ft.w, fh = ft.h;
-                    const fgx = gx - Math.floor(fw / 2), fgy = gy - Math.floor(fh / 2);
-                    const ok = this.canPlaceFacilityMove(facType, fgx, fgy);
-                    const c = ok ? 0x00ff00 : 0xff0000;
-                    if (this._facMoveTracked) {
-                        const dx = (fgx - this._facMoveOrigin.gx) * TILE;
-                        const dy = (fgy - this._facMoveOrigin.gy) * TILE;
-                        for (const t of this._facMoveTracked) {
-                            if (t.isGfx) t.obj.setPosition(t.origX + dx, t.origY + dy);
-                            else { t.obj.x = t.origX + dx; t.obj.y = t.origY + dy; }
-                        }
-                    }
-                    this.preview.clear().setVisible(true);
-                    this.preview.fillStyle(c, 0.25);
-                    this.preview.fillRect(fgx * TILE, MAP_Y + fgy * TILE, fw * TILE, fh * TILE);
-                    this.preview.lineStyle(2, c, 0.7);
-                    this.preview.strokeRect(fgx * TILE, MAP_Y + fgy * TILE, fw * TILE, fh * TILE);
-                    return;
-                }
-
-                const isMove = this.state.buildMode.startsWith('_move_');
-                const habType = isMove ? this.state.buildMode.replace('_move_', '') : this.state.buildMode;
-                const ht = HABITATS[habType];
-                const hw = ht.w, hh = ht.h;
-                const hgx = gx - Math.floor(hw / 2), hgy = gy - Math.floor(hh / 2);
-                const ok = isMove ? this.canPlaceMove(habType, hgx, hgy) : this.canPlace(this.state.buildMode, hgx, hgy);
-                const c = ok ? 0x00ff00 : 0xff0000;
-
-                if (isMove && this._moveTracked) {
-                    const dx = (hgx - this._moveOrigin.gx) * TILE;
-                    const dy = (hgy - this._moveOrigin.gy) * TILE;
-                    for (const t of this._moveTracked) {
-                        if (t.isGfx) t.obj.setPosition(t.origX + dx, t.origY + dy);
-                        else { t.obj.x = t.origX + dx; t.obj.y = t.origY + dy; }
-                    }
-                } else if (!isMove && this._buildPreview) {
-                    const dx = hgx * TILE, dy = hgy * TILE;
-                    for (const t of this._buildPreview.tracked) {
-                        t.obj.setVisible(true);
-                        if (t.isGfx) t.obj.setPosition(t.origX + dx, t.origY + dy);
-                        else { t.obj.x = t.origX + dx; t.obj.y = t.origY + dy; }
-                    }
-                }
-
-                this.preview.clear().setVisible(true);
-                this.preview.fillStyle(c, 0.25);
-                this.preview.fillRect(hgx * TILE, MAP_Y + hgy * TILE, hw * TILE, hh * TILE);
-                this.preview.lineStyle(2, c, 0.7);
-                this.preview.strokeRect(hgx * TILE, MAP_Y + hgy * TILE, hw * TILE, hh * TILE);
+                this._updateBuildPreviewAtWorld(ptr.worldX, ptr.worldY, { isDown: ptr.isDown });
                 return;
             }
             this.preview.setVisible(false);
@@ -601,7 +508,7 @@ export default class GameScene extends Phaser.Scene {
                 return;
             }
             const hud = this.scene.get('HUDScene');
-            if (hud && hud.hasOpenPanel()) return;
+            if (hud && hud.hasOpenPanel() && !this.state.buildMode) return;
             if (this.state.buildMode) {
                 const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
                 if (this.state.buildMode === '_place_guide') {
@@ -617,6 +524,7 @@ export default class GameScene extends Phaser.Scene {
                     const fw = ft.w, fh = ft.h;
                     const fgx = gx - Math.floor(fw / 2), fgy = gy - Math.floor(fh / 2);
                     if (this.canPlaceFacility(facId, fgx, fgy)) { this.placeFacility(facId, fgx, fgy); this.exitBuild(); }
+                    else this._mobileBuildPlaceFailed();
                 } else if (this._movingFacility) {
                     const facType = this.state.buildMode.replace('_movefac_', '');
                     const ft = FACILITIES[facType];
@@ -635,6 +543,7 @@ export default class GameScene extends Phaser.Scene {
                         const hw = ht.w, hh = ht.h;
                         const hgx = gx - Math.floor(hw / 2), hgy = gy - Math.floor(hh / 2);
                         if (this.canPlace(this.state.buildMode, hgx, hgy)) { this.placeHabitat(this.state.buildMode, hgx, hgy); this.exitBuild(); }
+                        else this._mobileBuildPlaceFailed();
                     }
                 }
             } else {
@@ -766,7 +675,10 @@ export default class GameScene extends Phaser.Scene {
     // habitatViewClosed. zoomToFacility shows garden mini bars and emits showFacilityView.
 
     zoomToHabitat(hab) {
-        if (!TutorialManager.isComplete() && TutorialManager.step < 3) return;
+        if (!TutorialManager.isComplete() && TutorialManager.step < 3) {
+            const mobileRescued = window.__havenwoodMobileMode && this.state.animals.length > 0;
+            if (!mobileRescued) return;
+        }
         if (this.state.viewingFacility) {
             const oldFac = this.state.facilities.find(f => f.id === this.state.viewingFacility);
             if (oldFac && oldFac.type === 'garden') this.hideGardenMiniBars(oldFac);
@@ -785,7 +697,12 @@ export default class GameScene extends Phaser.Scene {
 
         const cam = this.cameras.main;
         cam.pan(cx, cy, 400, 'Quad.easeInOut', true);
-        cam.zoomTo(2.5, 400, 'Quad.easeInOut', true);
+        cam.zoomTo(2.5, 400, 'Quad.easeInOut', true, () => {
+            if (window.__havenwoodMobileMode) {
+                this._syncMobileAnimalScale();
+                if (window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true);
+            }
+        });
     }
 
     zoomToFacility(fac) {
@@ -834,13 +751,374 @@ export default class GameScene extends Phaser.Scene {
         this.game.events.emit('habitatViewClosed');
 
         const cam = this.cameras.main;
-        cam.pan(W / 2, H / 2, 350, 'Quad.easeInOut', true);
-        cam.zoomTo(1, 350, 'Quad.easeInOut', true, (_cam, progress) => {
+        const cy = this.getMobileViewCenterY();
+        cam.pan(W / 2, cy, 350, 'Quad.easeInOut', true);
+        cam.zoomTo(this.getMobileBaseZoom(), 350, 'Quad.easeInOut', true, (_cam, progress) => {
             if (progress === 1) {
-                cam.scrollX = 0;
-                cam.scrollY = 0;
+                if (window.__havenwoodMobileMode) {
+                    this.applyMobileViewport();
+                    this._syncMobileAnimalScale();
+                } else {
+                    cam.scrollX = 0;
+                    cam.scrollY = 0;
+                }
             }
         });
+    }
+
+    getMobileBaseZoom() {
+        return window.__havenwoodMobileMode ? (this._mobileBaseZoom || 1.6) : 1;
+    }
+
+    getMobileViewCenterY() {
+        return MAP_Y + (ROWS * TILE) / 2;
+    }
+
+    applyMobileViewport() {
+        const cam = this.cameras.main;
+        const mapHeight = ROWS * TILE;
+        const mapCenterY = MAP_Y + mapHeight / 2;
+        // Fill the screen — crop edges rather than letterboxing on phones.
+        const targetFill = 1;
+        const zoomH = (cam.height * targetFill) / mapHeight;
+        const zoomW = (cam.width * targetFill) / W;
+        const mobileZoom = Phaser.Math.Clamp(Math.max(zoomH, zoomW), 0.75, 2.4);
+        this._mobileBaseZoom = mobileZoom;
+        cam.setZoom(mobileZoom);
+        cam.centerOn(W / 2, mapCenterY);
+        this._ensureMobileCameraBounds();
+        this._syncMobileAnimalScale();
+    }
+
+    _syncMobileAnimalScale() {
+        if (!window.__havenwoodMobileMode) return;
+        const zoomed = !!this.state.viewingHabitat || !!this.state.viewingFacility
+            || this.cameras.main.zoom > (this._mobileBaseZoom || 1) * 1.12;
+        for (const a of this.state.animals) {
+            if (!a.sprite || !a.sprite.active) continue;
+            const baby = a.isBaby ? 0.6 : 1;
+            a.sprite.setScale(baby * (zoomed ? 1.1 : 1.85));
+        }
+    }
+
+    _ensureMobileCameraBounds() {
+        if (!window.__havenwoodMobileMode) return;
+        const cam = this.cameras.main;
+        const viewW = cam.width / cam.zoom;
+        const viewH = cam.height / cam.zoom;
+        const worldH = MAP_Y + ROWS * TILE;
+        const slack = 220;
+        const bw = Math.max(W + slack * 2, viewW + slack);
+        const bh = Math.max(worldH + slack * 2, viewH + slack);
+        cam.setBounds((W - bw) / 2, (worldH - bh) / 2, bw, bh);
+    }
+
+    _snapMobileMapOverview() {
+        if (!window.__havenwoodMobileMode) return;
+        this.state.viewingHabitat = null;
+        this.state.viewingFacility = null;
+        this._mobilePanActive = false;
+        this._mobileUserPanned = false;
+        this.tweens.killTweensOf(this.cameras.main);
+        this.applyMobileViewport();
+        this._syncMobileAnimalScale();
+    }
+
+    mobileSetPanDir(dx, dy) {
+        if (!window.__havenwoodMobileMode) return;
+        if (!this._mobilePanDir) this._mobilePanDir = { dx: 0, dy: 0 };
+        this._mobilePanDir.dx = dx;
+        this._mobilePanDir.dy = dy;
+        this._mobilePanActive = Math.abs(dx) >= 0.005 || Math.abs(dy) >= 0.005;
+    }
+
+    _applyMobilePan(delta) {
+        const p = this._mobilePanDir;
+        if (!p || !window.__havenwoodMobileMode) return;
+        if (!this._mobilePanActive) return;
+        const cam = this.cameras.main;
+        if (this.tweens.isTweening(cam)) this.tweens.killTweensOf(cam);
+        this._ensureMobileCameraBounds();
+        const speed = 560 * (delta / 1000) / Math.max(cam.zoom, 0.75);
+        cam.setScroll(cam.scrollX + p.dx * speed, cam.scrollY + p.dy * speed);
+        if (this.state.buildMode) this._tickMobileBuildPreview();
+    }
+
+    _mobileBuildPlaceFailed() {
+        if (!window.__havenwoodMobileMode) return;
+        this.game.events.emit('notification', 'Find open grass with the move stick, then tap Place.');
+        this.sfx.error();
+    }
+
+    mobileInteract() {
+        const dialogueApi = window.__havenwoodDialogueApi;
+        if (this._dialoguePaused && dialogueApi && dialogueApi.isActive && dialogueApi.isActive()) {
+            dialogueApi.advance(this.scene.get('HUDScene'));
+            return;
+        }
+        const hud = this.scene.get('HUDScene');
+        if (window.__havenwoodMobileMode && hud && (hud._mobileSettingsOpen || hud.settingsPanel)) {
+            this.game.events.emit('notification', 'Close Settings to interact with the map.');
+            this.sfx.error();
+            return;
+        }
+        const cam = this.cameras.main;
+        const pt = cam.getWorldPoint(cam.width / 2, cam.height / 2);
+        const handled = this._tapWorld(pt.x, pt.y, cam.width / 2, cam.height / 2);
+        if (!handled && window.__havenwoodMobileMode) {
+            if (hud && hud.hasOpenPanel() && !this.state.buildMode) {
+                this.game.events.emit('notification', 'Close the open panel first.');
+            } else if (this._habSelectMode) {
+                this.game.events.emit('notification', 'Pan to a highlighted habitat and tap Interact.');
+            } else {
+                this.game.events.emit('notification', 'Pan with the move stick until a habitat or building is centered, then tap Interact.');
+            }
+            this.sfx.error();
+        }
+    }
+
+    _mobileCenterWorldPoint() {
+        const cam = this.cameras.main;
+        return cam.getWorldPoint(cam.width / 2, cam.height / 2);
+    }
+
+    _habitatLabel(hab) {
+        const ht = HABITATS[hab.type];
+        return ht ? ht.name : 'Habitat';
+    }
+
+    _facilityLabel(fac) {
+        const ft = FACILITIES[fac.type];
+        return ft ? ft.name : 'Building';
+    }
+
+    _peekInteractAt(worldX, worldY) {
+        if (this._habSelectMode) {
+            const gx = Math.floor(worldX / TILE), gy = Math.floor((worldY - MAP_Y) / TILE);
+            if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
+                const cell = this.grid[gy]?.[gx];
+                if (cell && typeof cell === 'string' && cell.startsWith('hab_') && this._habSelectMode.compatIds?.has(cell)) {
+                    const hab = this.state.habitats.find(h => h.id === cell);
+                    if (hab) return { ready: true, label: this._habitatLabel(hab) };
+                }
+            }
+            return { ready: false, label: 'Select' };
+        }
+        if (this.state.rescuePaused) return { ready: false, label: 'Interact' };
+        const hud = this.scene.get('HUDScene');
+        if (hud && (hud._mobileSettingsOpen || hud.settingsPanel)) return { ready: false, label: 'Interact' };
+        if (hud && hud.hasOpenPanel() && !this.state.buildMode) return { ready: false, label: 'Interact' };
+        if (this.state.buildMode) return { ready: !!this._mobileBuildCanPlace, label: 'Place' };
+
+        if (this.state.viewingFacility) {
+            const t0 = this.getTrashAt(worldX, worldY);
+            if (t0) return { ready: true, label: 'Pick up' };
+            const fac = this.state.facilities.find(f => f.id === this.state.viewingFacility);
+            if (fac && fac.produce) {
+                const hitRadius = 6;
+                for (const slot of fac.produce) {
+                    if (slot.picked) continue;
+                    const dx = worldX - slot.x, dy = worldY - slot.y;
+                    if (dx * dx + dy * dy < hitRadius * hitRadius) return { ready: true, label: 'Collect' };
+                }
+            }
+            const gx = Math.floor(worldX / TILE), gy = Math.floor((worldY - MAP_Y) / TILE);
+            if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
+                const cell = this.grid[gy]?.[gx];
+                if (cell && typeof cell === 'string' && cell.startsWith('hab_')) {
+                    const hab = this.state.habitats.find(h => h.id === cell);
+                    if (hab && (TutorialManager.isComplete() || TutorialManager.step >= 3)) {
+                        return { ready: true, label: this._habitatLabel(hab) };
+                    }
+                }
+            }
+            return { ready: false, label: 'Interact' };
+        }
+
+        if (this.state.viewingHabitat) {
+            const t1 = this.getTrashAt(worldX, worldY);
+            if (t1) return { ready: true, label: 'Pick up' };
+            const gx = Math.floor(worldX / TILE), gy = Math.floor((worldY - MAP_Y) / TILE);
+            if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
+                const cell = this.grid[gy]?.[gx];
+                if (cell && typeof cell === 'string' && cell.startsWith('hab_') && cell !== this.state.viewingHabitat) {
+                    const hab = this.state.habitats.find(h => h.id === cell);
+                    if (hab) return { ready: true, label: this._habitatLabel(hab) };
+                }
+            }
+            return { ready: false, label: 'Interact' };
+        }
+
+        const t = this.getTrashAt(worldX, worldY);
+        if (t) return { ready: true, label: 'Pick up' };
+        const gx = Math.floor(worldX / TILE), gy = Math.floor((worldY - MAP_Y) / TILE);
+        if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
+            const cell = this.grid[gy]?.[gx];
+            if (cell && typeof cell === 'string' && cell.startsWith('hab_')) {
+                const hab = this.state.habitats.find(h => h.id === cell);
+                if (hab) return { ready: true, label: this._habitatLabel(hab) };
+            }
+            if (cell && typeof cell === 'string' && cell.startsWith('fac_')) {
+                const fac = this.state.facilities.find(f => f.id === cell);
+                if (fac) return { ready: true, label: this._facilityLabel(fac) };
+            }
+        }
+        return { ready: false, label: 'Interact' };
+    }
+
+    getMobileInteractState() {
+        if (!window.__havenwoodMobileMode) return { ready: true, label: 'Interact' };
+        const pt = this._mobileCenterWorldPoint();
+        return this._peekInteractAt(pt.x, pt.y);
+    }
+
+    _tapWorld(worldX, worldY, screenX, screenY) {
+        const ptr = { worldX, worldY, x: screenX, y: screenY };
+        if (this._habSelectMode) {
+            const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
+            if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
+                const cell = this.grid[gy]?.[gx];
+                if (cell && typeof cell === 'string' && cell.startsWith('hab_') && this._habSelectMode.compatIds?.has(cell)) {
+                    const hab = this.state.habitats.find(h => h.id === cell);
+                    if (hab) {
+                        const select = this._habSelectMode.onSelect;
+                        this._exitHabitatSelect();
+                        if (select) select(hab);
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+        if (this.state.rescuePaused) return false;
+        const hud = this.scene.get('HUDScene');
+        if (hud && hud.hasOpenPanel() && !this.state.buildMode) return false;
+
+        if (this.state.viewingFacility) {
+            const t0 = this.getTrashAt(ptr.worldX, ptr.worldY);
+            if (t0) { this.pickUpTrash(t0.id); return true; }
+            const fac = this.state.facilities.find(f => f.id === this.state.viewingFacility);
+            if (fac && fac.produce) {
+                const hitRadius = 6;
+                for (const slot of fac.produce) {
+                    if (slot.picked) continue;
+                    const dx = ptr.worldX - slot.x, dy = ptr.worldY - slot.y;
+                    if (dx * dx + dy * dy < hitRadius * hitRadius) {
+                        this.pickProduce(fac, slot);
+                        return true;
+                    }
+                }
+            }
+            const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
+            if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
+                const cell = this.grid[gy]?.[gx];
+                if (cell && typeof cell === 'string' && cell.startsWith('hab_')) {
+                    const hab = this.state.habitats.find(h => h.id === cell);
+                    if (hab && (TutorialManager.isComplete() || TutorialManager.step >= 3)) {
+                        this.sfx.click();
+                        this.zoomToHabitat(hab);
+                        this.game.events.emit('showHabitatInfo', hab);
+                        const habAnimals = this.state.animals.filter(a => a.habitatId === hab.id);
+                        if (habAnimals.length > 0) this.selectAnimal(Phaser.Utils.Array.GetRandom(habAnimals));
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        if (this.state.viewingHabitat) {
+            const t1 = this.getTrashAt(ptr.worldX, ptr.worldY);
+            if (t1) { this.pickUpTrash(t1.id); return true; }
+            const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
+            if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
+                const cell = this.grid[gy]?.[gx];
+                if (cell && typeof cell === 'string' && cell.startsWith('hab_') && cell !== this.state.viewingHabitat) {
+                    const hab = this.state.habitats.find(h => h.id === cell);
+                    if (hab) {
+                        this.sfx.click();
+                        this.zoomToHabitat(hab);
+                        this.game.events.emit('showHabitatInfo', hab);
+                        const habAnimals = this.state.animals.filter(a => a.habitatId === hab.id);
+                        if (habAnimals.length > 0) this.selectAnimal(Phaser.Utils.Array.GetRandom(habAnimals));
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        if (this.state.buildMode) {
+            const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
+            if (this.state.buildMode === '_place_guide') {
+                if (this._canPlaceGuide(gx, gy)) { this._finishGuidePlacement(gx, gy); return true; }
+                return false;
+            } else if (this.state.buildMode.startsWith('decor_')) {
+                if (this.canPlaceDecor(gx, gy)) {
+                    this._lastDecorTile = `${gx},${gy}`;
+                    this.placeDecor(this.state.buildMode.replace('decor_', ''), gx, gy);
+                    return true;
+                }
+                return false;
+            } else if (this.state.buildMode.startsWith('facility_')) {
+                const facId = this.state.buildMode.replace('facility_', '');
+                const ft = FACILITIES[facId];
+                const fgx = gx - Math.floor(ft.w / 2), fgy = gy - Math.floor(ft.h / 2);
+                if (this.canPlaceFacility(facId, fgx, fgy)) { this.placeFacility(facId, fgx, fgy); this.exitBuild(); return true; }
+                this._mobileBuildPlaceFailed();
+                return true;
+            } else if (this._movingFacility) {
+                const facType = this.state.buildMode.replace('_movefac_', '');
+                const ft = FACILITIES[facType];
+                const fgx = gx - Math.floor(ft.w / 2), fgy = gy - Math.floor(ft.h / 2);
+                if (this.canPlaceFacilityMove(facType, fgx, fgy)) { this.finishFacilityMove(fgx, fgy); return true; }
+                return false;
+            } else if (this._movingHabitat) {
+                const habType = this.state.buildMode.replace('_move_', '');
+                const ht = HABITATS[habType];
+                const hgx = gx - Math.floor(ht.w / 2), hgy = gy - Math.floor(ht.h / 2);
+                if (this.canPlaceMove(habType, hgx, hgy)) { this.finishMove(hgx, hgy); return true; }
+                return false;
+            } else {
+                const ht = HABITATS[this.state.buildMode];
+                if (ht) {
+                    const hgx = gx - Math.floor(ht.w / 2), hgy = gy - Math.floor(ht.h / 2);
+                    if (this.canPlace(this.state.buildMode, hgx, hgy)) { this.placeHabitat(this.state.buildMode, hgx, hgy); this.exitBuild(); return true; }
+                    this._mobileBuildPlaceFailed();
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        const t = this.getTrashAt(ptr.worldX, ptr.worldY);
+        if (t) {
+            this.pickUpTrash(t.id);
+            return true;
+        }
+        const gx = Math.floor(ptr.worldX / TILE), gy = Math.floor((ptr.worldY - MAP_Y) / TILE);
+        if (gy >= 0 && gy < ROWS && gx >= 0 && gx < COLS) {
+            const cell = this.grid[gy]?.[gx];
+            if (cell && typeof cell === 'string' && cell.startsWith('hab_')) {
+                const hab = this.state.habitats.find(h => h.id === cell);
+                if (hab) {
+                    this.sfx.click();
+                    this.zoomToHabitat(hab);
+                    this.game.events.emit('showHabitatInfo', hab);
+                    const habAnimals = this.state.animals.filter(a => a.habitatId === hab.id);
+                    if (habAnimals.length > 0) this.selectAnimal(Phaser.Utils.Array.GetRandom(habAnimals));
+                    return true;
+                }
+            } else if (cell && typeof cell === 'string' && cell.startsWith('fac_')) {
+                const fac = this.state.facilities.find(f => f.id === cell);
+                if (fac) {
+                    this.sfx.click();
+                    this.zoomToFacility(fac);
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     clearSelectedAnimal() {
@@ -885,8 +1163,7 @@ export default class GameScene extends Phaser.Scene {
         cam.pan(W / 2, H / 2, 350, 'Quad.easeInOut', true);
         cam.zoomTo(1, 350, 'Quad.easeInOut', true, (_cam, progress) => {
             if (progress === 1) {
-                cam.scrollX = 0;
-                cam.scrollY = 0;
+                if (!window.__havenwoodMobileMode) { cam.scrollX = 0; cam.scrollY = 0; }
 
                 const ht = HABITATS[hab.type];
                 const hw = hab.w ?? ht.w, hh = hab.h ?? ht.h;
@@ -1006,8 +1283,7 @@ export default class GameScene extends Phaser.Scene {
         cam.pan(W / 2, H / 2, 350, 'Quad.easeInOut', true);
         cam.zoomTo(1, 350, 'Quad.easeInOut', true, (_cam, progress) => {
             if (progress === 1) {
-                cam.scrollX = 0;
-                cam.scrollY = 0;
+                if (!window.__havenwoodMobileMode) { cam.scrollX = 0; cam.scrollY = 0; }
 
                 const ft = FACILITIES[fac.type];
                     const fw = fac.w ?? ft.w, fh = fac.h ?? ft.h;
@@ -1342,13 +1618,18 @@ export default class GameScene extends Phaser.Scene {
         } else {
             this._preBuildPanel = null;
         }
-        if (this.state.viewingHabitat || this.state.viewingFacility || this.cameras.main.zoom > 1) {
+        if (window.__havenwoodMobileMode) {
+            if (this.state.viewingHabitat || this.state.viewingFacility || this.cameras.main.zoom > this.getMobileBaseZoom() * 1.05) {
+                this._snapMobileMapOverview();
+            }
+        } else if (this.state.viewingHabitat || this.state.viewingFacility || this.cameras.main.zoom > 1) {
             this.zoomOut();
         }
         this.state.buildMode = type;
         this._createBuildPreview(type);
         this._hideNPCs();
         this.game.events.emit('buildModeChanged', type);
+        if (window.__havenwoodMobileMode) this._tickMobileBuildPreview();
     }
 
     exitBuild() {
@@ -1387,6 +1668,7 @@ export default class GameScene extends Phaser.Scene {
         this._decorPreview = this.add.image(0, 0, `decor_${decorId}`).setDepth(56).setAlpha(0.7).setVisible(false);
         this._hideNPCs();
         this.game.events.emit('buildModeChanged', this.state.buildMode);
+        if (window.__havenwoodMobileMode) this._tickMobileBuildPreview();
     }
 
     canPlaceDecor(gx, gy) {
@@ -1456,6 +1738,7 @@ export default class GameScene extends Phaser.Scene {
         this._createFacilityPreview(facId);
         this._hideNPCs();
         this.game.events.emit('buildModeChanged', this.state.buildMode);
+        if (window.__havenwoodMobileMode) this._tickMobileBuildPreview();
     }
 
     canPlaceFacility(facId, gx, gy) {
@@ -1768,6 +2051,151 @@ export default class GameScene extends Phaser.Scene {
         this._buildPreview = null;
     }
 
+    /** Drive ghost preview from world coordinates (touch / screen center on mobile). */
+    _updateBuildPreviewAtWorld(worldX, worldY, opts = {}) {
+        if (!this.state.buildMode) return;
+        const gx = Math.floor(worldX / TILE);
+        const gy = Math.floor((worldY - MAP_Y) / TILE);
+        const isDecor = this.state.buildMode.startsWith('decor_');
+        const isFacility = this.state.buildMode.startsWith('facility_');
+        let ok = false;
+
+        if (this.state.buildMode === '_place_guide') {
+            ok = this._canPlaceGuide(gx, gy);
+            const c = ok ? 0x00ff00 : 0xff0000;
+            if (this._guidePreview) {
+                this._guidePreview.setPosition(gx * TILE + TILE / 2, MAP_Y + gy * TILE + TILE / 2).setVisible(true);
+            }
+            this.preview.clear().setVisible(true);
+            this.preview.fillStyle(c, 0.25);
+            this.preview.fillRect(gx * TILE, MAP_Y + gy * TILE, TILE, TILE);
+            this.preview.lineStyle(2, c, 0.7);
+            this.preview.strokeRect(gx * TILE, MAP_Y + gy * TILE, TILE, TILE);
+            this._mobileBuildCanPlace = ok;
+            return;
+        }
+
+        if (isDecor) {
+            if (opts.isDown && this.canPlaceDecor(gx, gy)) {
+                const key = `${gx},${gy}`;
+                if (this._lastDecorTile !== key) {
+                    this._lastDecorTile = key;
+                    this.placeDecor(this.state.buildMode.replace('decor_', ''), gx, gy);
+                }
+            }
+            ok = this.canPlaceDecor(gx, gy);
+            const c = ok ? 0x00ff00 : 0xff0000;
+            if (this._decorPreview) {
+                this._decorPreview.setPosition(gx * TILE + TILE / 2, MAP_Y + gy * TILE + TILE / 2).setVisible(true);
+            }
+            this.preview.clear().setVisible(true);
+            this.preview.fillStyle(c, 0.25);
+            this.preview.fillRect(gx * TILE, MAP_Y + gy * TILE, TILE, TILE);
+            this.preview.lineStyle(2, c, 0.7);
+            this.preview.strokeRect(gx * TILE, MAP_Y + gy * TILE, TILE, TILE);
+            this._mobileBuildCanPlace = ok;
+            return;
+        }
+
+        if (isFacility) {
+            const facId = this.state.buildMode.replace('facility_', '');
+            const ft = FACILITIES[facId];
+            const fw = ft.w, fh = ft.h;
+            const fgx = gx - Math.floor(fw / 2), fgy = gy - Math.floor(fh / 2);
+            ok = this.canPlaceFacility(facId, fgx, fgy);
+            const c = ok ? 0x00ff00 : 0xff0000;
+            if (this._buildPreview) {
+                const dx = fgx * TILE, dy = fgy * TILE;
+                for (const t of this._buildPreview.tracked) {
+                    t.obj.setVisible(true);
+                    if (t.isGfx) t.obj.setPosition(t.origX + dx, t.origY + dy);
+                    else { t.obj.x = t.origX + dx; t.obj.y = t.origY + dy; }
+                }
+            }
+            this.preview.clear().setVisible(true);
+            this.preview.fillStyle(c, 0.25);
+            this.preview.fillRect(fgx * TILE, MAP_Y + fgy * TILE, fw * TILE, fh * TILE);
+            this.preview.lineStyle(2, c, 0.7);
+            this.preview.strokeRect(fgx * TILE, MAP_Y + fgy * TILE, fw * TILE, fh * TILE);
+            this._mobileBuildCanPlace = ok;
+            return;
+        }
+
+        if (this.state.buildMode.startsWith('_movefac_')) {
+            const facType = this.state.buildMode.replace('_movefac_', '');
+            const ft = FACILITIES[facType];
+            const fw = ft.w, fh = ft.h;
+            const fgx = gx - Math.floor(fw / 2), fgy = gy - Math.floor(fh / 2);
+            ok = this.canPlaceFacilityMove(facType, fgx, fgy);
+            const c = ok ? 0x00ff00 : 0xff0000;
+            if (this._facMoveTracked) {
+                const dx = (fgx - this._facMoveOrigin.gx) * TILE;
+                const dy = (fgy - this._facMoveOrigin.gy) * TILE;
+                for (const t of this._facMoveTracked) {
+                    if (t.isGfx) t.obj.setPosition(t.origX + dx, t.origY + dy);
+                    else { t.obj.x = t.origX + dx; t.obj.y = t.origY + dy; }
+                }
+            }
+            this.preview.clear().setVisible(true);
+            this.preview.fillStyle(c, 0.25);
+            this.preview.fillRect(fgx * TILE, MAP_Y + fgy * TILE, fw * TILE, fh * TILE);
+            this.preview.lineStyle(2, c, 0.7);
+            this.preview.strokeRect(fgx * TILE, MAP_Y + fgy * TILE, fw * TILE, fh * TILE);
+            this._mobileBuildCanPlace = ok;
+            return;
+        }
+
+        const isMove = this.state.buildMode.startsWith('_move_');
+        const habType = isMove ? this.state.buildMode.replace('_move_', '') : this.state.buildMode;
+        const ht = HABITATS[habType];
+        if (!ht) { this._mobileBuildCanPlace = false; return; }
+        const hw = ht.w, hh = ht.h;
+        const hgx = gx - Math.floor(hw / 2), hgy = gy - Math.floor(hh / 2);
+        ok = isMove ? this.canPlaceMove(habType, hgx, hgy) : this.canPlace(this.state.buildMode, hgx, hgy);
+        const c = ok ? 0x00ff00 : 0xff0000;
+
+        if (isMove && this._moveTracked) {
+            const dx = (hgx - this._moveOrigin.gx) * TILE;
+            const dy = (hgy - this._moveOrigin.gy) * TILE;
+            for (const t of this._moveTracked) {
+                if (t.isGfx) t.obj.setPosition(t.origX + dx, t.origY + dy);
+                else { t.obj.x = t.origX + dx; t.obj.y = t.origY + dy; }
+            }
+        } else if (!isMove && this._buildPreview) {
+            const dx = hgx * TILE, dy = hgy * TILE;
+            for (const t of this._buildPreview.tracked) {
+                t.obj.setVisible(true);
+                if (t.isGfx) t.obj.setPosition(t.origX + dx, t.origY + dy);
+                else { t.obj.x = t.origX + dx; t.obj.y = t.origY + dy; }
+            }
+        }
+
+        this.preview.clear().setVisible(true);
+        this.preview.fillStyle(c, 0.25);
+        this.preview.fillRect(hgx * TILE, MAP_Y + hgy * TILE, hw * TILE, hh * TILE);
+        this.preview.lineStyle(2, c, 0.7);
+        this.preview.strokeRect(hgx * TILE, MAP_Y + hgy * TILE, hw * TILE, hh * TILE);
+        this._mobileBuildCanPlace = ok;
+    }
+
+    _tickMobileBuildPreview() {
+        if (!window.__havenwoodMobileMode || !this.state.buildMode) return;
+        const cam = this.cameras.main;
+        const pt = cam.getWorldPoint(cam.width / 2, cam.height / 2);
+        this._updateBuildPreviewAtWorld(pt.x, pt.y);
+    }
+
+    getMobileBuildPlacement() {
+        if (!window.__havenwoodMobileMode || !this.state.buildMode) return null;
+        const m = this.state.buildMode;
+        let label = 'Build';
+        if (HABITATS[m]) label = HABITATS[m].name;
+        else if (m.startsWith('facility_')) label = FACILITIES[m.replace('facility_', '')]?.name || 'Facility';
+        else if (m.startsWith('decor_')) label = DECORATIONS[m.replace('decor_', '')]?.name || 'Decor';
+        else if (m === '_place_guide') label = 'Tour Guide';
+        return { label, canPlace: !!this._mobileBuildCanPlace };
+    }
+
     _hideNPCs() {
         for (const v of this.visitors) {
             v.sprite.setVisible(false);
@@ -2062,6 +2490,7 @@ export default class GameScene extends Phaser.Scene {
 
         this.state.animals.push(animal);
         hab.animals.push(animal.id);
+        if (window.__havenwoodMobileMode) this._syncMobileAnimalScale();
         return animal;
     }
 
@@ -2595,7 +3024,15 @@ export default class GameScene extends Phaser.Scene {
         }
         this.state.seasonsVisited.add(this.state.season);
         const s = SEASONS[this.state.season];
-        this.seasonOverlay.setFillStyle(s.tint, s.tintAlpha);
+        if (window.__havenwoodMobileMode) {
+            this.seasonOverlay.setFillStyle(s.tint, s.tintAlpha * 0.65);
+        } else {
+            if (window.__havenwoodMobileMode) {
+            this.seasonOverlay.setFillStyle(s.tint, 0);
+        } else {
+            this.seasonOverlay.setFillStyle(s.tint, s.tintAlpha);
+        }
+        }
         this.updateSeasonParticles();
     }
 
@@ -2637,7 +3074,15 @@ export default class GameScene extends Phaser.Scene {
         } else {
             color = 0x000033; alpha = 0.32;
         }
-        this.overlay.setFillStyle(color, alpha);
+        if (window.__havenwoodMobileMode) {
+            this.overlay.setFillStyle(color, alpha * 0.55);
+        } else {
+            if (window.__havenwoodMobileMode) {
+            this.overlay.setFillStyle(color, 0);
+        } else {
+            this.overlay.setFillStyle(color, alpha);
+        }
+        }
         this.game.events.emit('timeUpdate', {
             time: this.state.time, day: this.state.day,
             season: this.state.season, rep: this.state.rep
@@ -4581,6 +5026,18 @@ export default class GameScene extends Phaser.Scene {
             const viewedHab = this.state.habitats.find(h => h.id === this.state.viewingHabitat);
             if (viewedHab) this.game.events.emit('showHabitatInfo', viewedHab);
         }
+        if (window.__havenwoodMobileMode) {
+            this.time.delayedCall(650, () => {
+                const h = this.state.habitats.find(x => x.id === hab.id);
+                if (!h) return;
+                this.zoomToHabitat(h);
+                this.game.events.emit('showHabitatInfo', h);
+                const newest = this.state.animals.filter(a => a.habitatId === hab.id).slice(-1)[0];
+                if (newest) this.selectAnimal(newest);
+                this._syncMobileAnimalScale();
+                if (window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true);
+            });
+        }
     }
 
     /* ========== HABITAT SELECTION MODE ========== */
@@ -4617,7 +5074,9 @@ export default class GameScene extends Phaser.Scene {
         const sp = SPECIES[ev.speciesId];
         const compatIds = new Set(this.findAllCompatibleHabitats(sp).map(h => h.id));
         const hud = this.scene.get('HUDScene');
-        this._enterHabitatSelect(compatIds, `Click a habitat to place ${ev.name}`, hab => {
+        this._enterHabitatSelect(compatIds, window.__havenwoodMobileMode
+            ? `Pan to a highlighted habitat and tap Interact to place ${ev.name}`
+            : `Click a habitat to place ${ev.name}`, hab => {
             if (hud) hud._pendingRescue = null;
             this.state.rescuePaused = false;
             this.acceptRescueInto(ev, hab);
@@ -4635,7 +5094,9 @@ export default class GameScene extends Phaser.Scene {
                 .filter(h => h.id !== animal.habitatId)
                 .map(h => h.id)
         );
-        this._enterHabitatSelect(compatIds, `Click a habitat to relocate ${animal.name}`, hab => {
+        this._enterHabitatSelect(compatIds, window.__havenwoodMobileMode
+            ? `Pan to a highlighted habitat and tap Interact to relocate ${animal.name}`
+            : `Click a habitat to relocate ${animal.name}`, hab => {
             this.relocateAnimal(animal, hab);
         }, () => {
             const srcHab = this.state.habitats.find(h => h.id === animal.habitatId);
@@ -4817,13 +5278,24 @@ export default class GameScene extends Phaser.Scene {
                 wantsTour: v.wantsTour || false, wantsGiftShop: v.wantsGiftShop || false, wantsBathroom: v.wantsBathroom || false,
             })),
         };
-        localStorage.setItem('havenwood_save', JSON.stringify(data));
+        const __hwSlot = (window.__havenwoodActiveSlot === 0 || window.__havenwoodActiveSlot === 1 || window.__havenwoodActiveSlot === 2) ? window.__havenwoodActiveSlot : 0;
+        localStorage.setItem('havenwood_save_slot_' + __hwSlot, JSON.stringify(data));
+        try {
+            localStorage.setItem('havenwood_save_slot_meta_' + __hwSlot, JSON.stringify({ updatedAt: new Date().toISOString() }));
+            window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
+                type: 'gameSave',
+                gameId: 'havenwood',
+                slot: __hwSlot,
+                stateJson: localStorage.getItem('havenwood_save_slot_' + __hwSlot),
+            }));
+        } catch (_) {}
         // Also save meta-world state when saving in meta mode
         if (this._saveMode === 'meta') MetaState.save();
     }
 
     loadGame() {
-        const raw = localStorage.getItem('havenwood_save');
+        const __hwLoadSlot = (window.__havenwoodActiveSlot === 0 || window.__havenwoodActiveSlot === 1 || window.__havenwoodActiveSlot === 2) ? window.__havenwoodActiveSlot : 0;
+        const raw = localStorage.getItem('havenwood_save_slot_' + __hwLoadSlot);
         if (!raw) return;
         try {
             const d = JSON.parse(raw);
@@ -4968,7 +5440,8 @@ export default class GameScene extends Phaser.Scene {
 
     exportSave() {
         this.saveGame();
-        const raw = localStorage.getItem('havenwood_save');
+        const __hwExportSlot = (window.__havenwoodActiveSlot === 0 || window.__havenwoodActiveSlot === 1 || window.__havenwoodActiveSlot === 2) ? window.__havenwoodActiveSlot : 0;
+        const raw = localStorage.getItem('havenwood_save_slot_' + __hwExportSlot);
         const blob = new Blob([raw], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -4985,15 +5458,26 @@ export default class GameScene extends Phaser.Scene {
     // run on independent Phaser timers and have their own pause guards for the same conditions.
 
     update(time, delta) {
-        if (this.state.rescuePaused || this.state.settingsPaused || this._dialoguePaused || this._movingHabitat || this._habSelectMode || this.state.buildMode) return;
-        this.updateTime(delta);
-        this.updateAnimals(delta, time);
-        this.updateVisitors(delta);
-        this.updateStaff(delta);
-        this.updateMissions(delta);
-        this.updateGardens(delta);
-        this.updateBathrooms(delta);
+        const simPaused = this.state.rescuePaused || this.state.settingsPaused || this._dialoguePaused
+            || this._movingHabitat || this._habSelectMode || this.state.buildMode;
+        if (!simPaused) {
+            this.updateTime(delta);
+            this.updateVisitors(delta);
+            this.updateStaff(delta);
+            this.updateMissions(delta);
+            this.updateGardens(delta);
+            this.updateBathrooms(delta);
+        }
         this.sfx.updateAmbient(delta, this.state.time);
+        // Keep animals moving/visible even while placing buildings (time stays paused).
+        if (!this.state.rescuePaused && !this.state.settingsPaused && !this._dialoguePaused) {
+            this.updateAnimals(delta, time);
+        }
+
+        if (window.__havenwoodMobileMode) {
+            this._applyMobilePan(delta);
+            if (this.state.buildMode) this._tickMobileBuildPreview();
+        }
 
         if (this.state.autoSave) {
             this._autoSaveAccum += delta;

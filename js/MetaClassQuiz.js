@@ -341,7 +341,9 @@ const MetaClassQuiz = {
             contBg.lineStyle(1, 0x5A8AAA, 0.7);
             contBg.strokeRoundedRect(W / 2 - 100, contY, 200, 36, 6);
             revealContainer.add(contBg);
-            revealContainer.add(_txt(hudScene, W / 2, contY + 18, isLast ? '[E] See Results' : '[E] Next Question', 9, '#CCEEEE').setOrigin(0.5, 0.5));
+            revealContainer.add(_txt(hudScene, W / 2, contY + 18, isLast
+                ? (window.__havenwoodMobileMode ? 'Tap See Results' : '[E] See Results')
+                : (window.__havenwoodMobileMode ? 'Tap Next Question' : '[E] Next Question'), 9, '#CCEEEE').setOrigin(0.5, 0.5));
             const contHit = hudScene.add.rectangle(W / 2, contY + 18, 200, 36, 0, 0).setInteractive({ useHandCursor: true });
             revealContainer.add(contHit);
 
@@ -404,7 +406,7 @@ const MetaClassQuiz = {
             closeBg.lineStyle(1, 0x5A8AAA, 0.7);
             closeBg.strokeRoundedRect(W / 2 - 100, closeY, 200, 34, 6);
             revealContainer.add(closeBg);
-            revealContainer.add(_txt(hudScene, W / 2, closeY + 17, '[E] Finish Class', 9, '#CCEEEE').setOrigin(0.5, 0.5));
+            revealContainer.add(_txt(hudScene, W / 2, closeY + 17, window.__havenwoodMobileMode ? 'Tap Finish Class' : '[E] Finish Class', 9, '#CCEEEE').setOrigin(0.5, 0.5));
             const closeHit = hudScene.add.rectangle(W / 2, closeY + 17, 200, 34, 0, 0).setInteractive({ useHandCursor: true });
             revealContainer.add(closeHit);
 

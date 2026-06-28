@@ -45,10 +45,19 @@ export default class HUDScene extends Phaser.Scene {
         this.createBuildHintBar();
         this.listenEvents();
 
-        // Hide HUD if we're about to transition to meta-world
-        if (this.gs && this.gs._transitioningToMeta) {
-            this.add.rectangle(W / 2, H / 2, W, H, 0x000000).setDepth(9999);
+        // Native UI owns HUD taps — don't let this overlay scene eat canvas input.
+        if (window.__havenwoodMobileMode) this.input.enabled = false;
+
+        // Hide HUD if we're about to transition to meta-world (desktop only).
+        // Mobile: React Native overlay handles the transition; adding a rect here
+        // causes a permanent black screen when HUDScene wakes after returning to sanctuary.
+        if (!window.__havenwoodMobileMode && this.gs && this.gs._transitioningToMeta) {
+            this._metaTransitionCover = this.add.rectangle(W / 2, H / 2, W, H, 0x000000).setDepth(9999);
         }
+        // Destroy the cover when we wake from sleep (returning to sanctuary from meta-world).
+        this.events.on('wake', () => {
+            if (this._metaTransitionCover) { this._metaTransitionCover.destroy(); this._metaTransitionCover = null; }
+        });
 
         this.time.delayedCall(0, () => this.syncState());
     }
@@ -94,6 +103,12 @@ export default class HUDScene extends Phaser.Scene {
     // Syncs HUD display from GameScene state (coins, time, research points).
     syncState() {
         const s = this.gs.state;
+        if (window.__havenwoodMobileMode) {
+            const mult = this.gs.timeSpeedMult;
+            this._activeSpeed = mult <= 0.5 ? 'slow' : mult >= 3 ? 'fast' : 'normal';
+            TutorialManager.start(this);
+            return;
+        }
         this.updateCoins(s.coins);
         this.updateFood(s.food);
         this.updateTime({ time: s.time, day: s.day, season: s.season, rep: s.rep });
@@ -113,6 +128,7 @@ export default class HUDScene extends Phaser.Scene {
     // (tortoise/hare with graphics-based highlight behind active icon), research points, food count,
     // coins, settings gear. All elements are vertically centered at midY=21 using setOrigin(_, 0.5).
     createTopBar() {
+        if (window.__havenwoodMobileMode) return;
         const bar = this.add.graphics();
         bar.fillStyle(CLR.uiBg, 1); bar.fillRect(0, 0, W, 42);
         bar.lineStyle(1, CLR.uiBorder); bar.lineBetween(0, 42, W, 42);
@@ -170,6 +186,12 @@ export default class HUDScene extends Phaser.Scene {
     // Resume buttons, and an Auto-Save checkbox. Auto-save setting is persisted in the save file.
 
     toggleSettingsMenu() {
+        if (window.__havenwoodMobileMode) {
+            this._mobileSettingsOpen = !this._mobileSettingsOpen;
+            if (this._mobileSettingsOpen) this.gs.state.settingsPaused = true;
+            else this.closeSettingsMenu();
+            return;
+        }
         if (this.settingsPanel) { this.closeSettingsMenu(); return; }
         this.gs.state.settingsPaused = true;
 
@@ -257,6 +279,12 @@ export default class HUDScene extends Phaser.Scene {
     }
 
     closeSettingsMenu() {
+        if (window.__havenwoodMobileMode) {
+            this._mobileSettingsOpen = false;
+            if (this.gs) this.gs.state.settingsPaused = false;
+            if (this.settingsPanel) { this.settingsPanel.destroy(); this.settingsPanel = null; }
+            return;
+        }
         if (this.settingsPanel) { this.settingsPanel.destroy(); this.settingsPanel = null; }
         this.gs.state.settingsPaused = false;
     }
@@ -268,6 +296,10 @@ export default class HUDScene extends Phaser.Scene {
     // All elements stored in toolbarElements for hide/show during habitat/facility zoom.
     // Build hint bar (pre-created in createBuildHintBar) replaces toolbar during build mode.
     createToolbar() {
+        if (window.__havenwoodMobileMode) {
+            this.toolBtns = [];
+            return;
+        }
         const barY = H - 62;
         this.toolbarElements = [];
         const bar = this.add.graphics();
@@ -390,6 +422,7 @@ export default class HUDScene extends Phaser.Scene {
     // display list churn that produces a one-frame pixel jump in the UI. Pre-creating
     // avoids this. Apply the same pattern for any UI bar that toggles frequently.
     createBuildHintBar() {
+        if (window.__havenwoodMobileMode) return;
         const barY = H - 62;
         const bar = this.add.graphics().setDepth(250);
         bar.fillStyle(CLR.uiBg, 1); bar.fillRect(0, barY, W, 62);
@@ -421,6 +454,14 @@ export default class HUDScene extends Phaser.Scene {
     // selected category at the bottom (highlighted, right arrow), and item picker to its right.
 
     toggleBuildPopup(anchorX, barY) {
+        if (window.__havenwoodMobileMode) {
+            if (this._mobileBuildOpen) { this.closeMobileBuildMenu(); return; }
+            this.closeAllPanels();
+            this._activePanel = 'build';
+            this._mobileBuildOpen = true;
+            this._mobileBuildCategory = null;
+            return;
+        }
         if (this.buildPopup) { this.closeBuildPopup(); return; }
         this.closeAllPanels();
         this._activePanel = 'build';
@@ -747,6 +788,7 @@ export default class HUDScene extends Phaser.Scene {
     }
 
     closeBuildPopup() {
+        if (window.__havenwoodMobileMode) { this.closeMobileBuildMenu(); return; }
         if (this._buildDecorMaskGraphics) { this._buildDecorMaskGraphics.destroy(); this._buildDecorMaskGraphics = null; }
         if (this._buildDecorWheelCleanup) { this._buildDecorWheelCleanup(); this._buildDecorWheelCleanup = null; }
         this._buildPopupBounds = null;
@@ -780,15 +822,17 @@ export default class HUDScene extends Phaser.Scene {
             } else {
                 this.showBuildHint();
             }
-            this.toolBtns.forEach(b => {
-                if (!TutorialManager.isComplete() && !TutorialManager.isButtonUnlocked(b.key)) {
-                    this.drawToolBtn(b.bg, b.x, b.y, b.color, false, b.gap, true);
-                    return;
-                }
-                const isActive = b.key === mode ||
-                    (b.key === 'build' && mode && (HABITATS[mode] || (mode && mode.startsWith('decor_')) || (mode && mode.startsWith('facility_'))));
-                this.drawToolBtn(b.bg, b.x, b.y, b.color, isActive, b.gap);
-            });
+            if (this.toolBtns) {
+                this.toolBtns.forEach(b => {
+                    if (!TutorialManager.isComplete() && !TutorialManager.isButtonUnlocked(b.key)) {
+                        this.drawToolBtn(b.bg, b.x, b.y, b.color, false, b.gap, true);
+                        return;
+                    }
+                    const isActive = b.key === mode ||
+                        (b.key === 'build' && mode && (HABITATS[mode] || (mode && mode.startsWith('decor_')) || (mode && mode.startsWith('facility_'))));
+                    this.drawToolBtn(b.bg, b.x, b.y, b.color, isActive, b.gap);
+                });
+            }
         };
         ev.on('buildModeChanged', this._onBuildModeChanged);
         this._onHabitatViewClosed = () => {
@@ -797,6 +841,12 @@ export default class HUDScene extends Phaser.Scene {
             if (this.facilityPanel) { this.facilityPanel.destroy(); this.facilityPanel = null; this._facilityPanelBathroom = null; }
             this.destroyBackBar();
             this.showToolbar();
+            if (window.__havenwoodMobileMode) {
+                this._mobileHabitatHidden = false;
+                this._mobileFacilityHidden = false;
+                this._viewedHabitatId = null;
+                this._viewedFacilityId = null;
+            }
         };
         ev.on('habitatViewClosed', this._onHabitatViewClosed);
         this._onShowFacilityView = fac => this.showFacilityBackBar(fac);
@@ -822,7 +872,13 @@ export default class HUDScene extends Phaser.Scene {
         ev.on('upgradesUpdate', this._onUpgradesUpdate);
         this._onStaffUpdate = () => { if (this.staffPanel) this.showStaffPanel(); };
         ev.on('staffUpdate', this._onStaffUpdate);
-        this._onMissionsUpdate = () => { if (this.missionPanel) this.showMissionPanel(); };
+        this._onMissionsUpdate = () => {
+            if (window.__havenwoodMobileMode && this._mobileManagementPanel === 'missions') {
+                if (window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true);
+                return;
+            }
+            if (this.missionPanel) this.showMissionPanel();
+        };
         ev.on('missionsUpdate', this._onMissionsUpdate);
         this._onAchievementEarned = () => { if (this.journalPanel) this.showJournalPanel(); };
         ev.on('achievementEarned', this._onAchievementEarned);
@@ -858,6 +914,7 @@ export default class HUDScene extends Phaser.Scene {
 
     // Updates day, season, clock, and reputation face texture.
     updateTime(d) {
+        if (window.__havenwoodMobileMode || !this.dayTxt) return;
         this.dayTxt.setText(`Day ${d.day}`);
         const sn = SEASONS[d.season];
         this.seasonTxt.setText(sn.name);
@@ -873,11 +930,13 @@ export default class HUDScene extends Phaser.Scene {
 
     // Updates coin display with brief scale pulse.
     updateCoins(c) {
+        if (window.__havenwoodMobileMode || !this.coinTxt) return;
         this.coinTxt.setText(c.toString());
         this.tweens.add({ targets: this.coinTxt, scaleX: 1.3, scaleY: 1.3, yoyo: true, duration: 150 });
     }
 
     updateFood(f) {
+        if (window.__havenwoodMobileMode || !this.foodTxt) return;
         this.foodTxt.setText(Math.floor(f).toString());
         this.tweens.add({ targets: this.foodTxt, scaleX: 1.3, scaleY: 1.3, yoyo: true, duration: 150 });
     }
@@ -886,6 +945,11 @@ export default class HUDScene extends Phaser.Scene {
 
     // Queued toast notifications; displayed one at a time, auto-dismiss with fade.
     notify(text) {
+        if (window.__havenwoodMobileMode) {
+            const entry = text;
+            this._mobileNotif = typeof entry === 'object' ? entry.text : entry;
+            return;
+        }
         if (!this._notifQueue) this._notifQueue = [];
         this._notifQueue.push(text);
         if (!this._notifActive) this._showNextNotif();
@@ -930,6 +994,15 @@ export default class HUDScene extends Phaser.Scene {
     // If multiple habitats are compatible, zooms out to sanctuary view for habitat selection.
     showRescue(ev) {
         if (this.rescuePopup) this.rescuePopup.destroy();
+        if (window.__havenwoodMobileMode) {
+            this.closeBuildPopup();
+            this.gs.state.rescuePaused = true;
+            this._mobileRescueEvent = ev;
+            this.rescuePopup = this.add.container(0, 0).setVisible(false);
+            this.rescuePopup._mobileStub = true;
+            if (window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true);
+            return;
+        }
         if (this._rescueTint) this._rescueTint.destroy();
         this.closeBuildPopup();
         this.gs.state.rescuePaused = true;
@@ -1064,6 +1137,7 @@ export default class HUDScene extends Phaser.Scene {
         if (this.animalPanel) this.animalPanel.destroy();
         if (this.rescuePopup) return;
         this._viewedAnimal = animal;
+        if (window.__havenwoodMobileMode) return;
 
         const sp = SPECIES[animal.speciesId], rc = RARITY_COLOR[sp.rarity];
         const pw = 230, px = W - pw - 6, py = 48;
@@ -1262,6 +1336,11 @@ export default class HUDScene extends Phaser.Scene {
         if (this.habitatPanel) this.habitatPanel.destroy();
         this.destroyBackBar();
         if (this.rescuePopup) return;
+        this._viewedHabitatId = hab.id;
+        if (window.__havenwoodMobileMode) {
+            this._mobileHabitatHidden = false;
+            return;
+        }
 
         const ht = HABITATS[hab.type];
         const cap = this.gs.getHabitatCapacity(hab);
@@ -1405,6 +1484,11 @@ export default class HUDScene extends Phaser.Scene {
 
     showFacilityBackBar(fac) {
         this.destroyBackBar();
+        this._viewedFacilityId = fac.id;
+        if (window.__havenwoodMobileMode) {
+            this._mobileFacilityHidden = false;
+            return;
+        }
         if (this.facilityPanel) {
             this.facilityPanel.destroy();
             this.facilityPanel = null;
@@ -1525,6 +1609,10 @@ export default class HUDScene extends Phaser.Scene {
     }
 
     showSelectBar(labelText) {
+        if (window.__havenwoodMobileMode) {
+            this._mobileSelectLabel = labelText;
+            return;
+        }
         this.destroySelectBar();
         this.hideToolbar();
 
@@ -1539,6 +1627,10 @@ export default class HUDScene extends Phaser.Scene {
     }
 
     hideSelectBar() {
+        if (window.__havenwoodMobileMode) {
+            this._mobileSelectLabel = null;
+            return;
+        }
         this.destroySelectBar();
         this.showToolbar();
     }
@@ -1551,6 +1643,10 @@ export default class HUDScene extends Phaser.Scene {
     }
 
     showBuildHint() {
+        if (window.__havenwoodMobileMode) {
+            this._mobileBuildHint = 'Use the move stick to aim · tap Place to confirm · Back to cancel';
+            return;
+        }
         this.hideToolbar();
         if (this._buildHintBar) this._buildHintBar.setVisible(true);
         if (this._buildHintLabel) {
@@ -1560,6 +1656,10 @@ export default class HUDScene extends Phaser.Scene {
     }
 
     hideBuildHint() {
+        if (window.__havenwoodMobileMode) {
+            this._mobileBuildHint = null;
+            return;
+        }
         if (this._buildHintBar) this._buildHintBar.setVisible(false);
         if (this._buildHintLabel) this._buildHintLabel.setVisible(false);
         if (!this.gs.state.viewingHabitat && !this.gs.state.viewingFacility) {
@@ -1571,6 +1671,7 @@ export default class HUDScene extends Phaser.Scene {
 
     // Lists upgrades with buy buttons. Vertically centered between top and bottom bars.
     showUpgradePanel() {
+        if (window.__havenwoodMobileMode) { this._mobileManagementPanel = 'upgrades'; return; }
         if (this.upgradePanel) this.upgradePanel.destroy();
         const pw = 380, entries = Object.values(UPGRADES);
         const ph = 42 + entries.length * 44 + 8;
@@ -1614,6 +1715,7 @@ export default class HUDScene extends Phaser.Scene {
 
     // Hire/fire staff members. Vertically centered between top and bottom bars.
     showStaffPanel() {
+        if (window.__havenwoodMobileMode) { this._mobileManagementPanel = 'staff'; return; }
         if (this.staffPanel) this.staffPanel.destroy();
         const pw = 380, currentStaff = this.gs.state.staff;
         const hireRows = Object.keys(STAFF_TYPES).length;
@@ -1684,6 +1786,7 @@ export default class HUDScene extends Phaser.Scene {
 
     // Launch rescue missions, view progress bars. Vertically centered between top and bottom bars.
     showMissionPanel() {
+        if (window.__havenwoodMobileMode) { this._mobileManagementPanel = 'missions'; return; }
         if (this.missionPanel) this.missionPanel.destroy();
         const pw = 420, missions = Object.values(MISSIONS);
         const active = this.gs.state.activeMissions;
@@ -1752,6 +1855,7 @@ export default class HUDScene extends Phaser.Scene {
 
     // Tabbed UI: one branch at a time, 4 tiers per branch, unlock buttons. Vertically centered.
     showResearchPanel() {
+        if (window.__havenwoodMobileMode) { this._mobileManagementPanel = 'research'; return; }
         if (this.researchPanel) this.researchPanel.destroy();
         if (!this._researchTab) this._researchTab = 'wildlife';
 
@@ -1861,6 +1965,7 @@ export default class HUDScene extends Phaser.Scene {
 
     // Tabbed: Bestiary, Achievements, Stats. Vertically centered between top and bottom bars.
     showJournalPanel() {
+        if (window.__havenwoodMobileMode) { this._mobileManagementPanel = 'journal'; return; }
         if (this.journalPanel) this.journalPanel.destroy();
 
         const pw = 580, ph = 460;
@@ -2080,8 +2185,10 @@ export default class HUDScene extends Phaser.Scene {
 
     // Toggle panel: close if open, else close others and show.
     togglePanel(panelKey, showFn, btnKey) {
-        if (this[panelKey]) {
-            this[panelKey].destroy(); this[panelKey] = null;
+        const mobileOpen = window.__havenwoodMobileMode && this._mobileManagementPanel === btnKey;
+        if (this[panelKey] || mobileOpen) {
+            if (this[panelKey]) { this[panelKey].destroy(); this[panelKey] = null; }
+            this._mobileManagementPanel = null;
             this._activePanel = null;
             this._refreshToolBtns();
             return;
@@ -2109,6 +2216,36 @@ export default class HUDScene extends Phaser.Scene {
     triggerPhoneTransition() {
         this.closeAllPanels(true);
         if (this.gs.state.buildMode) this.gs.exitBuild();
+
+        if (TutorialManager.finishPhoneUnlock) TutorialManager.finishPhoneUnlock(this);
+
+        if (window.__havenwoodMobileMode) {
+            this.game._hasZoomedOut = true;
+            this.scene.sleep('GameScene');
+            this.scene.sleep('HUDScene');
+
+            const metaScene = this.scene.get('MetaWorldScene');
+            if (metaScene && this.scene.isSleeping('MetaWorldScene')) {
+                this.scene.wake('MetaWorldScene');
+                this.scene.wake('MetaHUDScene');
+                this.scene.bringToTop('MetaHUDScene');
+                metaScene._startWithPhone = true;
+                metaScene._frozen = true;
+                if (metaScene.char) metaScene.char.setTexture('char_phone');
+                metaScene.time.delayedCall(100, () => {
+                    if (metaScene.playPutAwayPhone) metaScene.playPutAwayPhone();
+                });
+            } else {
+                this.scene.launch('MetaWorldScene', { startWithPhone: true });
+                this.scene.launch('MetaHUDScene');
+                this.time.delayedCall(150, () => {
+                    const ms = this.scene.get('MetaWorldScene');
+                    if (ms && ms.playPutAwayPhone) ms.playPutAwayPhone();
+                });
+            }
+            if (window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true);
+            return;
+        }
 
         if (!this.game._hasZoomedOut) {
             // First time — cinematic zoom-out
@@ -2147,7 +2284,13 @@ export default class HUDScene extends Phaser.Scene {
     centerPanelY(ph) { return Math.max(46, 42 + (H - 104 - ph) / 2); }
 
     // True if any management panel (upgrades, staff, missions, research, journal), build popup, or settings menu is open.
-    hasOpenPanel() { return !!(this.upgradePanel || this.staffPanel || this.missionPanel || this.journalPanel || this.researchPanel || this.settingsPanel || this.buildPopup); }
+    hasOpenPanel() {
+        if (window.__havenwoodMobileMode) {
+            return !!(this._mobileBuildOpen || this.settingsPanel || this._mobileManagementPanel);
+        }
+        const mobileBuild = window.__havenwoodMobileMode && this._mobileBuildOpen;
+        return !!(this.upgradePanel || this.staffPanel || this.missionPanel || this.journalPanel || this.researchPanel || this.settingsPanel || this.buildPopup || mobileBuild);
+    }
 
     isPointerOverPanel(screenX, screenY) {
         const barY = H - 62;
@@ -2173,7 +2316,12 @@ export default class HUDScene extends Phaser.Scene {
         });
         this._facilityPanelBathroom = null;
         if (!keepZoom) this.destroyBackBar();
-        this.closeBuildPopup();
+        if (window.__havenwoodMobileMode && this._mobileBuildOpen) this.closeMobileBuildMenu();
+        else this.closeBuildPopup();
+        this._mobileManagementPanel = null;
+        this._viewedHabitatId = null;
+        this._viewedFacilityId = null;
+        this._viewedAnimal = null;
         if (this._missionRefresh) { this._missionRefresh.destroy(); this._missionRefresh = null; }
         this._activePanel = null;
         this._refreshToolBtns();
@@ -2195,11 +2343,593 @@ export default class HUDScene extends Phaser.Scene {
 
     // Styled text with minimum font size enforcement.
     txt(x, y, text, size, color) {
-        const s = Math.max(8, Math.round(size * 1.2));
-        return this.add.text(x, y, text, {
+        const mobile = window.__havenwoodMobileMode;
+        const s = mobile ? Math.max(16, Math.round(size * 2.4)) : Math.max(8, Math.round(size * 1.2));
+        const style = {
             fontFamily: '"Press Start 2P", monospace', fontSize: `${s}px`,
-            color: color || CLR.uiText, stroke: '#000000', strokeThickness: s > 10 ? 3 : 2,
+            color: color || CLR.uiText, stroke: '#000000', strokeThickness: mobile ? 4 : (s > 10 ? 3 : 2),
             lineSpacing: 2,
+        };
+        if (mobile) {
+            style.backgroundColor = '#000000CC';
+            style.padding = { x: 10, y: 8 };
+        }
+        return this.add.text(x, y, text, style);
+    }
+
+    /* ── Mobile overlay (RN replaces desktop chrome) ── */
+
+    _clearMobileRescue() {
+        this._mobileRescueEvent = null;
+        if (this.rescuePopup && this.rescuePopup._mobileStub) {
+            this.rescuePopup.destroy();
+            this.rescuePopup = null;
+        }
+        this.gs.state.pendingRescue = null;
+        this.gs.state.rescuePaused = false;
+    }
+
+    getMobileRescueSnapshot() {
+        const ev = this._mobileRescueEvent;
+        if (!ev) return null;
+        const sp = SPECIES[ev.speciesId];
+        const rc = RARITY_COLOR[sp.rarity];
+        const compatHabs = this.gs.findAllCompatibleHabitats(sp);
+        const snap = {
+            speciesId: ev.speciesId,
+            name: ev.name,
+            variantIdx: ev.variantIdx ?? null,
+            speciesName: sp.name,
+            rarity: sp.rarity,
+            rarityColor: '#' + rc.toString(16).padStart(6, '0'),
+            msg: ev.msg,
+            compatCount: compatHabs.length,
+            canRescue: compatHabs.length >= 1,
+            passDisabled: TutorialManager.currentStepId() === 'first_rescue',
+        };
+        if (compatHabs.length === 0) {
+            const compatType = Object.values(HABITATS).find(h => h.types.includes(sp.type));
+            if (compatType) {
+                const cost = this.gs.getHabitatCost(compatType.id);
+                snap.buildOption = {
+                    habitatId: compatType.id,
+                    name: compatType.name,
+                    cost,
+                    canAfford: this.gs.state.coins >= cost,
+                };
+            }
+        }
+        return snap;
+    }
+
+    acceptMobileRescue() {
+        const ev = this._mobileRescueEvent;
+        if (!ev) return;
+        const sp = SPECIES[ev.speciesId];
+        const compatHabs = this.gs.findAllCompatibleHabitats(sp);
+        if (compatHabs.length >= 1) {
+            if (compatHabs.length === 1) {
+                this._clearMobileRescue();
+                this.gs.acceptRescueInto(ev, compatHabs[0]);
+                if (window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true);
+            } else {
+                this._pendingRescue = ev;
+                this._clearMobileRescue();
+                const needsZoom = this.gs.state.viewingHabitat || this.gs.state.viewingFacility || this.gs.cameras.main.zoom > 1;
+                if (needsZoom) {
+                    this.gs.zoomOut();
+                    this.time.delayedCall(400, () => this.gs.enterRescueSelect(ev));
+                } else {
+                    this.gs.enterRescueSelect(ev);
+                }
+            }
+        }
+    }
+
+    passMobileRescue() {
+        if (TutorialManager.currentStepId() === 'first_rescue') return;
+        this._clearMobileRescue();
+    }
+
+    buildMobileRescue() {
+        const ev = this._mobileRescueEvent;
+        if (!ev) return;
+        const sp = SPECIES[ev.speciesId];
+        const compatType = Object.values(HABITATS).find(h => h.types.includes(sp.type));
+        if (!compatType) return;
+        const cost = this.gs.getHabitatCost(compatType.id);
+        if (this.gs.state.coins < cost) return;
+        this._pendingRescue = ev;
+        this._clearMobileRescue();
+        this.closeBuildPopup();
+        this.gs.enterBuild(compatType.id);
+    }
+
+    getMobileToolbarState() {
+        const locked = {};
+        const keys = ['build', 'missions', 'upgrades', 'staff', 'research', 'journal', 'phone'];
+        for (const k of keys) {
+            locked[k] = !TutorialManager.isComplete() && !TutorialManager.isButtonUnlocked(k);
+        }
+        return {
+            locked,
+            activePanel: this._activePanel || this._mobileManagementPanel || null,
+            buildOpen: !!(this.buildPopup || this._mobileBuildOpen),
+            buildHint: this._mobileBuildHint || null,
+            selectLabel: this._mobileSelectLabel || null,
+            buildMenu: this.getMobileBuildMenuSnapshot ? this.getMobileBuildMenuSnapshot() : null,
+            animal: this.getMobileAnimalSnapshot ? this.getMobileAnimalSnapshot() : null,
+            habitat: this.getMobileHabitatSnapshot ? this.getMobileHabitatSnapshot() : null,
+            facility: this.getMobileFacilitySnapshot ? this.getMobileFacilitySnapshot() : null,
+            management: this.getMobileManagementSnapshot ? this.getMobileManagementSnapshot() : null,
+            tutorial: this.getMobileTutorialSnapshot ? this.getMobileTutorialSnapshot() : null,
+            tutorialProgress: TutorialManager.getMobileProgressSnapshot
+                ? TutorialManager.getMobileProgressSnapshot()
+                : null,
+        };
+    }
+
+    getMobileTutorialProgressSnapshot() {
+        return TutorialManager.getMobileProgressSnapshot
+            ? TutorialManager.getMobileProgressSnapshot()
+            : null;
+    }
+
+    replayMobileTutorial() {
+        if (TutorialManager.replayCurrentStep) TutorialManager.replayCurrentStep(this);
+    }
+
+    getMobileTutorialSnapshot() {
+        if (TutorialManager.isComplete()) return null;
+        const stepId = TutorialManager.currentStepId();
+        if (!stepId) return null;
+        const highlightByStep = {
+            welcome: 'build',
+            build_habitat: 'build',
+            place_path: 'build',
+            dispatch_mission: 'missions',
+            phone_unlock: 'phone',
+        };
+        return {
+            stepId,
+            stepIndex: TutorialManager.step,
+            stepCount: TutorialManager.getStepCount ? TutorialManager.getStepCount() : 12,
+            highlightTool: highlightByStep[stepId] || null,
+        };
+    }
+
+    getMobileAnimalSnapshot() {
+        const animal = this._viewedAnimal;
+        if (!animal) return null;
+        const sp = SPECIES[animal.speciesId];
+        const rc = RARITY_COLOR[sp.rarity];
+        const tr = TRAITS[animal.trait];
+        const tutStepId = !TutorialManager.isComplete() && TutorialManager.currentStepId();
+        const bNeeded = this.gs.getBondXPForLevel(animal.bondLevel);
+        const hab = this.gs.state.habitats.find(h => h.id === animal.habitatId);
+        const habitatAnimals = hab ? this.gs.state.animals.filter(a => a.habitatId === hab.id).map(a => ({
+            id: a.id, name: a.name, isCurrent: a.id === animal.id,
+        })) : [];
+        return {
+            id: animal.id,
+            name: animal.name,
+            speciesName: sp.name,
+            rarity: sp.rarity,
+            rarityColor: '#' + rc.toString(16).padStart(6, '0'),
+            gender: animal.gender,
+            generation: animal.generation || 1,
+            traitName: tr ? tr.name : null,
+            traitDesc: tr ? tr.desc : null,
+            isBaby: !!animal.isBaby,
+            isPregnant: !!animal.isPregnant,
+            illness: animal.illness ? (ILLNESSES[animal.illness.type]?.name || 'Sick') : null,
+            hunger: animal.hunger,
+            happiness: animal.happiness,
+            health: animal.health,
+            bondLevel: animal.bondLevel,
+            bondXP: Math.floor(animal.bondXP),
+            bondNeeded: bNeeded,
+            bondPercent: bNeeded > 0 ? (animal.bondXP / bNeeded) * 100 : 0,
+            feedDisabled: animal.hunger >= 100 || tutStepId === 'animal_care_treat',
+            canPet: tutStepId !== 'animal_care_feed' && tutStepId !== 'animal_care_treat',
+            canTreat: this.gs.state.coins >= 20 && tutStepId !== 'animal_care_feed' && tutStepId !== 'animal_care_pet',
+            treatCost: 20,
+            canHeal: !!(this.gs.state.upgrades.has('medical_kit') && animal.illness),
+            healCost: animal.illness ? (ILLNESSES[animal.illness.type]?.treatCost || 30) : 0,
+            canRelocate: this.gs.findAllCompatibleHabitats(sp).filter(h => h.id !== animal.habitatId).length > 0,
+            friends: animal.bonds.slice(0, 3).map(bid => {
+                const b = this.gs.state.animals.find(a => a.id === bid);
+                return b ? b.name : '?';
+            }),
+            habitatAnimals,
+        };
+    }
+
+    getMobileHabitatSnapshot() {
+        if (window.__havenwoodMobileMode && this._mobileHabitatHidden) return null;
+        const habId = this._viewedHabitatId || this.gs.state.viewingHabitat;
+        if (!habId) return null;
+        const hab = this.gs.state.habitats.find(h => h.id === habId);
+        if (!hab) return null;
+        const ht = HABITATS[hab.type];
+        const cap = this.gs.getHabitatCapacity(hab);
+        const enrichList = hab.enrichments || [];
+        const maxEnrich = this.gs.hasResearch('enrich_cap_4') ? 4 : 3;
+        const tutActive = !TutorialManager.isComplete();
+        const compatEnrich = Object.values(ENRICHMENTS).filter(e => !e.habitats || e.habitats.includes(hab.type));
+        const isEmpty = hab.animals.length === 0;
+        const canAutoRelocate = this.gs.canAllAnimalsInHabitatBeRelocated(hab.id);
+        return {
+            id: hab.id,
+            name: ht.name,
+            desc: ht.desc,
+            animalCount: hab.animals.length,
+            capacity: cap,
+            enrichments: enrichList.map(eId => ENRICHMENTS[eId]?.name || eId),
+            addEnrichments: enrichList.length < maxEnrich ? compatEnrich
+                .filter(e => !enrichList.includes(e.id))
+                .map(en => {
+                const cost = this.gs.hasResearch('cheap_enrich') ? Math.round(en.cost * 0.7) : en.cost;
+                const canAfford = this.gs.state.coins >= cost;
+                return {
+                    id: en.id, name: en.name, cost, happyBonus: en.happyBonus,
+                    canAfford,
+                    disabled: !canAfford,
+                    disabledReason: canAfford ? null : 'Not enough gold',
+                };
+            }) : [],
+            canMove: !tutActive,
+            canDestroy: isEmpty || canAutoRelocate,
+            destroyLabel: isEmpty ? 'Remove Habitat' : (canAutoRelocate ? 'Remove (Relocate Animals)' : 'Remove Habitat'),
+        };
+    }
+
+    getMobileFacilitySnapshot() {
+        if (window.__havenwoodMobileMode && this._mobileFacilityHidden) return null;
+        const facId = this._viewedFacilityId || this.gs.state.viewingFacility;
+        if (!facId) return null;
+        const fac = this.gs.state.facilities.find(f => f.id === facId);
+        if (!fac) return null;
+        const ft = FACILITIES[fac.type];
+        const dirty = fac.type === 'bathroom' ? (fac.dirty || 0) : 0;
+        return {
+            id: fac.id,
+            name: ft.name,
+            desc: ft.desc,
+            type: fac.type,
+            cleanliness: fac.type === 'bathroom' ? Math.max(0, 100 - dirty) : null,
+            canClean: fac.type === 'bathroom' && dirty > 0,
+            canMove: true,
+            canDestroy: fac.type !== 'bathroom' || dirty === 0,
+        };
+    }
+
+    getMobileManagementSnapshot() {
+        const panel = this._mobileManagementPanel;
+        if (!panel) return null;
+        const titles = { upgrades: 'Upgrades', staff: 'Staff', missions: 'Rescue Missions', research: 'Research', journal: 'Journal' };
+        const snap = { panel, title: titles[panel] || panel, subtitle: null, tabs: null, activeTab: null, rows: [], sections: [] };
+
+        if (panel === 'upgrades') {
+            snap.rows = Object.values(UPGRADES).map(up => ({
+                id: up.id, title: up.name, subtitle: up.desc,
+                cost: up.cost, owned: this.gs.state.upgrades.has(up.id),
+                canAct: !this.gs.state.upgrades.has(up.id) && this.gs.state.coins >= up.cost,
+                action: 'buyUpgrade', actionLabel: 'Buy',
+            }));
+            return snap;
+        }
+        if (panel === 'staff') {
+            snap.rows = Object.values(STAFF_TYPES).map(st => {
+                const currentCount = this.gs.state.staff.filter(s => s.type === st.id).length;
+                const atMax = st.maxCount && currentCount >= st.maxCount;
+                const canAfford = this.gs.state.coins >= st.hireCost && !atMax;
+                const salaryTxt = st.salary === 0 ? 'Free' : `${st.salary}g/day`;
+                const limitTxt = st.maxCount ? ` (${currentCount}/${st.maxCount})` : '';
+                return {
+                    id: st.id, title: st.name, subtitle: `${st.desc} · ${salaryTxt}${limitTxt}`,
+                    cost: st.hireCost, owned: atMax, canAct: canAfford,
+                    action: 'hireStaff', actionLabel: atMax ? 'Max' : 'Hire',
+                };
+            });
+            if (this.gs.state.staff.length > 0) {
+                snap.sections.push({
+                    title: 'Current Staff',
+                    rows: this.gs.state.staff.map(s => {
+                        const st = STAFF_TYPES[s.type];
+                        return {
+                            id: s.id, title: st ? st.name : s.type, subtitle: 'Tap to dismiss',
+                            canAct: true, action: 'fireStaff', actionLabel: 'Dismiss',
+                        };
+                    }),
+                });
+            }
+            return snap;
+        }
+        if (panel === 'missions') {
+            const active = this.gs.state.activeMissions;
+            snap.subtitle = `Active: ${active.length}/2`;
+            snap.rows = Object.values(MISSIONS).map(m => {
+                const canLaunch = active.length < 2 && this.gs.state.coins >= m.cost;
+                const speciesNames = m.species.slice(0, 3).map(s => SPECIES[s]?.name || s).join(', ');
+                return {
+                    id: m.id, title: m.name,
+                    subtitle: `${m.desc}. Possible finds: ${speciesNames}.`,
+                    cost: m.cost, canAct: canLaunch, action: 'launchMission', actionLabel: 'Launch',
+                };
+            });
+            if (active.length > 0) {
+                snap.sections.push({
+                    title: 'In Progress',
+                    rows: active.map(mis => {
+                        const m = MISSIONS[mis.biome];
+                        const pct = Math.min(100, Math.round((mis.elapsed / mis.duration) * 100));
+                        return { id: mis.id, title: m?.name || mis.biome, subtitle: `${pct}% complete`, canAct: false };
+                    }),
+                });
+            }
+            return snap;
+        }
+        if (panel === 'research') {
+            if (!this._researchTab) this._researchTab = 'wildlife';
+            snap.subtitle = `${this.gs.state.researchPoints} research points`;
+            snap.tabs = Object.keys(RESEARCH_BRANCHES).map(bId => ({
+                id: bId, label: RESEARCH_BRANCHES[bId].name.split(' ')[0],
+            }));
+            snap.activeTab = this._researchTab;
+            const unlocked = this.gs.state.researchUnlocked;
+            snap.rows = Object.values(RESEARCH).filter(r => r.branch === this._researchTab).sort((a, b) => a.tier - b.tier).map(node => {
+                const isUnlocked = unlocked.has(node.id);
+                const canUnlock = this.gs.canUnlockResearch(node.id);
+                return {
+                    id: node.id, title: node.name, subtitle: node.desc,
+                    cost: node.cost, owned: isUnlocked, canAct: canUnlock,
+                    action: 'unlockResearch', actionLabel: isUnlocked ? 'Complete' : 'Unlock',
+                };
+            });
+            return snap;
+        }
+        if (panel === 'journal') {
+            if (!this._journalTab) this._journalTab = 'bestiary';
+            snap.tabs = [
+                { id: 'bestiary', label: 'Bestiary' },
+                { id: 'achievements', label: 'Achievements' },
+                { id: 'stats', label: 'Stats' },
+            ];
+            snap.activeTab = this._journalTab;
+            if (this._journalTab === 'bestiary') {
+                snap.rows = Object.values(SPECIES).map(sp => {
+                    const discovered = this.gs.state.discoveredSpecies?.has(sp.id);
+                    return {
+                        id: sp.id, title: discovered ? sp.name : '???',
+                        subtitle: discovered ? sp.rarity : 'Undiscovered',
+                        canAct: discovered, action: 'journalSpecies', actionLabel: 'View',
+                    };
+                });
+            } else if (this._journalTab === 'achievements') {
+                snap.rows = ACHIEVEMENTS.map(a => ({
+                    id: a.id, title: a.name, subtitle: a.desc,
+                    owned: this.gs.state.achievementsEarned.has(a.id),
+                    canAct: false,
+                }));
+            } else {
+                const s = this.gs.state;
+                snap.rows = [
+                    { id: 'animals', title: 'Animals Rescued', subtitle: String(s.totalRescued || 0), canAct: false },
+                    { id: 'coins', title: 'Total Coins Earned', subtitle: String(s.totalCoinsEarned || 0), canAct: false },
+                    { id: 'days', title: 'Days Played', subtitle: String(s.day || 1), canAct: false },
+                    { id: 'research', title: 'Research Unlocked', subtitle: `${s.researchUnlocked.size}/${Object.keys(RESEARCH).length}`, canAct: false },
+                ];
+            }
+            return snap;
+        }
+        return null;
+    }
+
+    mobileFeedAnimal() {
+        const a = this._viewedAnimal;
+        if (!a) return;
+        this.gs.feedAnimal(a.id);
+        this.showAnimal(this.gs.state.animals.find(x => x.id === a.id) || a);
+    }
+    mobilePetAnimal() {
+        const a = this._viewedAnimal;
+        if (!a) return;
+        this.gs.petAnimal(a.id);
+        this.showAnimal(this.gs.state.animals.find(x => x.id === a.id) || a);
+    }
+    mobileTreatAnimal() {
+        const a = this._viewedAnimal;
+        if (!a) return;
+        this.gs.treatAnimal(a.id);
+        this.showAnimal(this.gs.state.animals.find(x => x.id === a.id) || a);
+    }
+    mobileHealAnimal() {
+        const a = this._viewedAnimal;
+        if (!a) return;
+        this.gs.healAnimal(a.id);
+        this.showAnimal(this.gs.state.animals.find(x => x.id === a.id) || a);
+    }
+    mobileRelocateAnimal() {
+        const a = this._viewedAnimal;
+        if (!a) return;
+        this._viewedAnimal = null;
+        this.gs.clearSelectedAnimal();
+        this.gs.zoomOut();
+        this.time.delayedCall(400, () => this.gs.enterRelocateSelect(a));
+    }
+    mobileSelectAnimal(id) {
+        const a = this.gs.state.animals.find(x => x.id === id);
+        if (a) this.showAnimal(a);
+    }
+    mobileCloseAnimal() {
+        this._viewedAnimal = null;
+        this.gs.clearSelectedAnimal();
+    }
+    mobileCloseHabitat() {
+        this._mobileHabitatHidden = true;
+        this._viewedHabitatId = null;
+        if (this.gs.state.viewingHabitat) this.gs.zoomOut();
+    }
+    mobileCloseFacility() {
+        this._mobileFacilityHidden = true;
+        this._viewedFacilityId = null;
+    }
+    mobileAddEnrichment(enId) {
+        const habId = this._viewedHabitatId || this.gs.state.viewingHabitat;
+        const hab = this.gs.state.habitats.find(h => h.id === habId);
+        if (!hab) return;
+        this.gs.addEnrichment(hab.id, enId);
+        this.showHabitatPanel(this.gs.state.habitats.find(h => h.id === hab.id));
+        if (window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true);
+    }
+    mobileMoveHabitat() {
+        const habId = this._viewedHabitatId || this.gs.state.viewingHabitat;
+        const hab = this.gs.state.habitats.find(h => h.id === habId);
+        if (hab) this.gs.enterMoveMode(hab);
+    }
+    mobileDestroyHabitat() {
+        const habId = this._viewedHabitatId || this.gs.state.viewingHabitat;
+        const hab = this.gs.state.habitats.find(h => h.id === habId);
+        if (!hab) return;
+        if (hab.animals.length === 0) this.gs.destroyHabitat(hab.id);
+        else this.gs.destroyHabitatWithAutoRelocate(hab.id);
+        this._viewedHabitatId = null;
+        this.gs.zoomOut();
+    }
+    mobileMoveFacility() {
+        const facId = this._viewedFacilityId || this.gs.state.viewingFacility;
+        const fac = this.gs.state.facilities.find(f => f.id === facId);
+        if (fac) this.gs.enterFacilityMoveMode(fac);
+    }
+    mobileCleanFacility() {
+        const facId = this._viewedFacilityId || this.gs.state.viewingFacility;
+        const fac = this.gs.state.facilities.find(f => f.id === facId);
+        if (fac) this.gs.cleanBathroom(fac);
+    }
+    mobileDestroyFacility() {
+        const facId = this._viewedFacilityId || this.gs.state.viewingFacility;
+        const fac = this.gs.state.facilities.find(f => f.id === facId);
+        if (fac) this.gs.destroyFacility(fac.id);
+        this._viewedFacilityId = null;
+        this.gs.zoomOut();
+    }
+    mobileCloseManagement() {
+        this._mobileManagementPanel = null;
+        this._activePanel = null;
+        this._refreshToolBtns();
+        if (window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true);
+    }
+    mobileBuyUpgrade(id) { if (this.gs.buyUpgrade(id)) { /* snapshot refresh */ } }
+    mobileHireStaff(id) {
+        if (id === 'guide') { this.gs.hireStaff('guide'); return; }
+        this.gs.hireStaff(id);
+    }
+    mobileFireStaff(id) { this.gs.fireStaff(id); }
+    mobileLaunchMission(id) {
+        this.gs.launchMission(id);
+        if (window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true);
+    }
+    mobileUnlockResearch(id) { this.gs.unlockResearch(id); }
+    mobileSetResearchTab(tab) {
+        this._researchTab = tab;
+        if (window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true);
+    }
+    mobileSetJournalTab(tab) {
+        this._journalTab = tab;
+        if (window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true);
+    }
+
+    closeMobileBuildMenu() {
+        this._mobileBuildOpen = false;
+        this._mobileBuildCategory = null;
+        if (this._activePanel === 'build') { this._activePanel = null; this._refreshToolBtns(); }
+    }
+
+    getMobileBuildMenuSnapshot() {
+        if (!this._mobileBuildOpen) return null;
+        const allCategories = ['habitats', 'decorations', 'facilities'];
+        const restrictions = TutorialManager.getBuildRestrictions();
+        const categories = restrictions?.categories
+            ? allCategories.filter(c => restrictions.categories.includes(c))
+            : allCategories;
+        const catLabels = { habitats: 'Habitats', decorations: 'Decorations', facilities: 'Facilities' };
+        const snap = {
+            category: this._mobileBuildCategory,
+            categories: categories.map(id => ({ id, label: catLabels[id] })),
+            items: [],
+        };
+        if (this._mobileBuildCategory) snap.items = this._getMobileBuildItems(this._mobileBuildCategory);
+        return snap;
+    }
+
+    _getMobileBuildItems(cat) {
+        const restrictions = TutorialManager.getBuildRestrictions();
+        const allItems = cat === 'habitats' ? Object.values(HABITATS)
+            : cat === 'facilities' ? Object.values(FACILITIES) : Object.values(DECORATIONS);
+        const items = (restrictions?.items && (cat === 'habitats' || cat === 'facilities'))
+            ? allItems.filter(it => restrictions.items.includes(it.id))
+            : allItems;
+        return items.map(it => {
+            const cost = cat === 'habitats' ? this.gs.getHabitatCost(it.id) : (it.cost || 0);
+            return {
+                id: it.id,
+                name: it.name,
+                cost,
+                canAfford: this.gs.state.coins >= cost,
+                category: cat,
+            };
         });
+    }
+
+    mobileBuildSelectCategory(catId) {
+        if (!this._mobileBuildOpen) return;
+        this._mobileBuildCategory = this._mobileBuildCategory === catId ? null : catId;
+    }
+
+    mobileBuildSelectItem(itemId, category) {
+        this.closeMobileBuildMenu();
+        if (category === 'habitats') this.gs.enterBuild(itemId);
+        else if (category === 'facilities') this.gs.enterFacilityBuild(itemId);
+        else this.gs.enterDecorBuild(itemId);
+    }
+
+    mobileToolbarAction(key) {
+        if (this.gs.state.rescuePaused) return;
+        if (!TutorialManager.isButtonUnlocked(key)) return;
+        const barY = H - 62;
+        const x = W / 2;
+        if (key === 'build') { this.toggleBuildPopup(x, barY); return; }
+        if (key === 'upgrades') { this.togglePanel('upgradePanel', () => this.showUpgradePanel(), 'upgrades'); return; }
+        if (key === 'staff') { this.togglePanel('staffPanel', () => this.showStaffPanel(), 'staff'); return; }
+        if (key === 'missions') { this.togglePanel('missionPanel', () => this.showMissionPanel(), 'missions'); return; }
+        if (key === 'research') { this.togglePanel('researchPanel', () => this.showResearchPanel(), 'research'); return; }
+        if (key === 'journal') { this.togglePanel('journalPanel', () => this.showJournalPanel(), 'journal'); return; }
+        if (key === 'phone') { this.triggerPhoneTransition(); return; }
+    }
+
+    mobileSaveGame() {
+        this.gs._saveMode = 'havenwood';
+        this.gs.saveGame();
+        this.gs._saveMode = null;
+        this._mobileNotif = 'Game saved!';
+        this.closeSettingsMenu();
+    }
+
+    mobileExitToMenu() {
+        this.gs._saveMode = 'havenwood';
+        this.gs.saveGame();
+        this.gs._saveMode = null;
+        this.closeSettingsMenu();
+        this.scene.stop('HUDScene');
+        this.gs.scene.start('MenuScene');
+    }
+
+    mobileSetTimeSpeed(mode) {
+        const current = this._activeSpeed || 'normal';
+        if (mode === current) mode = 'normal';
+        this._activeSpeed = mode;
+        this.gs.timeSpeedMult = mode === 'slow' ? 0.5 : mode === 'fast' ? 3 : 1;
+        this.gs.sfx.click();
     }
 }

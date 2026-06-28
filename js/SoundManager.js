@@ -9,6 +9,7 @@ export class SoundManager {
         this.enabled = true;
         this.ambientTimer = 0;
         this.initialized = false;
+        this._unlockPinged = false;
     }
 
     // Create AudioContext and master gain node.
@@ -17,7 +18,7 @@ export class SoundManager {
         try {
             this.ctx = new (window.AudioContext || window.webkitAudioContext)();
             this.master = this.ctx.createGain();
-            this.master.gain.value = 0.25;
+            this.master.gain.value = window.__havenwoodMobileMode ? 0.38 : 0.25;
             this.master.connect(this.ctx.destination);
             this.initialized = true;
         } catch (e) {
@@ -26,8 +27,26 @@ export class SoundManager {
     }
 
     // Resume suspended AudioContext on user interaction (handles browser autoplay policy).
-    resume() {
-        if (this.ctx?.state === 'suspended') this.ctx.resume();
+    resume(playPing = false) {
+        this.init();
+        if (!this.ctx) return;
+        if (this.ctx.state === 'suspended') {
+            try { this.ctx.resume(); } catch (e) { /* ignore */ }
+        }
+        if (playPing && this.master && !this._unlockPinged) {
+            this._unlockPinged = true;
+            try {
+                const o = this.ctx.createOscillator();
+                const g = this.ctx.createGain();
+                o.connect(g);
+                g.connect(this.master);
+                const t = this.ctx.currentTime;
+                g.gain.setValueAtTime(0.0001, t);
+                o.frequency.value = 440;
+                o.start(t);
+                o.stop(t + 0.01);
+            } catch (e) { /* ignore */ }
+        }
     }
 
     // Core method: create an oscillator with type, frequency, duration, volume, optional detune.
@@ -160,7 +179,8 @@ export class SoundManager {
         o.frequency.linearRampToValueAtTime(freq * 0.7, t + 0.08);
         o.frequency.linearRampToValueAtTime(freq * 1.1, t + 0.12);
         o.frequency.linearRampToValueAtTime(freq * 0.5, t + 0.2);
-        g.gain.setValueAtTime(0.04, t);
+        const chirpVol = window.__havenwoodMobileMode ? 0.09 : 0.04;
+        g.gain.setValueAtTime(chirpVol, t);
         g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
         o.start(t);
         o.stop(t + 0.22);
@@ -168,14 +188,17 @@ export class SoundManager {
 
     // Play ambient bird chirps at intervals; more frequent during day, sparse at night.
     updateAmbient(delta, timeOfDay) {
-        if (!this.enabled) return;
+        if (!this.enabled || !this.ctx) return;
+        this.resume(false);
         this.ambientTimer += delta;
         const isDaytime = timeOfDay >= 360 && timeOfDay < 1140;
-        const interval = isDaytime ? 4000 : 12000;
+        const mobile = !!window.__havenwoodMobileMode;
+        const interval = mobile ? (isDaytime ? 2200 : 8000) : (isDaytime ? 4000 : 12000);
         if (this.ambientTimer >= interval) {
             this.ambientTimer = 0;
-            if (Math.random() < 0.6) this.chirp();
-            if (isDaytime && Math.random() < 0.3) {
+            const chance = mobile ? 0.85 : 0.6;
+            if (Math.random() < chance) this.chirp();
+            if (isDaytime && Math.random() < (mobile ? 0.45 : 0.3)) {
                 setTimeout(() => this.chirp(), 200 + Math.random() * 300);
             }
         }

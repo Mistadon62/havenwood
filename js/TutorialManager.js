@@ -30,8 +30,8 @@ const STEPS = [
             spriteKey: 'npc_maple',
             lines: [
                 "First, we need a home for our animals.",
-                "Click the Build button on the toolbar below, then choose Habitats.",
-                "A Meadow is a great start — click anywhere on the grass to place it!",
+                "Tap Build on the bottom toolbar, then choose Habitats.",
+                "A Meadow is a great start — use the move stick to aim at open grass, then tap Place!",
             ],
         },
         condition: (gs) => gs.state.habitats.length > 0,
@@ -65,7 +65,7 @@ const STEPS = [
             spriteKey: 'npc_maple',
             lines: [
                 "Welcome to the family, little one!",
-                "Click on the habitat to zoom in and see your animals up close.",
+                "Pan to a habitat with the move stick, then tap Interact to zoom in and see your animals up close.",
             ],
         },
         condition: (gs) => gs._tutorialZoomed,
@@ -80,7 +80,7 @@ const STEPS = [
             lines: [
                 "There they are!",
                 "Keep your animals fed and happy — hungry animals get sad, and sad animals can get sick!",
-                "Click the Feed button on the animal panel and feed them until their hunger bar is completely full!",
+                "Tap Feed on the animal panel and feed them until their hunger bar is completely full!",
             ],
         },
         condition: (gs) => gs.state.animals.length > 0 && gs.state.animals[0].hunger >= 100,
@@ -139,7 +139,7 @@ const STEPS = [
             lines: [
                 "Visitors will start arriving soon to see the animals!",
                 "Happy visitors donate more coins — but they need to find their way around.",
-                "Open the Build menu and choose Decorations. Place a path or decoration to spruce up the sanctuary!",
+                "Open Build → Decorations. Use the move stick to aim, then tap Place on the map!",
             ],
         },
         condition: (gs) => gs.state.decorations.length > 0 && !gs.state.buildMode,
@@ -153,7 +153,7 @@ const STEPS = [
             spriteKey: 'npc_maple',
             lines: [
                 "Now that the sanctuary is taking shape, it's time to go find more animals!",
-                "Click the Rescue button on the toolbar to open the Rescue Missions panel.",
+                "Tap Rescue on the bottom toolbar to open the Rescue Missions panel.",
                 "From there you can dispatch a team to search different areas — each mission costs some coins and takes time, but you might find a new animal!",
                 "Try launching a mission now!",
             ],
@@ -185,7 +185,7 @@ const STEPS = [
             lines: [
                 "One last thing before I head off...",
                 "Here — take this phone. Something makes me think it might be important to you.",
-                "Press E or click the Phone button to try it out. Good luck, and take care of Havenwood!",
+                "Tap Phone on the bottom toolbar to try it out. Good luck, and take care of Havenwood!",
             ],
         },
     },
@@ -222,6 +222,10 @@ const TutorialManager = {
         return this.step >= STEPS.length;
     },
 
+    getStepCount() {
+        return STEPS.length;
+    },
+
     currentStepId() {
         return STEPS[this.step]?.id || null;
     },
@@ -233,8 +237,10 @@ const TutorialManager = {
         for (let i = 0; i < this.step; i++) {
             if (STEPS[i].unlocks.includes(key)) return true;
         }
-        // Current step: only if its dialogue has been shown
-        if (this._dialogueShown && STEPS[this.step] && STEPS[this.step].unlocks.includes(key)) return true;
+        const step = STEPS[this.step];
+        if (!step) return false;
+        if (step.id === 'phone_unlock' && key === 'phone') return true;
+        if (this._dialogueShown && step.unlocks.includes(key)) return true;
         return false;
     },
 
@@ -266,6 +272,7 @@ const TutorialManager = {
 
     /** Show dialogue for the current step or advance if condition met. */
     check(hudScene) {
+        if (this._checking && !MetaDialogue.isActive()) this._checking = false;
         if (this.isComplete() || this._checking) return;
         if (MetaDialogue.isActive()) return;
         this._checking = true;
@@ -295,6 +302,7 @@ const TutorialManager = {
             this._dialogueShown = true;
             this._checking = false;
             hudScene.updateTutorialButtons();
+            if (window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true);
             return;
         }
 
@@ -314,6 +322,7 @@ const TutorialManager = {
         this._rescueRetrying = false;
         hudScene.updateTutorialButtons();
         hudScene.refreshTutorialPanels();
+        if (window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true);
         if (!this.isComplete()) {
             hudScene.time.delayedCall(800, () => this.check(hudScene));
         }
@@ -321,6 +330,7 @@ const TutorialManager = {
 
     /** Called every frame from HUDScene.update(). */
     update(hudScene) {
+        if (this._checking && !MetaDialogue.isActive()) this._checking = false;
         if (this.isComplete() || !this._started) return;
         if (MetaDialogue.isActive()) return;
         const step = STEPS[this.step];
@@ -348,6 +358,40 @@ const TutorialManager = {
             }
         }
     },
+
+    /** Replay Warden Maple's lines for the current step without advancing progress. */
+    replayCurrentStep(hudScene) {
+        if (this.isComplete() || MetaDialogue.isActive()) return;
+        const step = STEPS[this.step];
+        if (!step || !step.dialogue) return;
+        MetaDialogue.show(hudScene, {
+            ...step.dialogue,
+            startLine: 0,
+            onAdvanceLine: (line) => { this._dialogueLine = line; },
+            onClose: () => {
+                if (window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true);
+            },
+        });
+        if (window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true);
+    },
+
+    getMobileProgressSnapshot() {
+        return {
+            complete: this.isComplete(),
+            stepIndex: this.step,
+            stepCount: this.getStepCount(),
+        };
+    },
+
+    finishPhoneUnlock(hudScene) {
+        if (this.isComplete() || this.currentStepId() !== 'phone_unlock') return;
+        if (MetaDialogue.isActive()) MetaDialogue.close(hudScene);
+        this._checking = false;
+        if (!this._dialogueShown) this._dialogueShown = true;
+        this._advance(hudScene);
+    },
 };
+
+export { STEPS as TUTORIAL_STEPS };
 
 export default TutorialManager;

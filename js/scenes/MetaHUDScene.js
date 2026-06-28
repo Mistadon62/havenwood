@@ -20,6 +20,10 @@ export default class MetaHUDScene extends Phaser.Scene {
         this.questPanel = null;
         this.inventoryPanel = null;
         this.notifPanel = null;
+        this._mobileQuestOpen = false;
+        this._mobileInventoryOpen = false;
+        this._mobileNotifOpen = false;
+        this._mobilePrompt = '[E] Play Havenwood';
         this._minigameActive = false;
         this._minigamePaused = false;
 
@@ -86,6 +90,7 @@ export default class MetaHUDScene extends Phaser.Scene {
     // ── Status Bar ──
 
     createStatusBar() {
+        if (window.__havenwoodMobileMode) return;
         // Dark bar at top — match sanctuary HUD height (42px)
         const barH = 42;
         const midY = 21;
@@ -140,6 +145,7 @@ export default class MetaHUDScene extends Phaser.Scene {
     }
 
     refreshStatusBar() {
+        if (window.__havenwoodMobileMode || !this.dayTimeText) return;
         const s = MetaState.state;
         const weekendTag = s.dayOfWeek >= 5 ? ' *' : '';
         this.dayTimeText.setText(`Day ${s.day} ${MetaState.getDayName()}${weekendTag} ${MetaState.getTimeString()}`);
@@ -224,6 +230,10 @@ export default class MetaHUDScene extends Phaser.Scene {
     // ── Interact Prompt ──
 
     createBottomBar() {
+        if (window.__havenwoodMobileMode) {
+            this._mobilePrompt = '[E] Play Havenwood';
+            return;
+        }
         const barY = H - 62;
         this.bottomBarBg = this.add.graphics().setDepth(200);
         this.bottomBarBg.fillStyle(0x0D1520, 1);
@@ -245,6 +255,10 @@ export default class MetaHUDScene extends Phaser.Scene {
     // Update the prompt text based on what the player is facing
     updatePrompt(text) {
         if (this.promptText) this.promptText.setText(text);
+        if (window.__havenwoodMobileMode) {
+            this._mobilePrompt = text || '[E] Play Havenwood';
+            if (window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true);
+        }
     }
 
     // ── Settings Menu ──
@@ -262,6 +276,13 @@ export default class MetaHUDScene extends Phaser.Scene {
     }
 
     toggleSettingsMenu() {
+        if (window.__havenwoodMobileMode) {
+            this._mobileSettingsOpen = !this._mobileSettingsOpen;
+            const metaScene = this.scene.get('MetaWorldScene');
+            if (metaScene) metaScene._frozen = !!this._mobileSettingsOpen;
+            if (!this._mobileSettingsOpen) this.closeSettingsMenu();
+            return;
+        }
         if (this.settingsPanel) { this.closeSettingsMenu(); return; }
 
         const metaScene = this.scene.get('MetaWorldScene');
@@ -388,6 +409,14 @@ export default class MetaHUDScene extends Phaser.Scene {
     }
 
     closeSettingsMenu() {
+        if (window.__havenwoodMobileMode) {
+            this._mobileSettingsOpen = false;
+            if (this._settingsOverlay) { this._settingsOverlay.destroy(); this._settingsOverlay = null; }
+            if (this.settingsPanel) { this.settingsPanel.destroy(); this.settingsPanel = null; }
+            const metaScene = this.scene.get('MetaWorldScene');
+            if (metaScene && !metaScene._startWithPhone) metaScene._frozen = false;
+            return;
+        }
         if (this._settingsOverlay) { this._settingsOverlay.destroy(); this._settingsOverlay = null; }
         if (this.settingsPanel) { this.settingsPanel.destroy(); this.settingsPanel = null; }
         // Unpause minigame if one is active
@@ -403,6 +432,17 @@ export default class MetaHUDScene extends Phaser.Scene {
     // ── Quest Log ──
 
     toggleQuestLog() {
+        if (window.__havenwoodMobileMode) {
+            if (this._mobileQuestOpen) { this.closeQuestLog(); return; }
+            if (this.settingsPanel || this._mobileSettingsOpen) return;
+            if (MetaDialogue.isActive()) return;
+            this._closeOtherMobilePanels('quest');
+            this._mobileQuestOpen = true;
+            const metaScene = this.scene.get('MetaWorldScene');
+            if (metaScene) metaScene._frozen = true;
+            if (window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true);
+            return;
+        }
         if (this.questPanel) { this.closeQuestLog(); return; }
         if (this.settingsPanel) return; // settings open, don't overlap
         if (MetaDialogue.isActive()) return;
@@ -509,6 +549,12 @@ export default class MetaHUDScene extends Phaser.Scene {
 
     closeQuestLog() {
         if (this.questPanel) { this.questPanel.destroy(); this.questPanel = null; }
+        this._mobileQuestOpen = false;
+        if (window.__havenwoodMobileMode) {
+            this._unfreezeMetaIfNoPanels();
+            if (window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true);
+            return;
+        }
         const metaScene = this.scene.get('MetaWorldScene');
         if (metaScene && !metaScene._startWithPhone) metaScene._frozen = false;
     }
@@ -516,6 +562,17 @@ export default class MetaHUDScene extends Phaser.Scene {
     // ── Inventory Panel ──
 
     toggleInventory() {
+        if (window.__havenwoodMobileMode) {
+            if (this._mobileInventoryOpen) { this.closeInventory(); return; }
+            if (this.settingsPanel || this._mobileSettingsOpen || this._mobileQuestOpen) return;
+            if (MetaDialogue.isActive()) return;
+            this._closeOtherMobilePanels('inventory');
+            this._mobileInventoryOpen = true;
+            const metaScene = this.scene.get('MetaWorldScene');
+            if (metaScene) metaScene._frozen = true;
+            if (window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true);
+            return;
+        }
         if (this.inventoryPanel) { this.closeInventory(); return; }
         if (this.settingsPanel || this.questPanel) return;
         if (MetaDialogue.isActive()) return;
@@ -603,6 +660,12 @@ export default class MetaHUDScene extends Phaser.Scene {
 
     closeInventory() {
         if (this.inventoryPanel) { this.inventoryPanel.destroy(); this.inventoryPanel = null; }
+        this._mobileInventoryOpen = false;
+        if (window.__havenwoodMobileMode) {
+            this._unfreezeMetaIfNoPanels();
+            if (window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true);
+            return;
+        }
         const metaScene = this.scene.get('MetaWorldScene');
         if (metaScene && !metaScene._startWithPhone) metaScene._frozen = false;
     }
@@ -610,6 +673,17 @@ export default class MetaHUDScene extends Phaser.Scene {
     // ── Phone Notifications Panel ──
 
     toggleNotifications() {
+        if (window.__havenwoodMobileMode) {
+            if (this._mobileNotifOpen) { this.closeNotifications(); return; }
+            if (this.settingsPanel || this._mobileSettingsOpen || this._mobileQuestOpen || this._mobileInventoryOpen) return;
+            if (MetaDialogue.isActive()) return;
+            this._closeOtherMobilePanels('notifications');
+            this._mobileNotifOpen = true;
+            const metaScene = this.scene.get('MetaWorldScene');
+            if (metaScene) metaScene._frozen = true;
+            if (window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true);
+            return;
+        }
         if (this.notifPanel) { this.closeNotifications(); return; }
         if (this.settingsPanel || this.questPanel || this.inventoryPanel) return;
         if (MetaDialogue.isActive()) return;
@@ -673,12 +747,22 @@ export default class MetaHUDScene extends Phaser.Scene {
 
     closeNotifications() {
         if (this.notifPanel) { this.notifPanel.destroy(); this.notifPanel = null; }
+        this._mobileNotifOpen = false;
+        if (window.__havenwoodMobileMode) {
+            this._unfreezeMetaIfNoPanels();
+            if (window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true);
+            return;
+        }
         const metaScene = this.scene.get('MetaWorldScene');
         if (metaScene && !metaScene._startWithPhone) metaScene._frozen = false;
     }
 
     // Queued toast notifications; displayed one at a time, auto-dismiss with fade.
     showNotification(text) {
+        if (window.__havenwoodMobileMode) {
+            this._mobileNotif = text;
+            return;
+        }
         if (!this._notifQueue) this._notifQueue = [];
         this._notifQueue.push(text);
         if (!this._notifActive) this._showNextNotif();
@@ -702,5 +786,146 @@ export default class MetaHUDScene extends Phaser.Scene {
             delay: 2400, duration: 400,
             onComplete: () => { n.destroy(); this._showNextNotif(); }
         });
+    }
+
+    getMobileSnapshot() {
+        const s = MetaState.state;
+        const metaScene = this.scene.get('MetaWorldScene');
+        let location = s.currentLocation || '';
+        if (metaScene && metaScene.location && metaScene.location.name) location = metaScene.location.name;
+        const activeQuests = MetaQuests.getActiveQuestsDisplay();
+        const weatherIcons = { sunny: 'Sunny', cloudy: 'Cloudy', rainy: 'Rainy', snowy: 'Snowy' };
+        let moodLabel = 'Okay';
+        if (s.mood >= 80) moodLabel = 'Great';
+        else if (s.mood >= 60) moodLabel = 'Good';
+        else if (s.mood >= 40) moodLabel = 'Okay';
+        else if (s.mood >= 20) moodLabel = 'Low';
+        else moodLabel = 'Rough';
+        const notifs = s.phoneNotifications || [];
+        return {
+            day: s.day,
+            dayName: MetaState.getDayName(),
+            timeLabel: MetaState.getTimeString(),
+            energy: s.energy,
+            mood: s.mood,
+            moodLabel,
+            money: s.money,
+            knowledge: s.knowledge,
+            inventoryCount: (s.inventory || []).length,
+            location,
+            weather: s.weather || 'sunny',
+            weatherLabel: weatherIcons[s.weather] || 'Sunny',
+            activeQuestCount: activeQuests.length,
+            phoneNotifCount: notifs.length,
+            settingsOpen: !!(this._mobileSettingsOpen || this.settingsPanel),
+            questOpen: !!(this.questPanel || this._mobileQuestOpen),
+            inventoryOpen: !!(this.inventoryPanel || this._mobileInventoryOpen),
+            questPanel: this._mobileQuestOpen ? this.getMobileQuestPanelSnapshot() : null,
+            inventoryPanel: this._mobileInventoryOpen ? this.getMobileInventoryPanelSnapshot() : null,
+            notificationsPanel: this._mobileNotifOpen ? this.getMobileNotificationsPanelSnapshot() : null,
+            interactPrompt: this._mobilePrompt || '[E] Play Havenwood',
+        };
+    }
+
+    _closeOtherMobilePanels(except) {
+        if (except !== 'quest') this._mobileQuestOpen = false;
+        if (except !== 'inventory') this._mobileInventoryOpen = false;
+        if (except !== 'notifications') this._mobileNotifOpen = false;
+    }
+
+    _unfreezeMetaIfNoPanels() {
+        const metaScene = this.scene.get('MetaWorldScene');
+        if (!metaScene || metaScene._startWithPhone) return;
+        if (this._mobileQuestOpen || this._mobileInventoryOpen || this._mobileNotifOpen) return;
+        if (this._mobileSettingsOpen || this.settingsPanel) return;
+        metaScene._frozen = false;
+    }
+
+    getMobileQuestPanelSnapshot() {
+        const activeQuests = MetaQuests.getActiveQuestsDisplay().map((quest) => ({
+            id: quest.id,
+            name: quest.name,
+            desc: quest.desc,
+            giver: quest.giver ? (getNPC(quest.giver)?.name || quest.giver) : null,
+            rewardText: quest.rewardText,
+            steps: (quest.steps || []).map((step) => ({ label: step.label, done: !!step.done })),
+            completed: false,
+        }));
+        const completedQuests = MetaQuests.getCompletedQuests().map((quest) => ({
+            id: quest.id,
+            name: quest.name,
+            desc: quest.desc || '',
+            giver: null,
+            rewardText: null,
+            steps: [],
+            completed: true,
+        }));
+        const friendships = [];
+        for (const npcId of MetaState.state.npcsMetSet || []) {
+            const npcDef = getNPC(npcId);
+            friendships.push({
+                id: npcId,
+                name: npcDef ? npcDef.name : npcId,
+                points: MetaState.getFriendship(npcId),
+                tier: MetaState.getFriendshipTier(npcId),
+            });
+        }
+        return { activeQuests, completedQuests, friendships };
+    }
+
+    getMobileInventoryPanelSnapshot() {
+        const inv = MetaState.state.inventory || [];
+        const giftItems = getGiftItemInfo();
+        const counts = {};
+        for (const item of inv) counts[item] = (counts[item] || 0) + 1;
+        const items = Object.entries(counts).map(([itemId, count]) => ({
+            id: itemId,
+            name: giftItems[itemId]?.name || itemId,
+            count,
+        }));
+        return { items, used: inv.length, capacity: 8 };
+    }
+
+    getMobileNotificationsPanelSnapshot() {
+        const notifs = MetaState.state.phoneNotifications || [];
+        return {
+            items: notifs.map((n, i) => ({
+                id: String(i),
+                text: n.text,
+                type: n.type || 'update',
+            })),
+        };
+    }
+
+    mobileClearNotifications() {
+        MetaState.state.phoneNotifications = [];
+        this.closeNotifications();
+        this._mobileNotif = 'Notifications cleared';
+    }
+
+    mobileSaveGame() {
+        const gs = this.scene.get('GameScene');
+        if (gs) {
+            gs._saveMode = 'meta';
+            gs.saveGame();
+            gs._saveMode = null;
+        }
+        MetaState.save();
+        this._mobileNotif = 'Game saved!';
+        this.closeSettingsMenu();
+    }
+
+    mobileExitToMenu() {
+        const gs = this.scene.get('GameScene');
+        if (gs) {
+            gs._saveMode = 'meta';
+            gs.saveGame();
+            gs._saveMode = null;
+        }
+        MetaState.save();
+        this.closeSettingsMenu();
+        this.scene.stop('MetaHUDScene');
+        this.scene.stop('MetaWorldScene');
+        if (gs) gs.scene.start('MenuScene');
     }
 }
