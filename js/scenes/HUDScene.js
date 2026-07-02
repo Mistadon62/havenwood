@@ -823,15 +823,15 @@ export default class HUDScene extends Phaser.Scene {
                 this.showBuildHint();
             }
             if (this.toolBtns) {
-                this.toolBtns.forEach(b => {
-                    if (!TutorialManager.isComplete() && !TutorialManager.isButtonUnlocked(b.key)) {
-                        this.drawToolBtn(b.bg, b.x, b.y, b.color, false, b.gap, true);
-                        return;
-                    }
-                    const isActive = b.key === mode ||
-                        (b.key === 'build' && mode && (HABITATS[mode] || (mode && mode.startsWith('decor_')) || (mode && mode.startsWith('facility_'))));
-                    this.drawToolBtn(b.bg, b.x, b.y, b.color, isActive, b.gap);
-                });
+            this.toolBtns.forEach(b => {
+                if (!TutorialManager.isComplete() && !TutorialManager.isButtonUnlocked(b.key)) {
+                    this.drawToolBtn(b.bg, b.x, b.y, b.color, false, b.gap, true);
+                    return;
+                }
+                const isActive = b.key === mode ||
+                    (b.key === 'build' && mode && (HABITATS[mode] || (mode && mode.startsWith('decor_')) || (mode && mode.startsWith('facility_'))));
+                this.drawToolBtn(b.bg, b.x, b.y, b.color, isActive, b.gap);
+            });
             }
         };
         ev.on('buildModeChanged', this._onBuildModeChanged);
