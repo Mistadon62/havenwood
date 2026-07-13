@@ -44,7 +44,161 @@ const MetaClassQuiz = {
         hudScene._minigameActive = true;
         hudScene._minigamePaused = false;
 
+        if (window.__havenwoodMobileMode) {
+            this._runMobile(hudScene, onFinish);
+            return;
+        }
+
         this._showCategorySelect(hudScene, onFinish);
+    },
+
+    _runMobile(hudScene, onFinish) {
+        const report = () => { if (window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true); };
+        const categoryKeys = Object.keys(QUESTION_SETS);
+        const state = {
+            phase: 'category',
+            setKey: null,
+            setName: null,
+            setColor: '#66CC88',
+            questions: [],
+            qIdx: 0,
+            playerScore: 0,
+            samScore: 0,
+            results: [],
+            selectedIndex: null,
+            samIndex: null,
+            correctIndex: null,
+            revealMessage: null,
+            grade: null,
+            bonusKnowledge: 0,
+            finished: false,
+        };
+
+        const categories = categoryKeys.map(key => ({
+            key,
+            name: QUESTION_SETS[key].name,
+            color: QUESTION_SETS[key].color,
+            questionCount: QUESTION_SETS[key].questions.length,
+        }));
+
+        const cleanup = (applyFinish) => {
+            hudScene._classQuizApi = null;
+            window.__havenwoodClassQuizApi = null;
+            hudScene._minigameActive = false;
+            hudScene._minigamePaused = false;
+            const metaScene = hudScene.scene.get('MetaWorldScene');
+            if (metaScene && !metaScene._startWithPhone) metaScene._frozen = false;
+            report();
+            if (applyFinish && onFinish) {
+                onFinish({
+                    playerScore: state.playerScore,
+                    samScore: state.samScore,
+                    bonusKnowledge: state.bonusKnowledge,
+                    grade: state.grade || 'F',
+                });
+            }
+        };
+
+        const currentQuestion = () => state.questions[state.qIdx] || null;
+        const setGrade = () => {
+            let grade = 'F';
+            if (state.playerScore >= 9) grade = 'A+';
+            else if (state.playerScore >= 8) grade = 'A';
+            else if (state.playerScore >= 7) grade = 'B+';
+            else if (state.playerScore >= 6) grade = 'B';
+            else if (state.playerScore >= 5) grade = 'C';
+            else if (state.playerScore >= 4) grade = 'D';
+            state.grade = grade;
+            state.bonusKnowledge = Math.floor(state.playerScore * 1.5);
+        };
+
+        const api = {
+            getSnapshot() {
+                const q = currentQuestion();
+                return {
+                    active: true,
+                    phase: state.phase,
+                    categories,
+                    setKey: state.setKey,
+                    setName: state.setName,
+                    setColor: state.setColor,
+                    questionIndex: state.qIdx,
+                    questionTotal: state.questions.length || 10,
+                    playerScore: state.playerScore,
+                    samScore: state.samScore,
+                    question: q ? q.q : null,
+                    answers: q ? q.answers : [],
+                    selectedIndex: state.selectedIndex,
+                    samIndex: state.samIndex,
+                    correctIndex: state.correctIndex,
+                    revealMessage: state.revealMessage,
+                    grade: state.grade,
+                    bonusKnowledge: state.bonusKnowledge,
+                    results: state.results.map((r, i) => ({
+                        index: i + 1,
+                        question: r.question,
+                        playerCorrect: r.playerAns === r.correct,
+                        samCorrect: r.samAns === r.correct,
+                    })),
+                };
+            },
+            chooseCategory(key) {
+                if (state.phase !== 'category') return;
+                const set = QUESTION_SETS[key];
+                if (!set) return;
+                state.setKey = key;
+                state.setName = set.name;
+                state.setColor = set.color;
+                state.questions = shuffle([...set.questions]).slice(0, 10);
+                state.qIdx = 0;
+                state.phase = 'question';
+                report();
+            },
+            answer(index) {
+                if (state.phase !== 'question') return;
+                const q = currentQuestion();
+                if (!q || index < 0 || index >= q.answers.length) return;
+                const sAns = samAnswer(q.correct);
+                if (index === q.correct) state.playerScore++;
+                if (sAns === q.correct) state.samScore++;
+                state.selectedIndex = index;
+                state.samIndex = sAns;
+                state.correctIndex = q.correct;
+                state.results.push({ question: q.q, playerAns: index, samAns: sAns, correct: q.correct });
+                const playerCorrect = index === q.correct;
+                const samCorrect = sAns === q.correct;
+                if (playerCorrect && samCorrect) state.revealMessage = 'You both got it right!';
+                else if (playerCorrect) state.revealMessage = 'You got it! Sam missed this one.';
+                else if (samCorrect) state.revealMessage = 'Sam got it right. Better luck next time!';
+                else state.revealMessage = 'Nobody got this one right!';
+                state.phase = 'reveal';
+                report();
+            },
+            next() {
+                if (state.phase !== 'reveal') return;
+                if (state.qIdx >= state.questions.length - 1) {
+                    setGrade();
+                    state.phase = 'result';
+                } else {
+                    state.qIdx++;
+                    state.phase = 'question';
+                    state.selectedIndex = null;
+                    state.samIndex = null;
+                    state.correctIndex = null;
+                    state.revealMessage = null;
+                }
+                report();
+            },
+            finish() {
+                if (state.phase !== 'result' || state.finished) return;
+                state.finished = true;
+                cleanup(true);
+            },
+        };
+
+        hudScene._classQuizApi = api;
+        window.__havenwoodClassQuizApi = api;
+        report();
     },
 
     // ── Category Selection Screen ──

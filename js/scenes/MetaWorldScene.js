@@ -82,6 +82,10 @@ export default class MetaWorldScene extends Phaser.Scene {
 
         if (this._startWithPhone) {
             this.char.setTexture('char_phone');
+            /* MOBILE_META_PHONE_FIRST_LAUNCH_UNFREEZE_V1 */
+            this.time.delayedCall(150, () => {
+                if (this._startWithPhone && this.playPutAwayPhone) this.playPutAwayPhone();
+            });
         }
 
         // Initial quest check
@@ -1303,6 +1307,27 @@ export default class MetaWorldScene extends Phaser.Scene {
         }
     }
 
+
+    _mobileBindCameraFollow() {
+        /* MOBILE_META_CAMERA_FOLLOW_V1 */
+        if (!window.__havenwoodMobileMode || !this.char || !this.cameras || !this.cameras.main) return;
+        const cam = this.cameras.main;
+        const roomW = this.location.cols * TILE;
+        const roomH = this.location.rows * TILE;
+        const viewW = this.scale.width || W;
+        const viewH = this.scale.height || H;
+        // Zoom in enough that rooms fill the phone, then follow the character.
+        const fit = Math.min(viewW / Math.max(1, roomW), viewH / Math.max(1, roomH));
+        const zoom = this.location.outdoor
+            ? Phaser.Math.Clamp(fit * 1.15, 1.2, 2.6)
+            : Phaser.Math.Clamp(Math.max(fit * 1.35, 2.0), 1.8, 3.2);
+        cam.setZoom(zoom);
+        cam.startFollow(this.char, true, 0.18, 0.18);
+        cam.setDeadzone(Math.min(48, viewW * 0.08), Math.min(36, viewH * 0.08));
+        cam.setBounds(this.roomX - TILE, this.roomY - TILE, roomW + TILE * 2, roomH + TILE * 2);
+        cam.centerOn(this.char.x, this.char.y);
+    }
+
     createCharacter(spawnGx, spawnGy) {
         const gx = spawnGx ?? MetaState.state.playerTileX ?? 6;
         const gy = spawnGy ?? MetaState.state.playerTileY ?? 5;
@@ -1317,6 +1342,8 @@ export default class MetaWorldScene extends Phaser.Scene {
         this.charMoving = false;
         this.walkFrame = 0;
         this.walkTimer = 0;
+        /* MOBILE_META_CAMERA_FOLLOW_V1 */
+        if (window.__havenwoodMobileMode) this._mobileBindCameraFollow();
     }
 
     setupInput() {
@@ -1655,10 +1682,12 @@ export default class MetaWorldScene extends Phaser.Scene {
     handleMovement(delta) {
         let dx = 0, dy = 0;
         const m = this._mobileDir || {};
-        const left = this.cursors.left.isDown || this.wasd.A.isDown || m.left;
-        const right = this.cursors.right.isDown || this.wasd.D.isDown || m.right;
-        const up = this.cursors.up.isDown || this.wasd.W.isDown || m.up;
-        const down = this.cursors.down.isDown || this.wasd.S.isDown || m.down;
+        const c = this.cursors || {};
+        const w = this.wasd || {};
+        const left = !!(c.left && c.left.isDown) || !!(w.A && w.A.isDown) || !!m.left;
+        const right = !!(c.right && c.right.isDown) || !!(w.D && w.D.isDown) || !!m.right;
+        const up = !!(c.up && c.up.isDown) || !!(w.W && w.W.isDown) || !!m.up;
+        const down = !!(c.down && c.down.isDown) || !!(w.S && w.S.isDown) || !!m.down;
 
         if (left) dx = -1;
         else if (right) dx = 1;
@@ -1681,7 +1710,7 @@ export default class MetaWorldScene extends Phaser.Scene {
             dx /= len;
             dy /= len;
 
-            const speed = MOVE_SPEED * (this.shiftKey.isDown ? 1.85 : 1) * (delta / 1000);
+            const speed = MOVE_SPEED * ((this.shiftKey && this.shiftKey.isDown) ? 1.85 : 1) * (delta / 1000);
             const nx = this.char.x + dx * speed;
             const ny = this.char.y + dy * speed;
             const footX = nx;
@@ -1819,7 +1848,7 @@ export default class MetaWorldScene extends Phaser.Scene {
         const labels = {
             sleep: 'Sleep', study: 'Study', job: 'Job Board',
             buy_coffee: 'Order', library_study: 'Study',
-            vending_machine: 'Vending', couch_rest: 'Rest',
+            vending_machine: 'Vending', couch_rest: 'Relax',
             park_walk: 'Nature Walk', pick_flowers: 'Flowers',
             bulletin_board: 'Bulletin', ping_pong: 'Ping Pong',
         };
@@ -1846,7 +1875,7 @@ export default class MetaWorldScene extends Phaser.Scene {
                 const labels = {
                     sleep: 'Sleep', study: 'Study', job: 'Job Board',
                     buy_coffee: 'Order', library_study: 'Study (Library)',
-                    vending_machine: 'Vending Machine', couch_rest: 'Rest',
+                    vending_machine: 'Vending Machine', couch_rest: 'Relax',
                     park_walk: 'Nature Walk', pick_flowers: 'Pick Flowers',
                     bulletin_board: 'Bulletin Board',
                     ping_pong: 'Ping Pong',
@@ -2271,9 +2300,9 @@ export default class MetaWorldScene extends Phaser.Scene {
 
         MetaDialogue.show(hudScene, {
             speaker: null,
-            lines: ['A comfy couch... perfect for a quick rest.'],
+            lines: ['A comfy couch... perfect for a quick relax break.'],
             choices: [
-                { label: 'Rest (20min, +15 energy)', action: 'rest' },
+                { label: 'Relax (20min, +15 energy)', action: 'rest' },
                 { label: 'Not now', action: 'cancel' },
             ],
             onChoice: (action) => {
@@ -2282,7 +2311,7 @@ export default class MetaWorldScene extends Phaser.Scene {
                 MetaState.addEnergy(15);
                 MetaState.addMood(3);
                 hudScene.refreshStatusBar();
-                hudScene.showNotification('+15 Energy, +3 Mood — Nice nap!');
+                hudScene.showNotification('+15 Energy, +3 Mood — Relaxed!');
             },
         });
     }
@@ -2631,13 +2660,15 @@ export default class MetaWorldScene extends Phaser.Scene {
                 coins: gs.state.coins || 0,
             };
 
-            // Show phone notifications from NPC visits
-            const pending = MetaState.state.phoneNotifications;
-            if (pending.length > 0) {
-                for (const notif of pending) {
+            // Show new phone alerts as toasts, but keep them in Phone until the player clears them.
+            const pending = MetaState.state.phoneNotifications || [];
+            const unseen = pending.filter(notif => !notif.shown);
+            if (unseen.length > 0) {
+                for (const notif of unseen) {
                     if (hudScene) hudScene.showNotification(notif.text);
+                    notif.shown = true;
                 }
-                MetaState.state.phoneNotifications = [];
+                MetaState.save();
             }
         }
 

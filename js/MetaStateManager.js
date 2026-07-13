@@ -77,6 +77,25 @@ const DEFAULTS = {
     playerTileY: 5,
 };
 
+
+function _playPurchaseSfx(ok) {
+    const key = ok ? 'purchase' : 'purchase-fail';
+    try {
+        const game = window.__havenwoodGame;
+        const gs = game && game.scene && game.scene.getScene && game.scene.getScene('GameScene');
+        if (gs && gs.sfx) {
+            if (ok && gs.sfx.purchase) gs.sfx.purchase();
+            else if (!ok && gs.sfx.purchaseFail) gs.sfx.purchaseFail();
+            else if (!ok && gs.sfx.uiBack) gs.sfx.uiBack();
+        }
+    } catch (_) {}
+    try {
+        if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'playSfx', key }));
+        }
+    } catch (_) {}
+}
+
 class MetaStateManager {
     constructor() {
         this.state = this._freshState();
@@ -208,8 +227,12 @@ class MetaStateManager {
     }
 
     spendMoney(amount) {
-        if (this.state.money < amount) return false;
+        if (this.state.money < amount) {
+            _playPurchaseSfx(false);
+            return false;
+        }
         this.state.money -= amount;
+        _playPurchaseSfx(true);
         return true;
     }
 

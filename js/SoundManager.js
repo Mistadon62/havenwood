@@ -186,6 +186,56 @@ export class SoundManager {
         o.stop(t + 0.22);
     }
 
+
+
+    purchase() { // Cash register / coin spend clink
+        this.osc('square', 1318, 0.06, 0.12);
+        setTimeout(() => this.osc('square', 1760, 0.08, 0.1), 45);
+        setTimeout(() => this.osc('sine', 2093, 0.12, 0.08), 90);
+        this.noise(0.03, 0.05);
+    }
+
+    purchaseFail() { // Soft reject buzz
+        this.osc('sawtooth', 180, 0.12, 0.08);
+        setTimeout(() => this.osc('sine', 140, 0.14, 0.06), 70);
+    }
+
+    // ── Ping pong minigame SFX ──
+    pongHit() { // Paddle contact: short bright tick
+        this.osc('triangle', 920, 0.05, 0.16);
+        this.osc('square', 1240, 0.04, 0.08);
+        this.noise(0.03, 0.06);
+    }
+
+    pongWall() { // Table edge bounce: softer lower tick
+        this.osc('sine', 520, 0.06, 0.1);
+        this.noise(0.025, 0.05);
+    }
+
+    pongScore() { // Point scored: rising blip
+        this.osc('square', 660, 0.07, 0.12);
+        setTimeout(() => this.osc('square', 990, 0.1, 0.1), 50);
+    }
+
+    pongServe() { // Countdown/serve beep
+        this.osc('sine', 740, 0.08, 0.1);
+    }
+
+    pongWin() { // Match win fanfare
+        const notes = [523, 659, 784, 1047];
+        notes.forEach((f, i) => {
+            setTimeout(() => {
+                this.osc('triangle', f, 0.22, 0.14);
+                this.osc('sine', f * 2, 0.15, 0.05);
+            }, i * 90);
+        });
+    }
+
+    pongLose() { // Match loss: descending buzz
+        this.osc('sawtooth', 280, 0.18, 0.1);
+        setTimeout(() => this.osc('sawtooth', 180, 0.25, 0.08), 110);
+    }
+
     // Play ambient bird chirps at intervals; more frequent during day, sparse at night.
     updateAmbient(delta, timeOfDay) {
         if (!this.enabled || !this.ctx) return;

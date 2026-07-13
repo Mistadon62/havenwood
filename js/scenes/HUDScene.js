@@ -314,7 +314,7 @@ export default class HUDScene extends Phaser.Scene {
             { key: 'staff', label: 'Staff', cost: null, color: 0x5588BB },
             { key: 'research', label: 'Research', cost: null, color: 0x44DDAA },
             { key: 'journal', label: 'Journal', cost: null, color: 0xAA77CC },
-            { key: 'phone', label: 'Phone', cost: null, color: 0x5577AA },
+            { key: 'phone', label: 'Campus', cost: null, color: 0x5577AA },
         ];
         const gap = Math.min(130, (W - 10) / allItems.length);
         this._toolGap = gap;
@@ -883,7 +883,7 @@ export default class HUDScene extends Phaser.Scene {
         this._onAchievementEarned = () => { if (this.journalPanel) this.showJournalPanel(); };
         ev.on('achievementEarned', this._onAchievementEarned);
         this._onResearchUpdate = () => {
-            this.rpTxt.setText(this.gs.state.researchPoints.toString());
+            if (this.rpTxt) this.rpTxt.setText(this.gs.state.researchPoints.toString());
             if (this.researchPanel) this.showResearchPanel();
         };
         ev.on('researchUpdate', this._onResearchUpdate);
@@ -1963,7 +1963,7 @@ export default class HUDScene extends Phaser.Scene {
 
     /* ========== JOURNAL PANEL ========== */
 
-    // Tabbed: Bestiary, Achievements, Stats. Vertically centered between top and bottom bars.
+    // Tabbed: Species, Badges, Stats. Vertically centered between top and bottom bars.
     showJournalPanel() {
         if (window.__havenwoodMobileMode) { this._mobileManagementPanel = 'journal'; return; }
         if (this.journalPanel) this.journalPanel.destroy();
@@ -1984,7 +1984,7 @@ export default class HUDScene extends Phaser.Scene {
         if (!this._journalTab) this._journalTab = 'bestiary';
 
         const tabs = ['bestiary', 'achievements', 'stats'];
-        const tabLabels = ['Bestiary', 'Achievements', 'Stats'];
+        const tabLabels = ['Species', 'Badges', 'Stats'];
         const tabW = 120;
         tabs.forEach((tab, i) => {
             const tx = 70 + i * (tabW + 12), ty = 32;
@@ -2038,7 +2038,7 @@ export default class HUDScene extends Phaser.Scene {
                 const shadow = this.add.graphics();
                 shadow.fillStyle(0x222222, 0.8); shadow.fillCircle(cx, cy, 12);
                 ct.add(shadow);
-                ct.add(this.txt(cx, cy + 18, '???', 5, '#555555').setOrigin(0.5));
+                ct.add(this.txt(cx, cy + 18, 'Hidden', 5, '#777777').setOrigin(0.5));
             }
         });
 
@@ -2085,12 +2085,12 @@ export default class HUDScene extends Phaser.Scene {
                 ct.add(this.txt(cx, cy + 30, v.gender === 'm' ? '\u2642' : '\u2640', 6, gClr).setOrigin(0.5));
             } else if (isSeen) {
                 ct.add(this.add.image(cx, cy, `animal_${speciesId}_${i}`).setScale(0.9).setAlpha(0.5));
-                ct.add(this.txt(cx, cy + 20, '???', 5, '#888888').setOrigin(0.5));
+                ct.add(this.txt(cx, cy + 20, 'Hidden', 5, '#888888').setOrigin(0.5));
             } else {
                 const shadow = this.add.graphics();
                 shadow.fillStyle(0x222222, 0.8); shadow.fillCircle(cx, cy, 12);
                 ct.add(shadow);
-                ct.add(this.txt(cx, cy + 20, '???', 5, '#555555').setOrigin(0.5));
+                ct.add(this.txt(cx, cy + 20, 'Hidden', 5, '#777777').setOrigin(0.5));
             }
         });
 
@@ -2121,7 +2121,7 @@ export default class HUDScene extends Phaser.Scene {
                 shadow.fillStyle(0x332200, 0.6); shadow.fillCircle(cx, cy, 12);
                 ct.add(shadow);
                 ct.add(this.txt(cx, cy - 18, '\u2605', 5, '#665522').setOrigin(0.5));
-                ct.add(this.txt(cx, cy + 20, '???', 5, '#665522').setOrigin(0.5));
+                ct.add(this.txt(cx, cy + 20, 'Hidden', 5, '#887744').setOrigin(0.5));
                 ct.add(this.txt(cx, cy + 30, 'Breed Only', 4, '#554411').setOrigin(0.5));
             }
         });
@@ -2490,11 +2490,14 @@ export default class HUDScene extends Phaser.Scene {
             dispatch_mission: 'missions',
             phone_unlock: 'phone',
         };
+        let highlightTool = highlightByStep[stepId] || null;
+        // Already placing — stop pulsing Build so Place is the clear next action.
+        if (this.gs.state.buildMode && highlightTool === 'build') highlightTool = null;
         return {
             stepId,
             stepIndex: TutorialManager.step,
             stepCount: TutorialManager.getStepCount ? TutorialManager.getStepCount() : 12,
-            highlightTool: highlightByStep[stepId] || null,
+            highlightTool,
         };
     }
 
@@ -2611,12 +2614,17 @@ export default class HUDScene extends Phaser.Scene {
         const snap = { panel, title: titles[panel] || panel, subtitle: null, tabs: null, activeTab: null, rows: [], sections: [] };
 
         if (panel === 'upgrades') {
-            snap.rows = Object.values(UPGRADES).map(up => ({
-                id: up.id, title: up.name, subtitle: up.desc,
-                cost: up.cost, owned: this.gs.state.upgrades.has(up.id),
-                canAct: !this.gs.state.upgrades.has(up.id) && this.gs.state.coins >= up.cost,
-                action: 'buyUpgrade', actionLabel: 'Buy',
-            }));
+            snap.rows = Object.values(UPGRADES).map(up => {
+                const owned = this.gs.state.upgrades.has(up.id);
+                const canAct = !owned && this.gs.state.coins >= up.cost;
+                return {
+                    id: up.id, title: up.name, subtitle: up.desc,
+                    cost: up.cost, owned,
+                    canAct,
+                    action: 'buyUpgrade', actionLabel: 'Buy',
+                    /* MOBILE_MGMT_DISABLED_REASON_V1 */ disabledReason: owned ? null : (this.gs.state.coins < up.cost ? `Need ${up.cost} gold` : null),
+                };
+            });
             return snap;
         }
         if (panel === 'staff') {
@@ -2624,12 +2632,16 @@ export default class HUDScene extends Phaser.Scene {
                 const currentCount = this.gs.state.staff.filter(s => s.type === st.id).length;
                 const atMax = st.maxCount && currentCount >= st.maxCount;
                 const canAfford = this.gs.state.coins >= st.hireCost && !atMax;
-                const salaryTxt = st.salary === 0 ? 'Free' : `${st.salary}g/day`;
+                const salaryTxt = st.salary === 0 ? 'Free' : `${st.salary} gold/day`;
                 const limitTxt = st.maxCount ? ` (${currentCount}/${st.maxCount})` : '';
+                let disabledReason = null;
+                if (atMax) disabledReason = 'At max hires';
+                else if (this.gs.state.coins < st.hireCost) disabledReason = `Need ${st.hireCost} gold`;
                 return {
                     id: st.id, title: st.name, subtitle: `${st.desc} · ${salaryTxt}${limitTxt}`,
                     cost: st.hireCost, owned: atMax, canAct: canAfford,
                     action: 'hireStaff', actionLabel: atMax ? 'Max' : 'Hire',
+                    disabledReason,
                 };
             });
             if (this.gs.state.staff.length > 0) {
@@ -2652,20 +2664,36 @@ export default class HUDScene extends Phaser.Scene {
             snap.rows = Object.values(MISSIONS).map(m => {
                 const canLaunch = active.length < 2 && this.gs.state.coins >= m.cost;
                 const speciesNames = m.species.slice(0, 3).map(s => SPECIES[s]?.name || s).join(', ');
+                let disabledReason = null;
+                if (active.length >= 2) disabledReason = 'Both teams are already out';
+                else if (this.gs.state.coins < m.cost) disabledReason = `Need ${m.cost} gold`;
                 return {
                     id: m.id, title: m.name,
-                    subtitle: `${m.desc}. Possible finds: ${speciesNames}.`,
+                    subtitle: `${m.desc}. Finds: ${speciesNames}.`,
                     cost: m.cost, canAct: canLaunch, action: 'launchMission', actionLabel: 'Launch',
+                    disabledReason,
                 };
             });
             if (active.length > 0) {
+                /* MOBILE_MISSION_PROGRESS_V1 */
+                const activeRows = active.map(mis => {
+                    const m = MISSIONS[mis.biome];
+                    const pct = Math.min(100, Math.round((mis.elapsed / Math.max(1, mis.duration)) * 100));
+                    const done = mis.complete || mis.elapsed >= mis.duration || pct >= 100;
+                    const hoursLeft = Math.max(0, Math.ceil((mis.duration - mis.elapsed) / 60));
+                    return {
+                        id: mis.id,
+                        title: m?.name || mis.biome,
+                        subtitle: done ? 'Ready — checking mission result…' : `~${hoursLeft}h remaining`,
+                        progress: pct,
+                        canAct: false,
+                        owned: true,
+                        actionLabel: done ? 'Ready' : `${pct}%`,
+                    };
+                });
                 snap.sections.push({
-                    title: 'In Progress',
-                    rows: active.map(mis => {
-                        const m = MISSIONS[mis.biome];
-                        const pct = Math.min(100, Math.round((mis.elapsed / mis.duration) * 100));
-                        return { id: mis.id, title: m?.name || mis.biome, subtitle: `${pct}% complete`, canAct: false };
-                    }),
+                    title: activeRows.some(row => row.actionLabel === 'Ready') ? 'Ready to Report' : 'In Progress',
+                    rows: activeRows,
                 });
             }
             return snap;
@@ -2681,10 +2709,17 @@ export default class HUDScene extends Phaser.Scene {
             snap.rows = Object.values(RESEARCH).filter(r => r.branch === this._researchTab).sort((a, b) => a.tier - b.tier).map(node => {
                 const isUnlocked = unlocked.has(node.id);
                 const canUnlock = this.gs.canUnlockResearch(node.id);
+                let disabledReason = null;
+                if (!isUnlocked && !canUnlock) {
+                    if (node.requires && !unlocked.has(node.requires)) disabledReason = 'Unlock the previous research first';
+                    else if (this.gs.state.researchPoints < node.cost) disabledReason = `Need ${node.cost} research points`;
+                    else disabledReason = 'Not available yet';
+                }
                 return {
                     id: node.id, title: node.name, subtitle: node.desc,
                     cost: node.cost, owned: isUnlocked, canAct: canUnlock,
                     action: 'unlockResearch', actionLabel: isUnlocked ? 'Complete' : 'Unlock',
+                    disabledReason,
                 };
             });
             return snap;
@@ -2692,8 +2727,8 @@ export default class HUDScene extends Phaser.Scene {
         if (panel === 'journal') {
             if (!this._journalTab) this._journalTab = 'bestiary';
             snap.tabs = [
-                { id: 'bestiary', label: 'Bestiary' },
-                { id: 'achievements', label: 'Achievements' },
+                { id: 'bestiary', label: 'Species' },
+                { id: 'achievements', label: 'Badges' },
                 { id: 'stats', label: 'Stats' },
             ];
             snap.activeTab = this._journalTab;
@@ -2701,9 +2736,12 @@ export default class HUDScene extends Phaser.Scene {
                 snap.rows = Object.values(SPECIES).map(sp => {
                     const discovered = this.gs.state.discoveredSpecies?.has(sp.id);
                     return {
-                        id: sp.id, title: discovered ? sp.name : '???',
-                        subtitle: discovered ? sp.rarity : 'Undiscovered',
-                        canAct: discovered, action: 'journalSpecies', actionLabel: 'View',
+                        id: sp.id, title: discovered ? sp.name : 'Unknown species',
+                        subtitle: discovered ? `${sp.rarity} · discovered species` : 'Unknown — launch Rescue missions to discover and reveal this animal.',
+                        canAct: false,
+                        owned: !!discovered,
+                        disabledReason: discovered ? null : 'Rescue animals to reveal this species.',
+                        /* MOBILE_JOURNAL_INFO_ONLY_V1 */ actionLabel: discovered ? 'Found' : 'Hidden',
                     };
                 });
             } else if (this._journalTab === 'achievements') {

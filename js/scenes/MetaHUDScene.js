@@ -824,6 +824,9 @@ export default class MetaHUDScene extends Phaser.Scene {
             inventoryPanel: this._mobileInventoryOpen ? this.getMobileInventoryPanelSnapshot() : null,
             notificationsPanel: this._mobileNotifOpen ? this.getMobileNotificationsPanelSnapshot() : null,
             interactPrompt: this._mobilePrompt || '[E] Play Havenwood',
+            minigameActive: !!this._minigameActive,
+            pingPong: this._pongApi && this._pongApi.getSnapshot ? this._pongApi.getSnapshot() : null,
+            classQuiz: this._classQuizApi && this._classQuizApi.getSnapshot ? this._classQuizApi.getSnapshot() : null,
         };
     }
 
@@ -841,11 +844,31 @@ export default class MetaHUDScene extends Phaser.Scene {
         metaScene._frozen = false;
     }
 
+    getQuestNextHint(quest) {
+        if (!quest || !quest.id) return null;
+        if (quest.id === 'hard_worker') {
+            return 'Go to the campus quad southeast Job Board, stand beside it, then tap Jobs. Each completed task counts as one shift; one shift per day.';
+        }
+        if (quest.id === 'welcome_to_campus') {
+            const step = (quest.steps || []).find(st => !st.done);
+            if (!step) return null;
+            if (step.key === 'met_elara') return 'Find Prof. Elara in class or around the campus quad, then tap Talk.';
+            if (step.key === 'visited_library') return 'Enter the Library from the east side of campus, then tap Study / Interact inside.';
+            if (step.key === 'bought_coffee') return 'Go to Campus Cafe, stand at the counter, tap Order, then buy Coffee.';
+        }
+        if (quest.id === 'top_student') return 'Go to class during school hours and tap Study / Class to attend.';
+        if (quest.id === 'regular_customer') return 'Find Mr. Tanaka or Paws & Claws, then buy supplies from the shop.';
+        if (quest.id === 'campus_cleanup') return 'Walk to the park from the west side of campus; visiting the park advances this quest.';
+        if (quest.id === 'lost_textbook') return 'Search the Library first, then return to the classroom for Prof. Elara.';
+        return null;
+    }
+
     getMobileQuestPanelSnapshot() {
         const activeQuests = MetaQuests.getActiveQuestsDisplay().map((quest) => ({
             id: quest.id,
             name: quest.name,
             desc: quest.desc,
+            nextHint: this.getQuestNextHint(quest),
             giver: quest.giver ? (getNPC(quest.giver)?.name || quest.giver) : null,
             rewardText: quest.rewardText,
             steps: (quest.steps || []).map((step) => ({ label: step.label, done: !!step.done })),

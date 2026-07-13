@@ -142,7 +142,8 @@ const STEPS = [
                 "Open Build → Decorations. Use the move stick to aim, then tap Place on the map!",
             ],
         },
-        condition: (gs) => gs.state.decorations.length > 0 && !gs.state.buildMode,
+        // Mobile stays in buildMode until Place exits; advance once any decoration exists.
+        condition: (gs) => gs.state.decorations.length > 0,
     },
     {
         id: 'dispatch_mission',
@@ -185,7 +186,7 @@ const STEPS = [
             lines: [
                 "One last thing before I head off...",
                 "Here — take this phone. Something makes me think it might be important to you.",
-                "Tap Phone on the bottom toolbar to try it out. Good luck, and take care of Havenwood!",
+                "Tap Phone on the bottom toolbar to visit campus. Good luck, and take care of Havenwood!",
             ],
         },
     },
@@ -198,6 +199,7 @@ const TutorialManager = {
     _checking: false,
     _started: false,
     _rescueRetrying: false,
+    _advanceHoldUntil: 0,
 
     reset() {
         this.step = 0;
@@ -206,6 +208,7 @@ const TutorialManager = {
         this._checking = false;
         this._started = false;
         this._rescueRetrying = false;
+        this._advanceHoldUntil = 0;
     },
 
     /** Load tutorial state from save data. */
@@ -272,6 +275,7 @@ const TutorialManager = {
 
     /** Show dialogue for the current step or advance if condition met. */
     check(hudScene) {
+        if (this._advanceHoldUntil && hudScene.time.now < this._advanceHoldUntil) return;
         if (this._checking && !MetaDialogue.isActive()) this._checking = false;
         if (this.isComplete() || this._checking) return;
         if (MetaDialogue.isActive()) return;
@@ -324,7 +328,12 @@ const TutorialManager = {
         hudScene.refreshTutorialPanels();
         if (window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true);
         if (!this.isComplete()) {
-            hudScene.time.delayedCall(800, () => this.check(hudScene));
+            /* MOBILE_TUTORIAL_STEP_HANDOFF_GUARD_V1 */
+            this._advanceHoldUntil = hudScene.time.now + 800;
+            hudScene.time.delayedCall(800, () => {
+                this._advanceHoldUntil = 0;
+                this.check(hudScene);
+            });
         }
     },
 

@@ -607,6 +607,7 @@ const NPCS = {
                 hudScene._minigamePaused = false;
                 const metaScene = hudScene.scene.get('MetaWorldScene');
                 if (metaScene) metaScene._frozen = true;
+                if (window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true);
 
                 // Launch ping pong minigame
                 const playDay = MetaState.state.day;

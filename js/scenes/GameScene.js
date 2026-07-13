@@ -125,8 +125,13 @@ export default class GameScene extends Phaser.Scene {
         this._mobileBuildCanPlace = false;
 
         this.createMap();
-        this.overlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000033, 0).setDepth(100);
-        this.seasonOverlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0).setDepth(99);
+        const mapLightPad = TILE * 8;
+        const mapLightCenterY = MAP_Y + (ROWS * TILE) / 2;
+        const mapLightWidth = W + mapLightPad * 2;
+        const mapLightHeight = ROWS * TILE + mapLightPad * 2;
+        /* MOBILE_FULL_GRASS_LIGHTING_V1 */
+        this.overlay = this.add.rectangle(W / 2, mapLightCenterY, mapLightWidth, mapLightHeight, 0x000033, 0).setDepth(100);
+        this.seasonOverlay = this.add.rectangle(W / 2, mapLightCenterY, mapLightWidth, mapLightHeight, 0x000000, 0).setDepth(99);
         this.preview = this.add.graphics().setDepth(60).setVisible(false);
         this.hoverOutline = this.add.graphics().setDepth(59).setVisible(false);
 
@@ -142,6 +147,11 @@ export default class GameScene extends Phaser.Scene {
             this.applyMobileViewport();
             // Re-apply viewport when returning from MetaWorldScene (wake from sleep).
             this.events.on('wake', () => this.applyMobileViewport());
+            this._onMobileScaleResize = () => this.applyMobileViewport();
+            this.scale.on('resize', this._onMobileScaleResize);
+            this.events.once('shutdown', () => {
+                if (this._onMobileScaleResize) this.scale.off('resize', this._onMobileScaleResize);
+            });
         }
 
         if (this.state.autoSave) {
@@ -514,9 +524,13 @@ export default class GameScene extends Phaser.Scene {
                 if (this.state.buildMode === '_place_guide') {
                     if (this._canPlaceGuide(gx, gy)) this._finishGuidePlacement(gx, gy);
                 } else if (this.state.buildMode.startsWith('decor_')) {
+                    /* MOBILE_DECOR_EXIT_BUILD_V1 */
                     if (this.canPlaceDecor(gx, gy)) {
                         this._lastDecorTile = `${gx},${gy}`;
                         this.placeDecor(this.state.buildMode.replace('decor_', ''), gx, gy);
+                        if (window.__havenwoodMobileMode) this.exitBuild();
+                    } else if (window.__havenwoodMobileMode) {
+                        this._mobileBuildPlaceFailed();
                     }
                 } else if (this.state.buildMode.startsWith('facility_')) {
                     const facId = this.state.buildMode.replace('facility_', '');
@@ -778,14 +792,17 @@ export default class GameScene extends Phaser.Scene {
         const cam = this.cameras.main;
         const mapHeight = ROWS * TILE;
         const mapCenterY = MAP_Y + mapHeight / 2;
-        // Fill the screen — crop edges rather than letterboxing on phones.
+        // Full-bleed RESIZE canvas — zoom to cover the sanctuary (no letterbox bars).
         const targetFill = 1;
         const zoomH = (cam.height * targetFill) / mapHeight;
         const zoomW = (cam.width * targetFill) / W;
         const mobileZoom = Phaser.Math.Clamp(Math.max(zoomH, zoomW), 0.75, 2.4);
         this._mobileBaseZoom = mobileZoom;
         cam.setZoom(mobileZoom);
-        cam.centerOn(W / 2, mapCenterY);
+        // Keep stick-driven pan; only recenter when the player hasn't panned yet.
+        if (!this._mobileUserPanned) {
+            cam.centerOn(W / 2, mapCenterY);
+        }
         this._ensureMobileCameraBounds();
         this._syncMobileAnimalScale();
     }
@@ -841,13 +858,25 @@ export default class GameScene extends Phaser.Scene {
         this._ensureMobileCameraBounds();
         const speed = 560 * (delta / 1000) / Math.max(cam.zoom, 0.75);
         cam.setScroll(cam.scrollX + p.dx * speed, cam.scrollY + p.dy * speed);
+        this._mobileUserPanned = true;
         if (this.state.buildMode) this._tickMobileBuildPreview();
     }
 
     _mobileBuildPlaceFailed() {
         if (!window.__havenwoodMobileMode) return;
-        this.game.events.emit('notification', 'Find open grass with the move stick, then tap Place.');
+        this.game.events.emit('notification', 'Move the map until the center target is on open grass, then tap Place.');
         this.sfx.error();
+    }
+
+    mobilePlaceBuild() {
+        if (!window.__havenwoodMobileMode || !this.state.buildMode) return false;
+        this._tickMobileBuildPreview();
+        const cam = this.cameras.main;
+        const pt = cam.getWorldPoint(cam.width / 2, cam.height / 2);
+        const handled = this._tapWorld(pt.x, pt.y, cam.width / 2, cam.height / 2);
+        if (!handled && this.state.buildMode) this._mobileBuildPlaceFailed();
+        if (window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true);
+        return handled;
     }
 
     mobileInteract() {
@@ -1054,11 +1083,14 @@ export default class GameScene extends Phaser.Scene {
                 if (this._canPlaceGuide(gx, gy)) { this._finishGuidePlacement(gx, gy); return true; }
                 return false;
             } else if (this.state.buildMode.startsWith('decor_')) {
+                /* MOBILE_DECOR_EXIT_BUILD_V1 */
                 if (this.canPlaceDecor(gx, gy)) {
                     this._lastDecorTile = `${gx},${gy}`;
                     this.placeDecor(this.state.buildMode.replace('decor_', ''), gx, gy);
+                    if (window.__havenwoodMobileMode) this.exitBuild();
                     return true;
                 }
+                if (window.__havenwoodMobileMode) this._mobileBuildPlaceFailed();
                 return false;
             } else if (this.state.buildMode.startsWith('facility_')) {
                 const facId = this.state.buildMode.replace('facility_', '');
@@ -1634,7 +1666,9 @@ export default class GameScene extends Phaser.Scene {
 
     exitBuild() {
         this.state.buildMode = null;
-        this.preview.setVisible(false);
+        this._mobileBuildCanPlace = false;
+        /* MOBILE_PLACEMENT_PREVIEW_CLEAR_V1 */
+        this.preview.clear().setVisible(false);
         this._destroyBuildPreview();
         if (this._decorPreview) { this._decorPreview.destroy(); this._decorPreview = null; }
         if (this._guidePreview) { this._guidePreview.destroy(); this._guidePreview = null; }
@@ -2062,7 +2096,7 @@ export default class GameScene extends Phaser.Scene {
 
         if (this.state.buildMode === '_place_guide') {
             ok = this._canPlaceGuide(gx, gy);
-            const c = ok ? 0x00ff00 : 0xff0000;
+            const c = ok ? 0x22c55e : 0xf59e0b;
             if (this._guidePreview) {
                 this._guidePreview.setPosition(gx * TILE + TILE / 2, MAP_Y + gy * TILE + TILE / 2).setVisible(true);
             }
@@ -2084,7 +2118,7 @@ export default class GameScene extends Phaser.Scene {
                 }
             }
             ok = this.canPlaceDecor(gx, gy);
-            const c = ok ? 0x00ff00 : 0xff0000;
+            const c = ok ? 0x22c55e : 0xf59e0b;
             if (this._decorPreview) {
                 this._decorPreview.setPosition(gx * TILE + TILE / 2, MAP_Y + gy * TILE + TILE / 2).setVisible(true);
             }
@@ -2103,7 +2137,7 @@ export default class GameScene extends Phaser.Scene {
             const fw = ft.w, fh = ft.h;
             const fgx = gx - Math.floor(fw / 2), fgy = gy - Math.floor(fh / 2);
             ok = this.canPlaceFacility(facId, fgx, fgy);
-            const c = ok ? 0x00ff00 : 0xff0000;
+            const c = ok ? 0x22c55e : 0xf59e0b;
             if (this._buildPreview) {
                 const dx = fgx * TILE, dy = fgy * TILE;
                 for (const t of this._buildPreview.tracked) {
@@ -2127,7 +2161,7 @@ export default class GameScene extends Phaser.Scene {
             const fw = ft.w, fh = ft.h;
             const fgx = gx - Math.floor(fw / 2), fgy = gy - Math.floor(fh / 2);
             ok = this.canPlaceFacilityMove(facType, fgx, fgy);
-            const c = ok ? 0x00ff00 : 0xff0000;
+            const c = ok ? 0x22c55e : 0xf59e0b;
             if (this._facMoveTracked) {
                 const dx = (fgx - this._facMoveOrigin.gx) * TILE;
                 const dy = (fgy - this._facMoveOrigin.gy) * TILE;
@@ -2152,7 +2186,7 @@ export default class GameScene extends Phaser.Scene {
         const hw = ht.w, hh = ht.h;
         const hgx = gx - Math.floor(hw / 2), hgy = gy - Math.floor(hh / 2);
         ok = isMove ? this.canPlaceMove(habType, hgx, hgy) : this.canPlace(this.state.buildMode, hgx, hgy);
-        const c = ok ? 0x00ff00 : 0xff0000;
+        const c = ok ? 0x22c55e : 0xf59e0b;
 
         if (isMove && this._moveTracked) {
             const dx = (hgx - this._moveOrigin.gx) * TILE;
@@ -3345,6 +3379,7 @@ export default class GameScene extends Phaser.Scene {
             // Store a phone notification for meta-world
             MetaState.state.phoneNotifications.push({
                 text: `${npcDef.name} visited your sanctuary!`,
+                type: 'npc_visit',
                 day: metaDay,
             });
 
@@ -5200,6 +5235,14 @@ export default class GameScene extends Phaser.Scene {
 
     spendCoins(n) {
         this.state.coins -= n;
+        try {
+            if (this.sfx && this.sfx.purchase) this.sfx.purchase();
+        } catch (_) {}
+        try {
+            if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+                window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'playSfx', key: 'purchase' }));
+            }
+        } catch (_) {}
         this.game.events.emit('coinsUpdate', this.state.coins);
     }
 
@@ -5266,6 +5309,7 @@ export default class GameScene extends Phaser.Scene {
             })),
             autoSave: this.state.autoSave,
             timeSpeedMult: this.timeSpeedMult,
+            metaState: MetaState && MetaState.state ? JSON.parse(JSON.stringify(MetaState.state)) : null,
             tutorialStep: TutorialManager.step,
             tutorialDialogueShown: TutorialManager._dialogueShown,
             tutorialDialogueLine: TutorialManager._dialogueLine,
@@ -5420,6 +5464,10 @@ export default class GameScene extends Phaser.Scene {
 
             this.state.autoSave = d.autoSave ?? true;
             this.timeSpeedMult = d.timeSpeedMult ?? 1;
+            if (d.metaState && MetaState) {
+                MetaState.state = { ...MetaState._freshState(), ...d.metaState };
+                MetaState.save();
+            }
             this._loadedMode = d.mode || 'havenwood';
             TutorialManager.load(d.tutorialStep, d.tutorialDialogueShown, d.tutorialDialogueLine);
             // Restore tutorial flags if we're past those steps

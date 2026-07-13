@@ -66,9 +66,9 @@ const QUESTS = {
         id: 'hard_worker',
         name: 'Hard Worker',
         giver: null,
-        desc: 'Prove your work ethic — complete 5 shifts at the job board.',
+        desc: 'Complete 5 shifts from the campus quad Job Board. It is in the southeast corner of the quad near the tennis courts.',
         steps: [
-            { key: 'shifts', label: 'Work shifts (0/5)', target: 5, counter: true,
+            { key: 'shifts', label: 'Work shifts at the campus quad Job Board (0/5)', target: 5, counter: true,
               check: () => MetaState.state.shiftsWorked >= 5 },
         ],
         reward: { money: 75, mood: 5 },

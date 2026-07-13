@@ -1,17 +1,3 @@
-// MetaDialogue — Lightweight dialogue box system for the meta-world.
-// Drawn by MetaHUDScene as an overlay. Supports sequential lines,
-// branching choices, and callbacks.
-//
-// Usage:
-//   MetaDialogue.show(hudScene, {
-//       speaker: 'Prof. Elara',
-//       spriteKey: 'npc_elara',          // optional — shows portrait on left
-//       lines: ['Hello!', 'Ready for class?'],
-//       choices: [{ label: 'Yes (-15 energy)', action: 'attend' }, { label: 'No', action: 'cancel' }],
-//       onChoice: (action) => { ... },
-//       onClose: () => { ... },
-//   });
-
 import { W, H, CLR } from './GameData.js';
 
 let activeDialogue = null;
@@ -44,6 +30,16 @@ function txt(scene, x, y, str, size, color, wrapWidth) {
         strokeThickness: 2,
         wordWrap: { width: wrapWidth || 360 },
     });
+}
+let lastMobileAdvanceAt = 0;
+const MOBILE_ADVANCE_GUARD_MS = 650;
+
+function takeMobileDialogueAdvance() {
+    if (!window.__havenwoodMobileMode) return true;
+    const now = Date.now();
+    if (now - lastMobileAdvanceAt < MOBILE_ADVANCE_GUARD_MS) return false;
+    lastMobileAdvanceAt = now;
+    return true;
 }
 
 const MetaDialogue = {
@@ -321,20 +317,28 @@ const MetaDialogue = {
     },
 
     advance(hudScene) {
-        if (!activeDialogue) return;
+        if (!activeDialogue) return false;
+        if (!takeMobileDialogueAdvance()) return false;
         activeDialogue.advance();
         if (window.__havenwoodMobileMode && window.__havenwoodReportSnapshot) window.__havenwoodReportSnapshot(true);
+        return true;
     },
 
     getSnapshot() {
         if (!activeDialogue) return null;
         const d = activeDialogue;
-        const atChoices = d.lineIdx.current >= d.lines.length && d.choices && d.choices.length > 0;
+        /* MOBILE_CHOICES_ON_LAST_LINE_V1 — show buy/rest choices with the final line (no extra Close tap). */
+        if (typeof window !== 'undefined') window.__havenwoodChoicesOnLastLine = true;
+        const hasChoiceList = !!(d.choices && d.choices.length);
+        const pastLines = d.lineIdx.current >= d.lines.length;
+        const onLastLine = d.lineIdx.current >= Math.max(0, d.lines.length - 1);
+        const atChoices = hasChoiceList && (pastLines || onLastLine);
+        const lineIdx = pastLines ? Math.max(0, d.lines.length - 1) : d.lineIdx.current;
         return {
             speaker: d.speaker || null,
             spriteKey: d.spriteKey || null,
             portraitDataUrl: d.portraitDataUrl || null,
-            line: atChoices ? '' : (d.lines[d.lineIdx.current] || ''),
+            line: d.lines[lineIdx] || '',
             lineIndex: d.lineIdx.current,
             lineCount: d.lines.length,
             hasChoices: !!atChoices,

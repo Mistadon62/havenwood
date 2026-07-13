@@ -19,7 +19,7 @@ const config = {
     pixelArt: true,
     backgroundColor: '#1a1a2e',
     scale: {
-        mode: window.__havenwoodMobileMode ? Phaser.Scale.ENVELOP : Phaser.Scale.FIT,
+        mode: window.__havenwoodMobileMode ? Phaser.Scale.RESIZE : Phaser.Scale.FIT,
         autoCenter: Phaser.Scale.CENTER_BOTH,
         expandParent: true,
     },

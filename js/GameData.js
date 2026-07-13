@@ -28,7 +28,7 @@ export const HABITATS = {
     meadow: { id: 'meadow', name: 'Meadow', cost: 100, w: 5, h: 4, capacity: 3, types: ['mammal_small', 'bird'], fill: 0x90EE90, stroke: 0x5a8a5a, desc: 'A sunny meadow for small mammals and birds.' },
     forest: { id: 'forest', name: 'Forest', cost: 200, w: 5, h: 5, capacity: 4, types: ['mammal_large', 'mammal_small'], fill: 0x3a7a3a, stroke: 0x1f4f1f, desc: 'A sheltered grove for forest dwellers.' },
     pond:   { id: 'pond', name: 'Pond', cost: 150, w: 4, h: 4, capacity: 3, types: ['aquatic', 'amphibian', 'bird'], fill: 0x4A80B4, stroke: 0x2a5580, desc: 'A tranquil pond for aquatic creatures.' },
-    barn:   { id: 'barn', name: 'Barn', cost: 250, w: 4, h: 4, capacity: 5, types: ['domestic'], fill: 0xCD853F, stroke: 0x8B5A2B, desc: 'A warm barn for domestic animals.' },
+    barn:   { id: 'barn', name: 'Barn', cost: 250, w: 4, h: 4, capacity: 5, types: ['domestic'], fill: 0xD8B365, stroke: 0x7A5A24, desc: 'A warm barn for domestic animals.' },
 };
 
 // Restroom dirtiness: accumulates over time, 0–1 scale. At 1, visitors get nauseous.
