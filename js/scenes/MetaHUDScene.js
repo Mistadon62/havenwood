@@ -847,13 +847,13 @@ export default class MetaHUDScene extends Phaser.Scene {
     getQuestNextHint(quest) {
         if (!quest || !quest.id) return null;
         if (quest.id === 'hard_worker') {
-            return 'Go to the campus quad southeast Job Board, stand beside it, then tap Jobs. Each completed task counts as one shift; one shift per day.';
+            return 'Go to the campus quad northeast Job Board, stand beside it, then tap Jobs. Each completed task counts as one shift; one shift per day.';
         }
         if (quest.id === 'welcome_to_campus') {
             const step = (quest.steps || []).find(st => !st.done);
             if (!step) return null;
             if (step.key === 'met_elara') return 'Find Prof. Elara in class or around the campus quad, then tap Talk.';
-            if (step.key === 'visited_library') return 'Enter the Library from the east side of campus, then tap Study / Interact inside.';
+            if (step.key === 'visited_library') return 'Enter the Library from the west side of campus, then tap Study / Interact inside.';
             if (step.key === 'bought_coffee') return 'Go to Campus Cafe, stand at the counter, tap Order, then buy Coffee.';
         }
         if (quest.id === 'top_student') return 'Go to class during school hours and tap Study / Class to attend.';

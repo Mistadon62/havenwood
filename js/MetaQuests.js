@@ -208,7 +208,7 @@ const MetaQuests = {
                     }
                     label = label.replace(/\(\d+\/\d+\)/, `(${Math.min(displayVal, step.target)}/${step.target})`);
                 }
-                return { label, done };
+                return { key: step.key, label, done };
             });
             active.push({ id: quest.id, name: quest.name, desc: quest.desc, giver: quest.giver, steps, rewardText: quest.rewardText });
         }
